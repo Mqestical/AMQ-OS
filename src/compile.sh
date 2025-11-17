@@ -2,39 +2,61 @@
 
 echo "=== Compiling EFI Application ==="
 
-# 1. Compile
-gcc -I/usr/include/efi -I/usr/include/efi/x86_64 \
-    -fpic -ffreestanding -fno-stack-protector \
-    -fno-stack-check -fshort-wchar -mno-red-zone \
-    -maccumulate-outgoing-args \
-    -c working_strings.c -o working_strings.o
+# 1. Compile all source files
+# Current directory: working_strings.c
+# Kernel directory: start.c, memory.c, print.c
+SRC_FILES="working_strings.c $(ls kernel/*.c)"
+
+OBJ_FILES=""
+for SRC in $SRC_FILES; do
+    OBJ=$(basename "${SRC%.c}.o")  # strips directory for object file name
+    gcc -I/usr/include/efi -I/usr/include/efi/x86_64 \
+        -fpic -ffreestanding -fno-stack-protector \
+        -fno-stack-check -fshort-wchar -mno-red-zone \
+        -maccumulate-outgoing-args \
+        -c $SRC -o $OBJ
+
+    if [ $? -ne 0 ]; then
+        echo "❌ Compilation failed for $SRC"
+        exit 1
+    fi
+
+    OBJ_FILES="$OBJ_FILES $OBJ"
+done
+
+# 2. Link all object files into a single EFI shared object
+ld -nostdlib -znocombreloc -T /usr/lib/elf_x86_64_efi.lds \
+   -shared -Bsymbolic -L /usr/lib /usr/lib/crt0-efi-x86_64.o \
+   $OBJ_FILES -o kernel.so -lefi -lgnuefi
 
 if [ $? -ne 0 ]; then
-    echo "❌ Compilation failed"
+    echo "❌ Linking failed"
     exit 1
 fi
 
-ld -nostdlib -znocombreloc -T /usr/lib/elf_x86_64_efi.lds \
-   -shared -Bsymbolic -L /usr/lib /usr/lib/crt0-efi-x86_64.o \
-   working_strings.o -o working_strings.so -lefi -lgnuefi
-
+# 3. Convert the shared object to an EFI executable
 objcopy -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
         -j .rel -j .rela -j .reloc --target=efi-app-x86_64 \
-        working_strings.so working_strings.efi
+        kernel.so kernel.efi
+
+if [ $? -ne 0 ]; then
+    echo "❌ objcopy failed"
+    exit 1
+fi
 
 echo "✓ Compilation successful"
 
-# 2. Update disk image
+# 4. Update disk image
 echo "=== Updating disk image ==="
 LOOP=$(sudo losetup -fP --show efi_boot.img)
 sudo mount ${LOOP}p1 /mnt/efi
-sudo cp working_strings.efi /mnt/efi/EFI/BOOT/BOOTX64.EFI
+sudo cp kernel.efi /mnt/efi/EFI/BOOT/BOOTX64.EFI
 sudo umount /mnt/efi
 sudo losetup -d $LOOP
 
 echo "✓ Disk updated"
 
-# 3. Update VirtualBox VM
+# 5. Update VirtualBox VM
 echo "=== Updating VirtualBox ==="
 VBoxManage controlvm "EFI_Test" poweroff 2>/dev/null
 sleep 2
@@ -49,7 +71,7 @@ VBoxManage storageattach "EFI_Test" --storagectl "SATA" --port 0 --device 0 --ty
 
 echo "✓ VirtualBox updated"
 
-# 4. Start VM
+# 6. Start VM
 echo "=== Starting VM ==="
 VBoxManage startvm "EFI_Test"
 
