@@ -12,14 +12,28 @@ Create heap corrutpion errors & Prevent collisions
 
 */
 
+
 #include <efi.h>
 #include <efilib.h>
+
+void SPIMEM (CHAR16* hexcode);
 
 typedef struct FreePage {
     struct FreePage* next;
 } FreePage;
 
 static FreePage* free_list = NULL;
+static uint64_t kernel_heap_base;
+static uint64_t kernel_heap_top;   // for bump allocator
+
+void kernel_main() {
+    CHAR16 msg[] = L"kernel_main running\r\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg);
+    
+    CHAR16 letters[] = L"Welcome to memory, Superuser.\r\n";
+
+    SPIMEM(letters);
+}
 
 void pmm_init(EFI_MEMORY_DESCRIPTOR* map, UINTN desc_count, UINTN desc_size) {
     for (UINTN i = 0; i < desc_count; i++) {
@@ -53,15 +67,49 @@ void pmm_free_page(void* addr) {
     free_list = page;
 }
 
-void map_page(uint64_t virtual_addr, void* physical_addr) {
-
+int map_page(uint64_t virtual_addr, void* physical_addr) {
+    return 0;
+    // TODO: fill this later in a week or two.
 }
 
-void init_kernel_stack() {
+void init_kernel_stack(void) {
     void* stack_bottom = pmm_alloc_page();     // 4 KB
     uint64_t rsp = (uint64_t)stack_bottom + 4096;
 
     asm volatile("mov %0, %%rsp" :: "r"(rsp));
-    void* page = pmm_alloc_page();
-    map_page(0xFFFF800000000000, page);
 }
+
+void init_kernel_heap(void) {
+    void* heap_page = pmm_alloc_page();
+    kernel_heap_base = (uint64_t)heap_page;
+    kernel_heap_top = kernel_heap_base;
+}
+
+
+void identity_map_addresses(void) {
+    void* page = pmm_alloc_page();  // get a physical page
+    uint64_t virt = (uint64_t)page; // virtual = physical, temporarily.
+}
+
+void* kmalloc(size_t size) {
+    void* addr = (void*)kernel_heap_top;
+    kernel_heap_top += size;  // simple bump
+    return addr;
+}
+
+void SPIMEM (CHAR16* hexcode) {
+    void* heap_page = pmm_alloc_page();      // 4 KiB
+    uint16_t* mem = (uint16_t*)heap_page;    // treat it as CHAR16 array
+    uint64_t i = 0;
+
+while (hexcode[i] != '\0') {
+    mem[i] = (uint16_t)hexcode[i];  // convert ASCII to CHAR16
+    i++;
+}
+
+// Null terminator
+mem[i] = 0x0000;
+
+uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, hexcode);
+
+}// Store Print In MEMory (SPIMEM)
