@@ -1,9 +1,6 @@
 #include <efi.h>
 #include <efilib.h>
 
-EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Volume;
-EFI_FILE_PROTOCOL *Root;
-
 EFI_STATUS
 EFIAPI
 efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
@@ -12,61 +9,176 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     
     uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
 
-    CHAR16 msg[] = {
-        0x0057,0x0065,0x006C,0x0063,0x006F,0x006D,0x0065,0x0020,
-        0x0074,0x006F,0x0020,0x0041,0x004D,0x0051,0x0020,0x004F,
-        0x0070,0x0065,0x0072,0x0061,0x0074,0x0069,0x006E,0x0067,
-        0x0020,0x0053,0x0079,0x0073,0x0074,0x0065,0x006D,0x002C,
-        0x0020,0x0053,0x0075,0x0070,0x0065,0x0072,0x0075,0x0073,
-        0x0065,0x0072,0x002E,0x0020,0x004C,0x006F,0x0061,0x0064,
-        0x0069,0x006E,0x0067,0x0020,0x006B,0x0065,0x0072,0x006E,
-        0x0065,0x006C,0x002C,0x0020,0x0073,0x0074,0x0061,0x006E,
-        0x0064,0x0062,0x0079,0x002E,0x002E,0x0000
-    };
+    CHAR16 msg[] = L"Welcome to AMQ Operating System, Superuser. Loading kernel, standby...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg);
 
-    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg); 
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Volume;
+    EFI_FILE_PROTOCOL *Root, *KernelFile;
+    EFI_STATUS Status;
+    
+    CHAR16 debug1[] = L"[1] Searching for filesystems...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug1);
+    
+    // Find all handles that support SimpleFileSystem
+    EFI_HANDLE *Handles = NULL;
+    UINTN HandleCount = 0;
+    
+    Status = uefi_call_wrapper(BS->LocateHandleBuffer, 5,
+        ByProtocol,
+        &gEfiSimpleFileSystemProtocolGuid,
+        NULL,
+        &HandleCount,
+        &Handles);
+    
+    if (EFI_ERROR(Status) || HandleCount == 0) {
+        CHAR16 err1[] = L"ERROR: No filesystems found\n";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err1);
+        while(1);
+    }
+    
+    CHAR16 debug1b[] = L"[1b] Found filesystem, getting protocol...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug1b);
+    
+    Status = uefi_call_wrapper(BS->HandleProtocol, 3,
+        Handles[0],
+        &gEfiSimpleFileSystemProtocolGuid,
+        (VOID**)&Volume);
+    
+    if (EFI_ERROR(Status)) {
+        CHAR16 err1b[] = L"ERROR: HandleProtocol failed\n";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err1b);
+        while(1);
+    }
+    
+    CHAR16 debug2[] = L"[2] Opening volume...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug2);
+    
+    Status = uefi_call_wrapper(Volume->OpenVolume, 2, Volume, &Root);
+    if (EFI_ERROR(Status)) {
+        CHAR16 err2[] = L"ERROR: OpenVolume failed\n";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err2);
+        while(1);
+    }
+    
+    CHAR16 debug3[] = L"[3] Listing root directory...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug3);
+    
+    // List files in root and save kernel.efi filename
+    EFI_FILE_INFO *ListFileInfo;
+    UINTN ListFileInfoSize = sizeof(EFI_FILE_INFO) + 200;
+    Status = uefi_call_wrapper(BS->AllocatePool, 3, EfiLoaderData, ListFileInfoSize, (VOID**)&ListFileInfo);
+    
+    CHAR16 *KernelFileName = NULL;
+    
+    for (int i = 0; i < 10; i++) {
+        ListFileInfoSize = sizeof(EFI_FILE_INFO) + 200;
+        Status = uefi_call_wrapper(Root->Read, 3, Root, &ListFileInfoSize, ListFileInfo);
+        
+        if (EFI_ERROR(Status) || ListFileInfoSize == 0) break;
+        
+        CHAR16 prefix[] = L"  Found: ";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, prefix);
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, ListFileInfo->FileName);
+        CHAR16 newline[] = L"\n";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, newline);
+        
+        // Check if this is kernel.efi - just save the first .efi file we find
+        // Simple check: does filename contain "kernel"?
+        CHAR16 *fn = ListFileInfo->FileName;
+        BOOLEAN isKernel = FALSE;
+        
+        // Check if it starts with 'k' or 'K'
+        if (fn[0] == L'k' || fn[0] == L'K') {
+            isKernel = TRUE;
+            KernelFileName = ListFileInfo->FileName;
+            CHAR16 found[] = L"  ^^ Using this as kernel!\n";
+            uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, found);
+            break; // Stop after finding first match
+        }
+    }
+    
+    if (!KernelFileName) {
+        CHAR16 err[] = L"ERROR: kernel.efi not found in directory listing\n";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err);
+        while(1);
+    }
+    
+    // Reset directory position
+    uefi_call_wrapper(Root->SetPosition, 2, Root, 0);
+    
+    CHAR16 debug3b[] = L"[3b] Opening kernel with exact filename...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug3b);
+    
+    Status = uefi_call_wrapper(Root->Open, 5, Root, &KernelFile, KernelFileName, EFI_FILE_MODE_READ, 0);
+    if (EFI_ERROR(Status)) {
+        CHAR16 err3b[] = L"ERROR: Cannot open kernel using found filename\n";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err3b);
+        while(1);
+    }
 
-    EFI_FILE_PROTOCOL *KernelFile;
-    gBS->LocateProtocol(&gEfiSimpleFileSystemProtocolGuid, NULL, (VOID**)&Volume);
-    Volume->OpenVolume(Volume, &Root);
-    Root->Open(Root, &KernelFile, L"kernel.elf", EFI_FILE_MODE_READ, 0);
+    CHAR16 msg2[] = L"[4] kernel.efi opened successfully\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg2);
 
-    // ---- Get file size ----
+    CHAR16 debug4[] = L"[5] Getting file info...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug4);
+    
     EFI_FILE_INFO *FileInfo;
     UINTN FileInfoSize = sizeof(EFI_FILE_INFO) + 200;
-    FileInfo = AllocatePool(FileInfoSize);
-    KernelFile->GetInfo(KernelFile, &gEfiFileInfoGuid, &FileInfoSize, FileInfo);
-
+    Status = uefi_call_wrapper(BS->AllocatePool, 3, EfiLoaderData, FileInfoSize, (VOID**)&FileInfo);
+    
+    Status = uefi_call_wrapper(KernelFile->GetInfo, 4, KernelFile, &gEfiFileInfoGuid, &FileInfoSize, FileInfo);
     UINTN FileSize = (UINTN)FileInfo->FileSize;
 
-    // ---- Read file ----
-    VOID *KernelBuffer = AllocatePool(FileSize);
-    KernelFile->Read(KernelFile, &FileSize, KernelBuffer);
+    CHAR16 debug5[] = L"[6] Reading kernel into memory...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug5);
+    
+    VOID *KernelBuffer;
+    Status = uefi_call_wrapper(BS->AllocatePool, 3, EfiLoaderData, FileSize, &KernelBuffer);
+    
+    Status = uefi_call_wrapper(KernelFile->Read, 3, KernelFile, &FileSize, KernelBuffer);
+    uefi_call_wrapper(KernelFile->Close, 1, KernelFile);
 
-    // ---- Allocate pages where kernel will be loaded ----
-    EFI_PHYSICAL_ADDRESS TargetAddress = 0xFFFFFFFF80000000;
-    UINTN NumberOfPages = EFI_SIZE_TO_PAGES(FileSize);
+    CHAR16 msg3[] = L"[7] kernel.efi loaded into memory\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg3);
 
-    EFI_STATUS Status = gBS->AllocatePages(
-        AllocateAddress,
-        EfiLoaderData,
-        NumberOfPages,
-        &TargetAddress
-    );
+    CHAR16 debug6[] = L"[8] Calling LoadImage...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug6);
+    
+    EFI_HANDLE KernelHandle;
+    Status = uefi_call_wrapper(BS->LoadImage, 6,
+        FALSE,
+        ImageHandle,
+        NULL,
+        KernelBuffer,
+        FileSize,
+        &KernelHandle);
 
-    // ---- Copy kernel into memory ----
-    CopyMem((VOID*)TargetAddress, KernelBuffer, FileSize);
+    if (EFI_ERROR(Status)) {
+        CHAR16 err4[] = L"ERROR: LoadImage failed\n";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err4);
+        while (1);
+    }
 
-    FreePool(FileInfo);
-    UINTN MemoryMapSize = 0;
-EFI_MEMORY_DESCRIPTOR *MemoryMap = NULL;
-UINTN MapKey;
-UINTN DescriptorSize;
-UINT32 DescriptorVersion;
-gBS->GetMemoryMap(&MemoryMapSize, MemoryMap, &MapKey, &DescriptorSize, &DescriptorVersion);
-MemoryMap = AllocatePool(MemoryMapSize);
-gBS->GetMemoryMap(&MemoryMapSize, MemoryMap, &MapKey, &DescriptorSize, &DescriptorVersion);
+    CHAR16 msg4[] = L"\n[9] Starting kernel...\n\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg4);
+
+    Status = uefi_call_wrapper(BS->StartImage, 3, KernelHandle, NULL, NULL);
+
+    if (EFI_ERROR(Status)) {
+        CHAR16 err5[] = L"\nERROR: StartImage failed\n";
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err5);
+        while (1);
+    }
+
+    CHAR16 msg5[] = L"\n[10] Kernel returned\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg5);
+
+    uefi_call_wrapper(BS->FreePool, 1, FileInfo);
+    uefi_call_wrapper(BS->FreePool, 1, KernelBuffer);
+
+    CHAR16 done[] = L"\nBootloader done. Press any key...\n";
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, done);
+
     while (1);
-
     return EFI_SUCCESS;
 }
