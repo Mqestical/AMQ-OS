@@ -171,13 +171,13 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
 
     CHAR16 msg5[] = L"\n[10] Kernel returned\n";
-    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg5);
+    //uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg5);
 
     uefi_call_wrapper(BS->FreePool, 1, FileInfo);
     uefi_call_wrapper(BS->FreePool, 1, KernelBuffer);
 
     CHAR16 done[] = L"\nBootloader done. Press any key...\n";
-    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, done);
+    //uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, done);
 
     while (1);
     return EFI_SUCCESS;
