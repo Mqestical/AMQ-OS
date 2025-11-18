@@ -3,7 +3,9 @@
 echo "=== Compiling Bootloader and Kernel ==="
 
 # Compiler flags
-CFLAGS="-I/usr/include/efi -I/usr/include/efi/x86_64 -fpic -ffreestanding -fno-stack-protector -fno-stack-check -fshort-wchar -mno-red-zone -maccumulate-outgoing-args"
+CFLAGS="-I/usr/include/efi -I/usr/include/efi/x86_64 -I../includes \
+-fpic -ffreestanding -fno-stack-protector -fno-stack-check -fshort-wchar \
+-mno-red-zone -maccumulate-outgoing-args"
 LDFLAGS="-nostdlib -znocombreloc -T /usr/lib/elf_x86_64_efi.lds -shared -Bsymbolic -L /usr/lib"
 
 # ============================================================
