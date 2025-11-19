@@ -48,15 +48,22 @@ extern Buffer stdout_buf;
 extern Buffer stderr_buf;
 extern FileDescriptor fd_table[256];
 
-// Functions
+// Graphics functions
 void init_graphics(EFI_SYSTEM_TABLE *ST);
 void put_pixel(uint32_t x, uint32_t y, uint32_t color);
 void draw_char(uint32_t x, uint32_t y, char c, uint32_t fg, uint32_t bg);
 void draw_string(uint32_t x, uint32_t y, const char *s, uint32_t fg, uint32_t bg);
-void printc(char c);  // New function - print single char
-void SetCursorPos(uint32_t x, uint32_t y);  // New function
-void SetColors(uint32_t fg, uint32_t bg);  // New function
-void ClearScreen(uint32_t color);  // New function
+
+// Print functions
+void printc(char c);
+void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...);
+
+// Screen control functions
+void SetCursorPos(uint32_t x, uint32_t y);
+void SetColors(uint32_t fg, uint32_t bg);
+void ClearScreen(uint32_t color);
+
+// File descriptor functions
 void init_fds();
 void buf_write(Buffer *buf, const char *str);
 

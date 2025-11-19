@@ -179,6 +179,6 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     CHAR16 done[] = L"\nBootloader done. Press any key...\n";
     //uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, done);
 
-    while (1);
+    for (;;){}
     return EFI_SUCCESS;
 }
