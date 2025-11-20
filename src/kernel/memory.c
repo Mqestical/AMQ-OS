@@ -502,6 +502,18 @@ void identity_map_addresses(void) {
     (void)page;
 }
 
+void print_ptr(void* ptr) {
+    uintptr_t addr = (uintptr_t)ptr;  // convert pointer to integer
+
+    // Assuming you have a debug_print_hex or similar function:
+    for (int i = (sizeof(void*) * 2 - 1); i >= 0; i--) {
+        uint8_t nibble = (addr >> (i * 4)) & 0xF;
+        char c = (nibble < 10) ? ('0' + nibble) : ('A' + (nibble - 10));
+        printc(c);
+    }
+}
+
+
 void* mmset(void* ptr, int value, size_t num) {
     unsigned char* p = ptr;
     while(num--) {
