@@ -1,6 +1,6 @@
 #include <efi.h>
 #include <efilib.h>
-#include <in_out_b.h>
+#include "in_out_b.h"
 void pic_remap() {
     // Start initialization
     outb(0x20, 0x11);
@@ -18,7 +18,7 @@ void pic_remap() {
     outb(0x21, 0x01);
     outb(0xA1, 0x01);
     
-    // Unmask all interrupts
-    outb(0x21, 0x00);
-    outb(0xA1, 0x00);
+    // MASK ALL interrupts initially (0xFF = all masked)
+    outb(0x21, 0xFF);
+    outb(0xA1, 0xFF);
 }
