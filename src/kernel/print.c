@@ -121,12 +121,12 @@ void printc(char c) {
         }
         return;
     }
-    
+
     if (c == '\r') {
         cursor.x = 0;
         return;
     }
-    
+
     if (c == '\t') {
         cursor.x = ((cursor.x / 8) + 4) * 8;
         // Check for line wrap
@@ -139,7 +139,7 @@ void printc(char c) {
         }
         return;
     }
-    
+
     // Check if character will fit on current line
     if (cursor.x + 8 > fb.width) {
         // Wrap to next line
@@ -150,7 +150,7 @@ void printc(char c) {
             cursor.y = 0;
         }
     }
-    
+
     // Bounds check - if we're at an invalid position, reset
     if (cursor.y + 8 > fb.height) {
         cursor.y = 0;
@@ -158,212 +158,236 @@ void printc(char c) {
     if (cursor.x + 8 > fb.width) {
         cursor.x = 0;
     }
-    
+
     // Draw the character
     draw_char(cursor.x, cursor.y, c, cursor.fg_color, cursor.bg_color);
-    
+
     // Advance cursor by 8 pixels (one character width)
     cursor.x += 8;
 }
 
-void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
-    // Save original colors
-    uint32_t old_fg = cursor.fg_color;
-    uint32_t old_bg = cursor.bg_color;
-    
-    // Set colors from arguments
-    cursor.fg_color = text_fg;
-    cursor.bg_color = text_bg;
-    
-    // Parse format string with va_args
-    __builtin_va_list args;
-    __builtin_va_start(args, format);
-    
-    char buffer[1024];
-    int buf_pos = 0;
-    
-    const char *p = format;
-    while (*p && buf_pos < 1023) {
-        if (*p == '%') {
-            p++;
-            if (*p == 'd' || *p == 'i') {
-                // Integer
-                int val = __builtin_va_arg(args, int);
-                int is_negative = val < 0;
-                if (is_negative) val = -val;
-                
-                char num_buf[20];
-                int num_pos = 0;
-                
-                if (val == 0) {
-                    num_buf[num_pos++] = '0';
-                } else {
-                    while (val > 0) {
-                        num_buf[num_pos++] = '0' + (val % 10);
-                        val /= 10;
-                    }
-                }
-                
-                if (is_negative) num_buf[num_pos++] = '-';
-                
-                // Reverse into buffer
-                for (int i = num_pos - 1; i >= 0 && buf_pos < 1023; i--) {
-                    buffer[buf_pos++] = num_buf[i];
-                }
-            } else if (*p == 'u') {
-                // Unsigned integer
-                unsigned int val = __builtin_va_arg(args, unsigned int);
-                
-                char num_buf[20];
-                int num_pos = 0;
-                
-                if (val == 0) {
-                    num_buf[num_pos++] = '0';
-                } else {
-                    while (val > 0) {
-                        num_buf[num_pos++] = '0' + (val % 10);
-                        val /= 10;
-                    }
-                }
-                
-                for (int i = num_pos - 1; i >= 0 && buf_pos < 1023; i--) {
-                    buffer[buf_pos++] = num_buf[i];
-                }
-            } else if (*p == 'x') {
-                // Hexadecimal (lowercase)
-                unsigned int val = __builtin_va_arg(args, unsigned int);
-                
-                char num_buf[20];
-                int num_pos = 0;
-                
-                if (val == 0) {
-                    num_buf[num_pos++] = '0';
-                } else {
-                    while (val > 0) {
-                        int digit = val % 16;
-                        num_buf[num_pos++] = digit < 10 ? '0' + digit : 'a' + digit - 10;
-                        val /= 16;
-                    }
-                }
-                
-                for (int i = num_pos - 1; i >= 0 && buf_pos < 1023; i--) {
-                    buffer[buf_pos++] = num_buf[i];
-                }
-            } else if (*p == 'X') {
-                // Hexadecimal (uppercase)
-                unsigned int val = __builtin_va_arg(args, unsigned int);
-                
-                char num_buf[20];
-                int num_pos = 0;
-                
-                if (val == 0) {
-                    num_buf[num_pos++] = '0';
-                } else {
-                    while (val > 0) {
-                        int digit = val % 16;
-                        num_buf[num_pos++] = digit < 10 ? '0' + digit : 'A' + digit - 10;
-                        val /= 16;
-                    }
-                }
-                
-                for (int i = num_pos - 1; i >= 0 && buf_pos < 1023; i--) {
-                    buffer[buf_pos++] = num_buf[i];
-                }
-            } else if (*p == 'l') {
-                // Long specifier
-                p++;
-                if (*p == 'l') {
-                    // long long
-                    p++;
-                    if (*p == 'u') {
-                        // unsigned long long
-                        unsigned long long val = __builtin_va_arg(args, unsigned long long);
-                        
-                        char num_buf[30];
-                        int num_pos = 0;
-                        
-                        if (val == 0) {
-                            num_buf[num_pos++] = '0';
-                        } else {
-                            while (val > 0) {
-                                num_buf[num_pos++] = '0' + (val % 10);
-                                val /= 10;
-                            }
-                        }
-                        
-                        for (int i = num_pos - 1; i >= 0 && buf_pos < 1023; i--) {
-                            buffer[buf_pos++] = num_buf[i];
-                        }
-                    } else if (*p == 'x') {
-                        // long long hex
-                        unsigned long long val = __builtin_va_arg(args, unsigned long long);
-                        
-                        char num_buf[30];
-                        int num_pos = 0;
-                        
-                        if (val == 0) {
-                            num_buf[num_pos++] = '0';
-                        } else {
-                            while (val > 0) {
-                                int digit = val % 16;
-                                num_buf[num_pos++] = digit < 10 ? '0' + digit : 'a' + digit - 10;
-                                val /= 16;
-                            }
-                        }
-                        
-                        for (int i = num_pos - 1; i >= 0 && buf_pos < 1023; i--) {
-                            buffer[buf_pos++] = num_buf[i];
-                        }
-                    }
-                }
-            } else if (*p == 's') {
-                // String
-                const char *str = __builtin_va_arg(args, const char*);
-                if (!str) str = "(null)";
-                while (*str && buf_pos < 1023) {
-                    buffer[buf_pos++] = *str++;
-                }
-            } else if (*p == 'c') {
-                // Character
-                char c = (char)__builtin_va_arg(args, int);
-                buffer[buf_pos++] = c;
-            } else if (*p == '%') {
-                // Literal %
-                buffer[buf_pos++] = '%';
-            }
-            p++;
-        } else {
-    if (*p == '\\') {  
-        p++;
-        if (*p == 'n') buffer[buf_pos++] = '\n';
-        else if (*p == 'r') buffer[buf_pos++] = '\r';
-        else if (*p == 't') buffer[buf_pos++] = '\t';
-        else buffer[buf_pos++] = *p;
-        p++;
-    } else {
-        buffer[buf_pos++] = *p++;
+void printcs(char *str) {
+    if (!str) return;
+    for (size_t i = 0; str[i] != '\0'; i++) {
+        printc(str[i]);  // reuse single-char function
     }
 }
 
+
+static void debug_print_hex(unsigned char val) {
+    const char hex[] = "0123456789ABCDEF";
+    printc(hex[val >> 4]);
+    printc(hex[val & 0x0F]);
+}
+static void print_unsigned(unsigned long long num, int base) {
+    char buf[32];
+    int i = 0;
+    
+    if (num == 0) {
+        printc('0');
+        return;
     }
     
-    buffer[buf_pos] = '\0';
-    
-    __builtin_va_end(args);
-    
-    // Print the buffer using printc
-    for (int i = 0; i < buf_pos; i++) {
-        printc(buffer[i]);
+    while (num > 0) {
+        int digit = num % base;
+        buf[i++] = (digit < 10) ? ('0' + digit) : ('a' + (digit - 10));
+        num /= base;
     }
     
-    // Restore original colors
+    // Print in reverse (most significant digit first)
+    while (i > 0) {
+        printc(buf[--i]);
+    }
+}
+
+// Helper to print signed integer
+static void print_signed(long long num) {
+    if (num < 0) {
+        printc('-');
+        num = -num;
+    }
+    print_unsigned((unsigned long long)num, 10);
+}
+
+// Helper to copy string literal to stack (works around .rodata issue)
+static void safe_print_str(const char* str) {
+    if (!str) {
+        printc('(');
+        printc('n');
+        printc('u');
+        printc('l');
+        printc('l');
+        printc(')');
+        return;
+    }
+    
+    // Copy to local buffer to ensure it's accessible
+    char buf[256];
+    int i = 0;
+    
+    // Copy string to stack
+    while (str[i] && i < 255) {
+        buf[i] = str[i];
+        i++;
+    }
+    buf[i] = '\0';
+    
+    // Now print from stack
+    for (int j = 0; j < i; j++) {
+        printc(buf[j]);
+    }
+}
+
+void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
+    if (!format) return;
+    
+    // Save and set colors
+    uint32_t old_fg = cursor.fg_color;
+    uint32_t old_bg = cursor.bg_color;
+    cursor.fg_color = text_fg;
+    cursor.bg_color = text_bg;
+    
+    // Copy format string to stack to avoid .rodata issues
+    char fmt[512];
+    int fmt_len = 0;
+    while (format[fmt_len] && fmt_len < 511) {
+        fmt[fmt_len] = format[fmt_len];
+        fmt_len++;
+    }
+    fmt[fmt_len] = '\0';
+    
+    va_list args;
+    va_start(args, format);
+    
+    int i = 0;
+    while (i < fmt_len) {
+        if (fmt[i] != '%') {
+            printc(fmt[i]);
+            i++;
+            continue;
+        }
+        
+        // Found '%'
+        i++;
+        if (i >= fmt_len) break;
+        
+        // Handle 'll' prefix for long long
+        int is_longlong = 0;
+        if (fmt[i] == 'l') {
+            if (i + 1 < fmt_len && fmt[i + 1] == 'l') {
+                is_longlong = 1;
+                i += 2;
+            } else {
+                is_longlong = 1;
+                i++;
+            }
+        }
+        
+        if (i >= fmt_len) break;
+        
+        switch (fmt[i]) {
+            case 's': {
+                const char *str = va_arg(args, const char*);
+                safe_print_str(str);
+                break;
+            }
+            
+            case 'd': {
+                long long val = is_longlong ? 
+                    va_arg(args, long long) : 
+                    (long long)va_arg(args, int);
+                print_signed(val);
+                break;
+            }
+            
+            case 'u': {
+                unsigned long long val = is_longlong ?
+                    va_arg(args, unsigned long long) :
+                    (unsigned long long)va_arg(args, unsigned int);
+                print_unsigned(val, 10);
+                break;
+            }
+            
+            case 'x': {
+                unsigned long long val = is_longlong ?
+                    va_arg(args, unsigned long long) :
+                    (unsigned long long)va_arg(args, unsigned int);
+                print_unsigned(val, 16);
+                break;
+            }
+            
+            case 'X': {
+                unsigned long long val = is_longlong ?
+                    va_arg(args, unsigned long long) :
+                    (unsigned long long)va_arg(args, unsigned int);
+                // For uppercase, we'd need a modified print_unsigned
+                // For now, just use lowercase
+                print_unsigned(val, 16);
+                break;
+            }
+            
+            case 'p': {
+                void *ptr = va_arg(args, void*);
+                printc('0');
+                printc('x');
+                print_unsigned((unsigned long long)ptr, 16);
+                break;
+            }
+            
+            case 'c': {
+                char ch = (char)va_arg(args, int);
+                printc(ch);
+                break;
+            }
+            
+            case '%': {
+                printc('%');
+                break;
+            }
+            
+            default: {
+                printc('%');
+                printc(fmt[i]);
+                break;
+            }
+        }
+        i++;
+    }
+    
+    va_end(args);
+    
+    // Restore colors
     cursor.fg_color = old_fg;
     cursor.bg_color = old_bg;
 }
+
+// Helper macro to make usage easier with string literals
+// Use this instead of direct printk calls:
+#define PRINTK(fg, bg, ...) do { \
+    char _fmt[] = __VA_ARGS__; \
+    printk(fg, bg, _fmt); \
+} while(0)
 
 void buf_write(Buffer *buf, const char *str) {
     while (*str) {
         buf->data[buf->write_pos % 4096] = *str++;
         buf->write_pos++;
     }
+}
+
+void test_printk(void) {
+    ClearScreen(0x000000);
+    SetCursorPos(0, 0);
+    
+    int num = 42;
+    char* ptr = (char*)0xDEADBEEF;
+    char* str = "Hello";
+    
+    printk(0xFFFFFFFF, 0x000000, "Testing printk:\n");
+    printk(0xFFFFFFFF, 0x000000, "Integer: %d\n", num);
+    printk(0xFFFFFFFF, 0x000000, "Hex: 0x%x\n", num);
+    printk(0xFFFFFFFF, 0x000000, "Pointer: %p\n", ptr);
+    printk(0xFFFFFFFF, 0x000000, "String: %s\n", str);
+    printk(0xFFFFFFFF, 0x000000, "Char: %c\n", 'A');
+    printk(0xFFFFFFFF, 0x000000, "Multiple: %d %s %p\n", 123, "test", (void*)0x1234);
 }

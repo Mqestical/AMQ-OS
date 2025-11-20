@@ -86,7 +86,7 @@ int memory_test(void) NO_THROW WUR COLD;
 
 // Identity map setup (paging code → don’t optimize away)
 void identity_map_addresses(void) NO_THROW;
-
+void print_ptr(void* ptr);
 // Safe memset equivalent
 void* mmset(void* ptr, int value, size_t num) NO_THROW NON_NULL(1) WUR OPT_O3 HOT;
 void* mmcpy(void* dest, const void* src, size_t n) NO_THROW NON_NULL(1) WUR OPT_O3 HOT;
