@@ -351,86 +351,35 @@ void* krealloc(void* ptr, size_t new_size) {
 // ============================================================================
 
 void memory_stats(void) {
-    //ClearScreen(0xFF0000FF);
     cursor.x = 20;   // some margin
     cursor.y = 20;   // start a bit down from top
 
     cursor.fg_color = 0xFFFFFFFF;
     cursor.bg_color = 0xFF0000FF;
+printk(0xFFFFFFFF, 0xFF0000FF, "=== Memory Statistics ===\n");
 
-    struct {
-        const char *label;
-        unsigned long long value;
-        int is_hex;
-        int has_value;
-    } stats[] = {
-        {"=== Memory Statistics ===", 0, 0, 0},
-        {"Physical Memory:", 0, 0, 0},
-        {"  Total pages: ", total_pages, 0, 1},
-        {"  Used pages:  ", used_pages, 0, 1},
-        {"  Free pages:  ", total_pages - used_pages, 0, 1},
-        {"  Total size:  ", total_pages * 4, 0, 1},
-        {"Heap Memory:", 0, 0, 0},
-        {"  Base: 0x", kernel_heap_base, 1, 1},
-        {"  Size:  ", kernel_heap_size / 1024, 0, 1},
-        {"  Used:  ", kernel_heap_used / 1024, 0, 1},
-        {"  Free:  ", (kernel_heap_size - kernel_heap_used) / 1024, 0, 1},
-        {"Heap Operations:", 0, 0, 0},
-        {"  Allocations:  ", alloc_count, 0, 1},
-        {"  Frees:        ", free_count, 0, 1},
-        {"  Splits:       ", split_count, 0, 1},
-        {"  Coalesces:    ", coalesce_count, 0, 1},
-        {"Stack:", 0, 0, 0},
-        {"  Base: 0x", kernel_stack_base, 1, 1},
-        {"  Top:  0x", kernel_stack_top, 1, 1},
-        {"  Size: ", (kernel_stack_top - kernel_stack_base) / 1024, 0, 1},
-    };
+printk(0xFFFFFFFF, 0xFF0000FF, "Physical Memory:\n");
+printk(0xFFFFFFFF, 0xFF0000FF, "  Total pages: %llu\n", total_pages);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Used pages: %llu\n", used_pages);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Free pages: %llu\n", total_pages - used_pages);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Total size: %llu KB\n", (total_pages * 4) / 1);
 
-    for (int i = 0; i < sizeof(stats)/sizeof(stats[0]); i++) {
-        // Print label
-        const char *s = stats[i].label;
-        while (*s) printc(*s++);
+printk(0xFFFFFFFF, 0xFF0000FF, "\nHeap Memory:\n");
+printk(0xFFFFFFFF, 0xFF0000FF, "  Base: 0x%llx\n", kernel_heap_base);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", kernel_heap_size / 1024);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Used: %llu KB\n", kernel_heap_used / 1024);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Free: %llu KB\n", (kernel_heap_size - kernel_heap_used) / 1024);
 
-        // Print value if needed
-        if (stats[i].has_value) {
-            char numbuf[32];
-            int pos = 0;
-            unsigned long long val = stats[i].value;
+printk(0xFFFFFFFF, 0xFF0000FF, "\nHeap Operations:\n");
+printk(0xFFFFFFFF, 0xFF0000FF, "  Allocations: %llu\n", alloc_count);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Frees: %llu\n", free_count);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Splits: %llu\n", split_count);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Coalesces: %llu\n", coalesce_count);
 
-            if (stats[i].is_hex) {
-                char hex_digits[] = "0123456789ABCDEF";
-                if (val == 0) numbuf[pos++] = '0';
-                else {
-                    char tmp[32];
-                    int tmp_pos = 0;
-                    while (val) {
-                        tmp[tmp_pos++] = hex_digits[val % 16];
-                        val /= 16;
-                    }
-                    for (int j = tmp_pos-1; j >= 0; j--) numbuf[pos++] = tmp[j];
-                }
-            } else {
-                if (val == 0) numbuf[pos++] = '0';
-                else {
-                    char tmp[32];
-                    int tmp_pos = 0;
-                    while (val) {
-                        tmp[tmp_pos++] = '0' + (val % 10);
-                        val /= 10;
-                    }
-                    for (int j = tmp_pos-1; j >= 0; j--) numbuf[pos++] = tmp[j];
-                }
-            }
-
-            numbuf[pos] = '\0';
-            char *p = numbuf;
-            while (*p) printc(*p++);
-        }
-
-        // Append proper line ending
-        printc('\r');
-        printc('\n');
-    }
+printk(0xFFFFFFFF, 0xFF0000FF, "\nStack:\n");
+printk(0xFFFFFFFF, 0xFF0000FF, "  Base: 0x%llx\n", kernel_stack_base);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Top: 0x%llx\n", kernel_stack_top);
+printk(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", (kernel_stack_top - kernel_stack_base) / 1024);
 }
 
 
@@ -553,10 +502,22 @@ void identity_map_addresses(void) {
     (void)page;
 }
 
-void* memset(void* ptr, int value, size_t num) {
+void* mmset(void* ptr, int value, size_t num) {
     unsigned char* p = ptr;
     while(num--) {
         *p++ = (unsigned char)value;
     }
     return ptr;
 }
+
+void* mmcpy(void* dest, const void* src, size_t n) {
+    unsigned char* d = (unsigned char*)dest;
+    const unsigned char* s = (const unsigned char*)src;
+
+    while (n--) {
+        *d++ = *s++;
+    }
+
+    return dest;
+}
+
