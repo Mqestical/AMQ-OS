@@ -1,5 +1,6 @@
 #include <efi.h>
 #include <efilib.h>
+#include <stdarg.h> 
 #include "memory.h"
 #include "definitions.h"
 #include "print.h"

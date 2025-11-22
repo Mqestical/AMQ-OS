@@ -1,11 +1,11 @@
 #!/bin/bash
-
 echo "=== Compiling Bootloader and Kernel ==="
 
 # Compiler flags
 CFLAGS="-I/usr/include/efi -I/usr/include/efi/x86_64 -I../includes \
 -fpic -ffreestanding -fno-stack-protector -fno-stack-check -fshort-wchar \
 -mno-red-zone -maccumulate-outgoing-args"
+
 LDFLAGS="-nostdlib -znocombreloc -T /usr/lib/elf_x86_64_efi.lds -shared -Bsymbolic -L /usr/lib"
 
 # ============================================================
@@ -45,16 +45,15 @@ echo ""
 echo "--- Compiling Kernel ---"
 
 KERNEL_OBJS=""
+mkdir -p obj
+
 for SRC in kernel/*.c; do
     OBJ="obj/$(basename "${SRC%.c}.o")"
-    mkdir -p obj
-    
     gcc $CFLAGS -c "$SRC" -o "$OBJ"
     if [ $? -ne 0 ]; then
         echo "❌ Kernel compilation failed for $SRC"
         exit 1
     fi
-    
     KERNEL_OBJS="$KERNEL_OBJS $OBJ"
     echo "  Compiled: $SRC → $OBJ"
 done
@@ -82,10 +81,11 @@ echo "✓ Kernel compiled: kernel.efi"
 # ============================================================
 echo ""
 echo "=== Updating disk image ==="
+
 LOOP=$(sudo losetup -fP --show efi_boot.img)
 sudo mount "${LOOP}p1" /mnt/efi
 
-# Copy BOOTLOADER to BOOTX64.EFI (this is what UEFI boots first)
+# Copy BOOTLOADER to BOOTX64.EFI (UEFI boots this first)
 sudo cp working_strings.efi /mnt/efi/EFI/BOOT/BOOTX64.EFI
 
 # Copy KERNEL to kernel.efi (bootloader will load this)
@@ -93,6 +93,7 @@ sudo cp kernel.efi /mnt/efi/kernel.efi
 
 sudo umount /mnt/efi
 sudo losetup -d "$LOOP"
+
 echo "✓ Disk updated:"
 echo "  - BOOTX64.EFI ← working_strings.efi (bootloader)"
 echo "  - kernel.efi ← kernel.efi (kernel)"
@@ -102,8 +103,10 @@ echo "  - kernel.efi ← kernel.efi (kernel)"
 # ============================================================
 echo ""
 echo "=== Updating VirtualBox ==="
+
 VBoxManage controlvm "EFI_Test" poweroff 2>/dev/null
 sleep 2
+
 VBoxManage storageattach "EFI_Test" --storagectl "SATA" --port 0 --device 0 --medium none 2>/dev/null
 
 # Create new VDI with timestamp

@@ -1,6 +1,6 @@
 #include "print.h"
 #include "FONT.h"
-
+#include <stdarg.h>
 // Globals
 Framebuffer fb;
 Cursor cursor = {0, 0, 0xFFFFFFFF, 0xFF000000};
@@ -179,7 +179,7 @@ static void debug_print_hex(unsigned char val) {
     printc(hex[val >> 4]);
     printc(hex[val & 0x0F]);
 }
-static void print_unsigned(unsigned long long num, int base) {
+void print_unsigned(unsigned long long num, int base) {
     char buf[32];
     int i = 0;
     
@@ -201,7 +201,7 @@ static void print_unsigned(unsigned long long num, int base) {
 }
 
 // Helper to print signed integer
-static void print_signed(long long num) {
+void print_signed(long long num) {
     if (num < 0) {
         printc('-');
         num = -num;

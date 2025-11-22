@@ -4,12 +4,27 @@
 #include "memory.h"
 #include "idt.h"
 #include "PICR.h"
-#include "in_out_b.h"
+#include "keyboard.h"
 #include "shell.h"
+#include "TSS.h"
+#include "serial.h"
+#include "IO.h"
 
 extern void pmm_init(EFI_MEMORY_DESCRIPTOR* map, UINTN desc_count, UINTN desc_size);
 extern void init_kernel_heap(void);
 extern char font8x8_basic[128][8];
+
+// Enable I/O privilege level
+static inline void enable_io_privilege(void) {
+    __asm__ volatile(
+        "pushfq\n"              // Push RFLAGS
+        "pop %%rax\n"           // Pop into RAX
+        "or $0x3000, %%rax\n"   // Set IOPL bits (bits 12-13)
+        "push %%rax\n"          // Push modified flags
+        "popfq\n"               // Pop into RFLAGS
+        ::: "rax", "memory"
+    );
+}
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     InitializeLib(ImageHandle, SystemTable);
@@ -42,10 +57,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     // Initialize graphics
     init_graphics(ST);
 
-    // Install GDT and IDT
-    gdt_install();
-    idt_install();
-
     // Exit boot services
     EFI_STATUS status = uefi_call_wrapper(BS->ExitBootServices, 2, ImageHandle, map_key);
     if (EFI_ERROR(status)) {
@@ -56,14 +67,74 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         }
     }
 
-    // We're now out of UEFI
-    // DON'T enable interrupts - we're using polling mode
+    // NOW we're in kernel mode - critical setup order:
     
-    // Clear the framebuffer to black
+    // 1. Enable I/O privilege IMMEDIATELY
+    enable_io_privilege();
+    
+    // 2. Install TSS (needed for I/O permissions)
+    tss_init();
+    
+    // 3. Install GDT (done in idt.c)
+    gdt_install();
+    
+    // 4. Now install IDT
+    idt_install();
+    
+    // 5. Initialize serial port (NOW I/O should work)
+    serial_init(COM1);
+    
+    // 6. Clear screen to show we're in kernel mode
     ClearScreen(0x000000);
-    SetCursorPos(0,0);
-    // Run the shell (which uses polling)
-    run_shell();
+    SetCursorPos(0, 0);
+    
+    printk(0xFFFFFFFF, 0x000000, "Kernel mode active\n");
+    
+    // Test if serial initialized
+    extern volatile int serial_initialized;
+    if (serial_initialized) {
+        printk(0xFF00FF00, 0x000000, "Serial port initialized successfully\n");
+        serial_write_string(COM1, "Serial port OK!\r\n");
+    } else {
+        printk(0xFFFF0000, 0x000000, "WARNING: Serial port init failed\n");
+    }
+    
+    // 7. Remap PIC
+    pic_remap();
+    
+    // 8. Enable interrupts
+    __asm__ volatile("sti");
+    
+    // Wait for timer interrupt
+    for (volatile int i = 0; i < 10000000; i++);
+    
+    // Check if timer interrupt fired
+    extern volatile uint32_t interrupt_vector;
+    printk(0xFFFFFF00, 0x000000, "Timer interrupts: %u\n", interrupt_vector);
+    
+    if (interrupt_vector == 0) {
+        printk(0xFFFF0000, 0x000000, "ERROR: No interrupts!\n");
+    } else {
+        printk(0xFF00FF00, 0x000000, "Interrupts working!\n");
+    }
+    
+    // 9. Unmask keyboard interrupt (IRQ1)
+    uint8_t mask = inb(0x21);
+    mask &= ~0x02;  // Unmask IRQ1
+    outb(0x21, mask);
+    
+    printk(0xFFFFFFFF, 0x000000, "Keyboard enabled\n");
+    
+    if (serial_initialized) {
+        serial_write_string(COM1, "\r\n=== AMQ OS Serial Console ===\r\n");
+        serial_write_string(COM1, "Boot complete. Ready for input!\r\n\r\n");
+    }
+    
+    printk(0xFFFFFFFF, 0x000000, "Starting shell...\n\n");
+    
+    // Initialize and run shell
+    init_shell();
 
+    // Should never reach here
     return EFI_SUCCESS;
 }
