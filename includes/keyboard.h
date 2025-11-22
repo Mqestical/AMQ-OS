@@ -1,27 +1,28 @@
-// keyboard.h
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 
 #include <stdint.h>
 
-#define KEYBOARD_BUFFER_SIZE 256
+// Keyboard scancodes
+#define KEY_ESC         0x01
+#define KEY_BACKSPACE   0x0E
+#define KEY_TAB         0x0F
+#define KEY_ENTER       0x1C
+#define KEY_LCTRL       0x1D
+#define KEY_LSHIFT      0x2A
+#define KEY_RSHIFT      0x36
+#define KEY_LALT        0x38
+#define KEY_SPACE       0x39
+#define KEY_CAPSLOCK    0x3A
 
-// Keyboard state
-typedef struct {
-    uint8_t shift_pressed;
-    uint8_t ctrl_pressed;
-    uint8_t alt_pressed;
-    uint8_t caps_lock;
-} KeyboardState;
+// External variables
+extern volatile uint8_t scancode_buffer[256];
+extern volatile uint8_t scancode_read_pos;
+extern volatile uint8_t scancode_write_pos;
+extern volatile uint32_t interrupt_counter;
+extern volatile uint8_t last_scancode;
 
-extern volatile uint8_t keyboard_buffer[KEYBOARD_BUFFER_SIZE];
-extern volatile uint32_t keyboard_read_pos;
-extern volatile uint32_t keyboard_write_pos;
-extern KeyboardState kb_state;
+// Function prototypes
+void process_keyboard_buffer(void);
 
-void keyboard_init(void);
-char scancode_to_ascii(uint8_t scancode);
-int keyboard_getchar(void);  // Non-blocking
-char keyboard_getchar_blocking(void);  // Blocking
-
-#endif
+#endif // KEYBOARD_H

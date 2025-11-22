@@ -86,8 +86,8 @@ void printk(uint32_t text_fg, uint32_t text_bg,
 
 
             void printcs(char *str);
-
-
+             void print_signed(long long num);
+                void print_unsigned(unsigned long long num, int base);
 
 // ---------------- SCREEN CONTROL -----------------------
 void SetCursorPos(uint32_t x, uint32_t y) NO_THROW;

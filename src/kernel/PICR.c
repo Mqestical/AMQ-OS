@@ -1,6 +1,6 @@
 #include <efi.h>
 #include <efilib.h>
-#include "in_out_b.h"
+#include "IO.h"
 void pic_remap() {
     // Start initialization
     outb(0x20, 0x11);
