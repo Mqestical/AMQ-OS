@@ -9,19 +9,21 @@
 #include "TSS.h"
 #include "serial.h"
 #include "IO.h"
+#include "vfs.h"
+#include "tinyfs.h"
+#include "ata.h"
 
 extern void pmm_init(EFI_MEMORY_DESCRIPTOR* map, UINTN desc_count, UINTN desc_size);
 extern void init_kernel_heap(void);
-extern char font8x8_basic[128][8];
+extern vfs_node_t* vfs_get_root(void);
 
-// Enable I/O privilege level
 static inline void enable_io_privilege(void) {
     __asm__ volatile(
-        "pushfq\n"              // Push RFLAGS
-        "pop %%rax\n"           // Pop into RAX
-        "or $0x3000, %%rax\n"   // Set IOPL bits (bits 12-13)
-        "push %%rax\n"          // Push modified flags
-        "popfq\n"               // Pop into RFLAGS
+        "pushfq\n"
+        "pop %%rax\n"
+        "or $0x3000, %%rax\n"
+        "push %%rax\n"
+        "popfq\n"
         ::: "rax", "memory"
     );
 }
@@ -29,7 +31,6 @@ static inline void enable_io_privilege(void) {
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     InitializeLib(ImageHandle, SystemTable);
 
-    // Clear screen and reset cursor
     uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
     uefi_call_wrapper(ST->ConOut->SetCursorPosition, 3, ST->ConOut, 0, 0);
 
@@ -50,11 +51,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     UINTN desc_count = memory_map_size / descriptor_size;
 
-    // Initialize memory
     pmm_init(memory_map, desc_count, descriptor_size);
     init_kernel_heap();
-
-    // Initialize graphics
     init_graphics(ST);
 
     // Exit boot services
@@ -67,74 +65,154 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         }
     }
 
-    // NOW we're in kernel mode - critical setup order:
-    
-    // 1. Enable I/O privilege IMMEDIATELY
+    // Kernel initialization
     enable_io_privilege();
-    
-    // 2. Install TSS (needed for I/O permissions)
     tss_init();
-    
-    // 3. Install GDT (done in idt.c)
     gdt_install();
-    
-    // 4. Now install IDT
     idt_install();
-    
-    // 5. Initialize serial port (NOW I/O should work)
     serial_init(COM1);
     
-    // 6. Clear screen to show we're in kernel mode
     ClearScreen(0x000000);
     SetCursorPos(0, 0);
     
-    printk(0xFFFFFFFF, 0x000000, "Kernel mode active\n");
+    char boot1[] = "AMQ OS Kernel v0.2\n";
+    char boot2[] = "==================\n\n";
+    printk(0xFFFFFFFF, 0x000000, boot1);
+    printk(0xFFFFFFFF, 0x000000, boot2);
     
-    // Test if serial initialized
     extern volatile int serial_initialized;
     if (serial_initialized) {
-        printk(0xFF00FF00, 0x000000, "Serial port initialized successfully\n");
-        serial_write_string(COM1, "Serial port OK!\r\n");
-    } else {
-        printk(0xFFFF0000, 0x000000, "WARNING: Serial port init failed\n");
+        char msg[] = "[OK] Serial initialized\n";
+        printk(0xFF00FF00, 0x000000, msg);
     }
     
-    // 7. Remap PIC
     pic_remap();
-    
-    // 8. Enable interrupts
     __asm__ volatile("sti");
     
-    // Wait for timer interrupt
-    for (volatile int i = 0; i < 10000000; i++);
+    for (volatile int i = 0; i < 5000000; i++);
     
-    // Check if timer interrupt fired
     extern volatile uint32_t interrupt_vector;
-    printk(0xFFFFFF00, 0x000000, "Timer interrupts: %u\n", interrupt_vector);
-    
-    if (interrupt_vector == 0) {
-        printk(0xFFFF0000, 0x000000, "ERROR: No interrupts!\n");
-    } else {
-        printk(0xFF00FF00, 0x000000, "Interrupts working!\n");
+    if (interrupt_vector > 0) {
+        char msg[] = "[OK] Interrupts working\n";
+        printk(0xFF00FF00, 0x000000, msg);
     }
     
-    // 9. Unmask keyboard interrupt (IRQ1)
     uint8_t mask = inb(0x21);
-    mask &= ~0x02;  // Unmask IRQ1
+    mask &= ~0x02;
     outb(0x21, mask);
     
-    printk(0xFFFFFFFF, 0x000000, "Keyboard enabled\n");
+    char kbd_msg[] = "[OK] Keyboard enabled\n";
+    printk(0xFF00FF00, 0x000000, kbd_msg);
     
-    if (serial_initialized) {
-        serial_write_string(COM1, "\r\n=== AMQ OS Serial Console ===\r\n");
-        serial_write_string(COM1, "Boot complete. Ready for input!\r\n\r\n");
+    // Initialize storage
+    char storage_header[] = "\nInitializing storage...\n";
+    printk(0xFFFFFFFF, 0x000000, storage_header);
+    ata_init();
+    
+    // Initialize VFS
+    char fs_header[] = "\nInitializing filesystem...\n";
+    printk(0xFFFFFFFF, 0x000000, fs_header);
+    vfs_init();
+    
+    // Create and register TinyFS
+    filesystem_t *tinyfs = tinyfs_create();
+    if (tinyfs) {
+        vfs_register_filesystem(tinyfs);
+        
+        char device[] = "ata0";
+        char fs_type[] = "tinyfs";
+        char mount_point[] = "/";
+        
+        // ALWAYS format on boot (for testing)
+        char format_msg[] = "[INFO] Formatting disk...\n";
+        printk(0xFFFFFF00, 0x000000, format_msg);
+        
+        if (tinyfs_format(device) == 0) {
+            char ok[] = "[OK] Disk formatted\n";
+            printk(0xFF00FF00, 0x000000, ok);
+            
+            // Wait for disk
+            for (volatile int i = 0; i < 10000000; i++);
+            
+            // Mount
+            char mount_msg[] = "[INFO] Mounting filesystem...\n";
+            printk(0xFFFFFF00, 0x000000, mount_msg);
+            
+            if (vfs_mount(fs_type, device, mount_point) == 0) {
+                char ok2[] = "[OK] Filesystem mounted at /\n";
+                printk(0xFF00FF00, 0x000000, ok2);
+                
+                // Verify root node
+                vfs_node_t *check_root = vfs_get_root();
+                if (check_root) {
+                    char root_ok[] = "[OK] Root node is valid (addr=%p)\n";
+                    printk(0xFF00FF00, 0x000000, root_ok, check_root);
+                    
+                    // Create initial structure
+                    char init_msg[] = "[INFO] Creating initial filesystem structure...\n";
+                    printk(0xFFFFFF00, 0x000000, init_msg);
+                    
+                    int result1 = vfs_mkdir("/home", FILE_READ | FILE_WRITE);
+                    char r1[] = "[INFO] mkdir /home returned: %d\n";
+                    printk(0xFF00FFFF, 0x000000, r1, result1);
+                    
+                    int result2 = vfs_mkdir("/bin", FILE_READ | FILE_WRITE);
+                    char r2[] = "[INFO] mkdir /bin returned: %d\n";
+                    printk(0xFF00FFFF, 0x000000, r2, result2);
+                    
+                    int result3 = vfs_mkdir("/etc", FILE_READ | FILE_WRITE);
+                    char r3[] = "[INFO] mkdir /etc returned: %d\n";
+                    printk(0xFF00FFFF, 0x000000, r3, result3);
+                    
+                    int result4 = vfs_create("/readme.txt", FILE_READ | FILE_WRITE);
+                    char r4[] = "[INFO] create /readme.txt returned: %d\n";
+                    printk(0xFF00FFFF, 0x000000, r4, result4);
+                    
+                    if (result4 == 0) {
+                        int fd = vfs_open("/readme.txt", FILE_WRITE);
+                        if (fd >= 0) {
+                            char welcome[] = "Welcome to AMQ OS!\n";
+                            vfs_write(fd, (uint8_t*)welcome, 19);
+                            vfs_close(fd);
+                            char ok3[] = "[OK] Wrote to readme.txt\n";
+                            printk(0xFF00FF00, 0x000000, ok3);
+                        }
+                    }
+                    
+                    char init_ok[] = "[OK] Initial filesystem created\n";
+                    printk(0xFF00FF00, 0x000000, init_ok);
+                } else {
+                    char root_err[] = "[ERROR] Root node is NULL!\n";
+                    printk(0xFFFF0000, 0x000000, root_err);
+                }
+            } else {
+                char err[] = "[ERROR] Mount failed\n";
+                printk(0xFFFF0000, 0x000000, err);
+            }
+        } else {
+            char err[] = "[ERROR] Format failed\n";
+            printk(0xFFFF0000, 0x000000, err);
+        }
+    } else {
+        char err[] = "[ERROR] Could not create TinyFS\n";
+        printk(0xFFFF0000, 0x000000, err);
     }
     
-    printk(0xFFFFFFFF, 0x000000, "Starting shell...\n\n");
+    if (serial_initialized) {
+        char serial1[] = "\r\n=== Boot Complete ===\r\n";
+        serial_write_string(COM1, serial1);
+    }
     
-    // Initialize and run shell
+    char boot_complete[] = "\n=== Boot Complete ===\n";
+    printk(0xFF00FFFF, 0x000000, boot_complete);
+    char shell_msg[] = "Starting shell...\n\n";
+    printk(0xFF00FFFF, 0x000000, shell_msg);
+    
+    for (volatile int i = 0; i < 5000000; i++);
+    
     init_shell();
+    
+    while(1) __asm__ volatile("hlt");
 
-    // Should never reach here
     return EFI_SUCCESS;
 }
