@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e
+
 echo "=== Compiling Bootloader and Kernel ==="
 
 # =========[ DIRECTORIES ]=========
@@ -25,16 +27,10 @@ BOOT_OBJ="$OBJDIR/bootloader.o"
 BOOT_SO="$SODIR/bootloader.so"
 
 gcc $CFLAGS -c "$BOOT_SRC" -o "$BOOT_OBJ"
-if [ $? -ne 0 ]; then echo "❌ Bootloader compilation failed"; exit 1; fi
-
-ld $LDFLAGS /usr/lib/crt0-efi-x86_64.o "$BOOT_OBJ" \
-   -o "$BOOT_SO" -lefi -lgnuefi
-if [ $? -ne 0 ]; then echo "❌ Bootloader linking failed"; exit 1; fi
-
+ld $LDFLAGS /usr/lib/crt0-efi-x86_64.o "$BOOT_OBJ" -o "$BOOT_SO" -lefi -lgnuefi
 objcopy -j .text -j .sdata -j .data -j .dynamic \
         -j .dynsym -j .rel -j .rela -j .reloc \
-        --target=efi-app-x86_64 \
-        "$BOOT_SO" BOOTX64.EFI
+        --target=efi-app-x86_64 "$BOOT_SO" BOOTX64.EFI
 
 echo "✓ Bootloader compiled: BOOTX64.EFI"
 
@@ -43,73 +39,93 @@ echo ""
 echo "--- Compiling Kernel (recursive *.c in src/kernel) ---"
 
 KERNEL_OBJS=""
-
-# recursively find C files inside src/kernel/
 while IFS= read -r SRC; do
     OBJ="$OBJDIR/$(basename "${SRC%.c}.o")"
     gcc $CFLAGS -c "$SRC" -o "$OBJ"
-    if [ $? -ne 0 ]; then echo "❌ Kernel compilation failed for $SRC"; exit 1; fi
     echo "  Compiled: $SRC → $OBJ"
     KERNEL_OBJS="$KERNEL_OBJS $OBJ"
 done < <(find src/kernel -type f -name "*.c")
 
-# link kernel
 KERNEL_SO="$SODIR/kernel.so"
-
-ld $LDFLAGS /usr/lib/crt0-efi-x86_64.o $KERNEL_OBJS \
-   -o "$KERNEL_SO" -lefi -lgnuefi
-if [ $? -ne 0 ]; then echo "❌ Kernel linking failed"; exit 1; fi
-
-# convert to real EFI
+ld $LDFLAGS /usr/lib/crt0-efi-x86_64.o $KERNEL_OBJS -o "$KERNEL_SO" -lefi -lgnuefi
 objcopy -j .text -j .sdata -j .data -j .dynamic \
         -j .dynsym -j .rel -j .rela -j .reloc \
-        --target=efi-app-x86_64 \
-        "$KERNEL_SO" kernel.efi
+        --target=efi-app-x86_64 "$KERNEL_SO" kernel.efi
 
 echo "✓ Kernel compiled: kernel.efi"
 
 # =========[ PART 3: DISK IMAGE ]=========
 echo ""
-echo "=== Updating Disk Image ==="
+echo "=== Creating EFI Disk Image ==="
 
-LOOP=$(sudo losetup -fP --show efi_boot.img)
-sudo mount "${LOOP}p1" /mnt/efi
+EFI_IMG="efi_boot.img"
+sudo rm -f "$EFI_IMG"
 
-sudo cp BOOTX64.EFI /mnt/efi/EFI/BOOT/BOOTX64.EFI
-sudo cp kernel.efi /mnt/efi/kernel.efi
+# Create 64MB raw FAT32 image
+dd if=/dev/zero of="$EFI_IMG" bs=1M count=64
+mkfs.vfat "$EFI_IMG"
 
+# Mount and copy files
+sudo mkdir -p /mnt/efi
+sudo mount -o loop "$EFI_IMG" /mnt/efi
+sudo mkdir -p /mnt/efi/EFI/BOOT
+sudo cp BOOTX64.EFI /mnt/efi/EFI/BOOT/
+sudo cp kernel.efi /mnt/efi/
 sudo umount /mnt/efi
-sudo losetup -d "$LOOP"
 
-echo "✓ Disk updated."
+echo "✓ Disk updated: $EFI_IMG"
+
+echo ""
+echo "=== Creating Data Disk for Filesystem ==="
+
+DATA_DISK="data_disk.img"
+DATA_VDI="${VDIDIR}/data_disk.vdi"
+
+# Create 10MB raw disk
+dd if=/dev/zero of="$DATA_DISK" bs=1M count=10
+
+# Convert to VDI (only if it doesn't exist)
+if [ ! -f "$DATA_VDI" ]; then
+    VBoxManage convertfromraw "$DATA_DISK" "$DATA_VDI" --format VDI
+    echo "✓ Data disk created: $DATA_VDI"
+else
+    echo "✓ Using existing data disk: $DATA_VDI"
+fi
+
+# Attach data disk to SATA Port 1
+VBoxManage storageattach "$VM_NAME" --storagectl "SATA" --port 1 --device 0 \
+    --type hdd --medium "$(pwd)/$DATA_VDI" 2>/dev/null || true
+
+echo "✓ Data disk attached to VM"
 
 # =========[ PART 4: VDI MANAGEMENT ]=========
 echo ""
 echo "=== Updating VirtualBox ==="
 
-VBoxManage controlvm "EFI_Test" poweroff 2>/dev/null
-sleep 2
+VM_NAME="EFI_Test"
 
-VBoxManage storageattach "EFI_Test" --storagectl "SATA" \
-    --port 0 --device 0 --medium none 2>/dev/null
+# Power off VM if running
+VBoxManage controlvm "$VM_NAME" poweroff 2>/dev/null || true
+sleep 1
+VBoxManage storageattach "$VM_NAME" --storagectl "SATA" --port 0 --device 0 --medium none 2>/dev/null || true
 
+# Convert raw image to VDI
 TIMESTAMP=$(date +%s)
 VDI="${VDIDIR}/efi_boot_${TIMESTAMP}.vdi"
+VBoxManage convertfromraw "$EFI_IMG" "$VDI" --format VDI
 
-VBoxManage convertfromraw efi_boot.img "$VDI" --format VDI
-VBoxManage storageattach "EFI_Test" \
-    --storagectl "SATA" --port 0 --device 0 \
+# Attach VDI to VM
+VBoxManage storageattach "$VM_NAME" --storagectl "SATA" --port 0 --device 0 \
     --type hdd --medium "$(pwd)/$VDI"
 
-echo "✓ VirtualBox updated"
-echo "  VDI stored in $VDIDIR"
-
-# clean up old VDIs (keep latest 3)
+# Cleanup old VDIs (keep latest 3)
 ls -t ${VDIDIR}/efi_boot_*.vdi | tail -n +4 | xargs -r rm -f
 
+echo "✓ VirtualBox updated: $VDI"
+
+# =========[ PART 5: START VM ]=========
 echo ""
 echo "=== Starting VM ==="
-VBoxManage startvm "EFI_Test"
-
+VBoxManage startvm "$VM_NAME"
 echo ""
 echo "✅ Done!"
