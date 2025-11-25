@@ -5,7 +5,7 @@
 #include "serial.h"
 #include "vfs.h"
 #include "ata.h"
-
+#include "tinyfs.h"
 #define CURSOR_BLINK_RATE 50000
 
 extern volatile uint32_t interrupt_counter;
@@ -73,6 +73,10 @@ void process_command(char* cmd) {
     char cmd10[] = "write ";
     char cmd11[] = "df";
     char cmd12[] = "memstats";
+    char cmd13[] = "format";
+    char cmd14[] = "cd ";
+    char cmd144[] = "cd";
+    char cmd15[] = "pwd";
     
     // --- Basic commands ---
     if (strcmp(cmd, cmd1) == 0) {
@@ -92,6 +96,9 @@ void process_command(char* cmd) {
         char msg10[] = "  write <file>   - Write to file\n";
         char msg11[] = "  df             - Filesystem stats\n";
         char msg12[] = "  memstats       - Memory stats\n";
+        char msg13[] = "  format         - Format disk (WARNING: DISK WILL BE WIPED!)\n";
+        char msg14[] = "  cd <dir>       - Change directory\n";
+        char msg15[] = "  pwd            - Print working directory\n";
         printk(0xFFFFFFFF, 0x000000, msg1);
         printk(0xFFFFFFFF, 0x000000, msg2);
         printk(0xFFFFFFFF, 0x000000, msg3);
@@ -104,6 +111,9 @@ void process_command(char* cmd) {
         printk(0xFFFFFFFF, 0x000000, msg10);
         printk(0xFFFFFFFF, 0x000000, msg11);
         printk(0xFFFFFFFF, 0x000000, msg12);
+        printk(0xFFFF0000, 0x000000, msg13);
+        printk(0xFFFFFFFF, 0x000000, msg14);
+        printk(0xFFFFFFFF, 0x000000, msg15);
     } 
     else if (strcmp(cmd, cmd3) == 0) {
         ClearScreen(0x000000);
@@ -120,8 +130,8 @@ void process_command(char* cmd) {
     
     // --- VFS commands ---
     else if (strcmp(cmd, cmd55) == 0) {
-        char path[] = "/";
-        vfs_list_directory(path);
+        const char* cwd = vfs_get_cwd_path();
+        vfs_list_directory(cwd);
     }
     else if (strncmp(cmd, cmd5, 3) == 0) {
         char* path = cmd + 3;
@@ -131,8 +141,23 @@ void process_command(char* cmd) {
         if (path[0] == '/') {
             strcpy_local(fullpath, path);
         } else {
-            fullpath[0] = '/';
-            strcpy_local(fullpath + 1, path);
+            const char* cwd = vfs_get_cwd_path();
+            strcpy_local(fullpath, cwd);
+            
+            // Add slash if not at root
+            int len = strlen_local(fullpath);
+            if (len > 0 && fullpath[len-1] != '/') {
+                fullpath[len] = '/';
+                fullpath[len+1] = '\0';
+            }
+            
+            // Append relative path
+            int i = strlen_local(fullpath);
+            int j = 0;
+            while (path[j] && i < 255) {
+                fullpath[i++] = path[j++];
+            }
+            fullpath[i] = '\0';
         }
         
         vfs_list_directory(fullpath);
@@ -145,8 +170,21 @@ void process_command(char* cmd) {
         if (filename[0] == '/') {
             strcpy_local(fullpath, filename);
         } else {
-            fullpath[0] = '/';
-            strcpy_local(fullpath + 1, filename);
+            const char* cwd = vfs_get_cwd_path();
+            strcpy_local(fullpath, cwd);
+            
+            int len = strlen_local(fullpath);
+            if (len > 0 && fullpath[len-1] != '/') {
+                fullpath[len] = '/';
+                fullpath[len+1] = '\0';
+            }
+            
+            int i = strlen_local(fullpath);
+            int j = 0;
+            while (filename[j] && i < 255) {
+                fullpath[i++] = filename[j++];
+            }
+            fullpath[i] = '\0';
         }
         
         int fd = vfs_open(fullpath, FILE_READ);
@@ -175,8 +213,21 @@ void process_command(char* cmd) {
         if (filename[0] == '/') {
             strcpy_local(fullpath, filename);
         } else {
-            fullpath[0] = '/';
-            strcpy_local(fullpath + 1, filename);
+            const char* cwd = vfs_get_cwd_path();
+            strcpy_local(fullpath, cwd);
+            
+            int len = strlen_local(fullpath);
+            if (len > 0 && fullpath[len-1] != '/') {
+                fullpath[len] = '/';
+                fullpath[len+1] = '\0';
+            }
+            
+            int i = strlen_local(fullpath);
+            int j = 0;
+            while (filename[j] && i < 255) {
+                fullpath[i++] = filename[j++];
+            }
+            fullpath[i] = '\0';
         }
         
         if (vfs_create(fullpath, FILE_READ | FILE_WRITE) == 0) {
@@ -195,8 +246,21 @@ void process_command(char* cmd) {
         if (dirname[0] == '/') {
             strcpy_local(fullpath, dirname);
         } else {
-            fullpath[0] = '/';
-            strcpy_local(fullpath + 1, dirname);
+            const char* cwd = vfs_get_cwd_path();
+            strcpy_local(fullpath, cwd);
+            
+            int len = strlen_local(fullpath);
+            if (len > 0 && fullpath[len-1] != '/') {
+                fullpath[len] = '/';
+                fullpath[len+1] = '\0';
+            }
+            
+            int i = strlen_local(fullpath);
+            int j = 0;
+            while (dirname[j] && i < 255) {
+                fullpath[i++] = dirname[j++];
+            }
+            fullpath[i] = '\0';
         }
         
         if (vfs_mkdir(fullpath, FILE_READ | FILE_WRITE) == 0) {
@@ -215,8 +279,21 @@ void process_command(char* cmd) {
         if (path[0] == '/') {
             strcpy_local(fullpath, path);
         } else {
-            fullpath[0] = '/';
-            strcpy_local(fullpath + 1, path);
+            const char* cwd = vfs_get_cwd_path();
+            strcpy_local(fullpath, cwd);
+            
+            int len = strlen_local(fullpath);
+            if (len > 0 && fullpath[len-1] != '/') {
+                fullpath[len] = '/';
+                fullpath[len+1] = '\0';
+            }
+            
+            int i = strlen_local(fullpath);
+            int j = 0;
+            while (path[j] && i < 255) {
+                fullpath[i++] = path[j++];
+            }
+            fullpath[i] = '\0';
         }
         
         if (vfs_unlink(fullpath) == 0) {
@@ -260,8 +337,21 @@ void process_command(char* cmd) {
             if (filename[0] == '/') {
                 strcpy_local(fullpath, filename);
             } else {
-                fullpath[0] = '/';
-                strcpy_local(fullpath + 1, filename);
+                const char* cwd = vfs_get_cwd_path();
+                strcpy_local(fullpath, cwd);
+                
+                int len = strlen_local(fullpath);
+                if (len > 0 && fullpath[len-1] != '/') {
+                    fullpath[len] = '/';
+                    fullpath[len+1] = '\0';
+                }
+                
+                int k = strlen_local(fullpath);
+                int m = 0;
+                while (filename[m] && k < 255) {
+                    fullpath[k++] = filename[m++];
+                }
+                fullpath[k] = '\0';
             }
             
             int fd = vfs_open(fullpath, FILE_WRITE);
@@ -312,6 +402,81 @@ void process_command(char* cmd) {
             printk(0xFFFF0000, 0x000000, err);
         }
     }
+    else if (strcmp(cmd, cmd13) == 0) {
+        char warning[] = "DISK HAS BEEN WIPED!\n";
+        printk(0xFFFF0000, 0x000000, warning);
+        
+        // Unmount first
+        char unmount_msg[] = "Unmounting filesystem...\n";
+        printk(0xFFFFFF00, 0x000000, unmount_msg);
+        
+        vfs_node_t *root = vfs_get_root();
+        if (root && root->fs && root->fs->ops && root->fs->ops->unmount) {
+            root->fs->ops->unmount(root->fs);
+        }
+        
+        // Format
+        char device[] = "ata0";
+        if (tinyfs_format(device) != 0) {
+            char err[] = "[ERROR] Format failed\n";
+            printk(0xFFFF0000, 0x000000, err);
+            for (;;) {}
+        }
+        
+        // Remount
+        char mount_msg[] = "Remounting filesystem...\n";
+        printk(0xFFFFFF00, 0x000000, mount_msg);
+        
+        char fs_type[] = "tinyfs";
+        char mount_point[] = "/";
+        
+        if (vfs_mount(fs_type, device, mount_point) != 0) {
+            char err[] = "[ERROR] Remount failed\n";
+            printk(0xFFFF0000, 0x000000, err);
+            for (;;) {}
+        }
+        
+        char success[] = "Format complete - filesystem remounted\n";
+        printk(0xFF00FF00, 0x000000, success);
+    }
+    else if (strcmp(cmd, cmd144) == 0) {
+        // No argument - go to root
+        char root[] = "/";
+        if (vfs_chdir(root) == 0) {
+            char msg[] = "%s\n";
+            printk(0xFF00FF00, 0x000000, msg, vfs_get_cwd_path());
+        }
+    }
+    else if (strncmp(cmd, cmd14, 3) == 0) {
+        // Extract directory name
+        char* dir_arg = cmd + 3;
+        char dir[256];
+        int i = 0;
+        
+        while (dir_arg[i] && dir_arg[i] != ' ' && i < 255) {
+            dir[i] = dir_arg[i];
+            i++;
+        }
+        dir[i] = '\0';
+        
+        if (dir[0] == '\0') {
+            // Empty argument after "cd " - go to root
+            char root[] = "/";
+            if (vfs_chdir(root) == 0) {
+                char msg[] = "%s\n";
+                printk(0xFF00FF00, 0x000000, msg, vfs_get_cwd_path());
+            }
+        } else {
+            if (vfs_chdir(dir) == 0) {
+                char msg[] = "%s\n";
+                printk(0xFF00FF00, 0x000000, msg, vfs_get_cwd_path());
+            }
+        }
+    }
+    else if (strcmp(cmd, cmd15) == 0) {
+        char msg[] = "%s\n";
+        printk(0xFFFFFFFF, 0x000000, msg, vfs_get_cwd_path());
+    }
     else {
         char err1[] = "Unknown command: %s\n";
         char err2[] = "Try 'help' for available commands\n";
@@ -325,13 +490,15 @@ void run_text_demo(void) {
     char title[] = "    AMQ Operating System v0.2\n";
     char line2[] = "==========================================\n";
     char welcome[] = "Welcome! Type 'help' for commands.\n\n";
-    char prompt[] = "> ";
     
     printk(0x00FFFFFF, 0x000000, line1);
     printk(0x00FFFFFF, 0x000000, title);
     printk(0x00FFFFFF, 0x000000, line2);
     printk(0xFFFFFFFF, 0x000000, welcome);
-    printk(0xFF00FF00, 0x000000, prompt);
+    
+    // Show initial prompt with current directory
+    char prompt_fmt[] = "%s> ";
+    printk(0xFF00FF00, 0x000000, prompt_fmt, vfs_get_cwd_path());
 
     int cursor_visible = 1;
     int cursor_timer = 0;
@@ -349,8 +516,8 @@ void run_text_demo(void) {
             // Process the command
             process_command(input);
             
-            // Show prompt again
-            printk(0xFF00FF00, 0x000000, prompt);
+            // Show prompt again with current directory
+            printk(0xFF00FF00, 0x000000, prompt_fmt, vfs_get_cwd_path());
         }
         
         // Blink cursor
@@ -367,6 +534,5 @@ void run_text_demo(void) {
 void init_shell(void) {
     ClearScreen(0x000000);
     SetCursorPos(0, 0);
-    //while(1) __asm__ volatile("hlt");
     run_text_demo();
 }

@@ -27,7 +27,9 @@ BOOT_OBJ="$OBJDIR/bootloader.o"
 BOOT_SO="$SODIR/bootloader.so"
 
 gcc $CFLAGS -c "$BOOT_SRC" -o "$BOOT_OBJ"
+
 ld $LDFLAGS /usr/lib/crt0-efi-x86_64.o "$BOOT_OBJ" -o "$BOOT_SO" -lefi -lgnuefi
+
 objcopy -j .text -j .sdata -j .data -j .dynamic \
         -j .dynsym -j .rel -j .rela -j .reloc \
         --target=efi-app-x86_64 "$BOOT_SO" BOOTX64.EFI
@@ -47,7 +49,9 @@ while IFS= read -r SRC; do
 done < <(find src/kernel -type f -name "*.c")
 
 KERNEL_SO="$SODIR/kernel.so"
+
 ld $LDFLAGS /usr/lib/crt0-efi-x86_64.o $KERNEL_OBJS -o "$KERNEL_SO" -lefi -lgnuefi
+
 objcopy -j .text -j .sdata -j .data -j .dynamic \
         -j .dynsym -j .rel -j .rela -j .reloc \
         --target=efi-app-x86_64 "$KERNEL_SO" kernel.efi
@@ -75,6 +79,7 @@ sudo umount /mnt/efi
 
 echo "✓ Disk updated: $EFI_IMG"
 
+# =========[ PART 4: DATA DISK ]=========
 echo ""
 echo "=== Creating Data Disk for Filesystem ==="
 
@@ -92,13 +97,9 @@ else
     echo "✓ Using existing data disk: $DATA_VDI"
 fi
 
-# Attach data disk to SATA Port 1
-VBoxManage storageattach "$VM_NAME" --storagectl "SATA" --port 1 --device 0 \
-    --type hdd --medium "$(pwd)/$DATA_VDI" 2>/dev/null || true
+echo "✓ Data disk ready: $DATA_VDI"
 
-echo "✓ Data disk attached to VM"
-
-# =========[ PART 4: VDI MANAGEMENT ]=========
+# =========[ PART 5: VDI MANAGEMENT ]=========
 echo ""
 echo "=== Updating VirtualBox ==="
 
@@ -114,16 +115,20 @@ TIMESTAMP=$(date +%s)
 VDI="${VDIDIR}/efi_boot_${TIMESTAMP}.vdi"
 VBoxManage convertfromraw "$EFI_IMG" "$VDI" --format VDI
 
-# Attach VDI to VM
+# Attach boot VDI to VM
 VBoxManage storageattach "$VM_NAME" --storagectl "SATA" --port 0 --device 0 \
     --type hdd --medium "$(pwd)/$VDI"
+
+# Attach data disk to SATA Port 1 (with absolute path)
+VBoxManage storageattach "$VM_NAME" --storagectl "SATA" --port 1 --device 0 \
+    --type hdd --medium "$(pwd)/$DATA_VDI" 2>/dev/null || true
 
 # Cleanup old VDIs (keep latest 3)
 ls -t ${VDIDIR}/efi_boot_*.vdi | tail -n +4 | xargs -r rm -f
 
 echo "✓ VirtualBox updated: $VDI"
 
-# =========[ PART 5: START VM ]=========
+# =========[ PART 6: START VM ]=========
 echo ""
 echo "=== Starting VM ==="
 VBoxManage startvm "$VM_NAME"

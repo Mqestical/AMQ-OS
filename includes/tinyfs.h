@@ -19,14 +19,14 @@ typedef struct {
     uint32_t free_blocks;
 } tinyfs_superblock_t;
 
-// Directory entry
 typedef struct {
     char name[TINYFS_MAX_FILENAME];
     uint32_t first_block;
     uint32_t size;
     uint8_t is_directory;
     uint8_t used;
-    uint8_t reserved[2];
+    uint32_t parent_inode;  //inode of parent directory (0 for root)
+    uint8_t padding[2];     // keep alignment
 } tinyfs_dirent_t;
 
 // In-memory filesystem data
@@ -40,5 +40,5 @@ typedef struct {
 // Function prototypes
 int tinyfs_format(const char *device);
 filesystem_t* tinyfs_create(void);
-
+static int strcmp_safe(const char *s1, const char *s2);
 #endif
