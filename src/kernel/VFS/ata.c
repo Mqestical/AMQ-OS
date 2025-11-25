@@ -214,11 +214,11 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     }
     
     char msg1[] = "[ATA] write_sectors: lba=%u, count=%u\n";
-    printk(0xFF00FFFF, 0x000000, msg1, lba, sector_count);
+  //  printk(0xFF00FFFF, 0x000000, msg1, lba, sector_count);
     
     // Wait for drive ready
     char msg2[] = "[ATA] write_sectors: Waiting for ready...\n";
-    printk(0xFF00FFFF, 0x000000, msg2);
+   // printk(0xFF00FFFF, 0x000000, msg2);
     
     if (ata_wait_ready() != 0) {
         char err[] = "[ATA] write_sectors: Drive not ready (1)\n";
@@ -227,7 +227,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     }
     
     char msg3[] = "[ATA] write_sectors: Drive ready\n";
-    printk(0xFF00FFFF, 0x000000, msg3);
+   // printk(0xFF00FFFF, 0x000000, msg3);
     
     // Select drive and LBA mode
     outb(ATA_PRIMARY_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));
@@ -249,7 +249,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     outb(ATA_PRIMARY_LBA_HI, (uint8_t)(lba >> 16));
     
     char msg4[] = "[ATA] write_sectors: Sending WRITE command...\n";
-    printk(0xFF00FFFF, 0x000000, msg4);
+    // printk(0xFF00FFFF, 0x000000, msg4);
     
     // Send write command
     outb(ATA_PRIMARY_COMMAND, ATA_CMD_WRITE_SECTORS);
@@ -260,7 +260,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     // Write each sector
     for (int i = 0; i < sector_count; i++) {
         char msg5[] = "[ATA] write_sectors: Writing sector %d...\n";
-        printk(0xFF00FFFF, 0x000000, msg5, i);
+       // printk(0xFF00FFFF, 0x000000, msg5, i);
         
         // Wait for data request
         if (ata_wait_drq() != 0) {
@@ -294,7 +294,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     }
     
     char msg6[] = "[ATA] write_sectors: Flushing cache...\n";
-    printk(0xFF00FFFF, 0x000000, msg6);
+   // printk(0xFF00FFFF, 0x000000, msg6);
     
     // Flush cache
     outb(ATA_PRIMARY_COMMAND, 0xE7);
@@ -309,7 +309,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     }
     
     char msg7[] = "[ATA] write_sectors: SUCCESS\n";
-    printk(0xFF00FF00, 0x000000, msg7);
+    //printk(0xFF00FF00, 0x000000, msg7);
     
     return 0;
 }

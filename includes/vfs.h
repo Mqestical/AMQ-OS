@@ -112,4 +112,15 @@ int vfs_unlink(const char *path);
 // Filesystem statistics
 int vfs_statfs(const char *path, fs_stats_t *stats);
 vfs_node_t* vfs_get_root(void);
+static int str_len(const char *str);
+void vfs_debug_root(void);
+int vfs_register_filesystem(filesystem_t *fs);
+
+// Change Directory Functions
+
+vfs_node_t* vfs_get_cwd(void);
+const char* vfs_get_cwd_path(void);
+int vfs_chdir(const char *path);
+
+
 #endif // VFS_H
