@@ -1,3 +1,5 @@
+// start.c - SAFE INITIALIZATION ORDER
+
 #include <efi.h>
 #include <efilib.h>
 #include "print.h"
@@ -13,6 +15,12 @@
 #include "tinyfs.h"
 #include "ata.h"
 #include "definitions.h"
+#include "process.h"
+#include "irq.h"
+#include "fg.h"
+#include "syscall.h"
+
+extern void syscall_register_all(void);
 extern void pmm_init(EFI_MEMORY_DESCRIPTOR* map, UINTN desc_count, UINTN desc_size);
 extern void init_kernel_heap(void);
 extern vfs_node_t* vfs_get_root(void);
@@ -54,7 +62,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     pmm_init(memory_map, desc_count, descriptor_size);
     init_kernel_heap();
 
-      if (stackalloc(16, 4096) != EXIT_SUCCESS) {
+    if (stackalloc(16, 4096) != EXIT_SUCCESS) {
         CHAR16 err[] = L"Failed to allocate kernel stack!\r\n";
         uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err);
         goto boot_failed;
@@ -72,166 +80,172 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         }
     }
 
-    // Kernel initialization
-    enable_io_privilege();
-    tss_init();
-    gdt_install();
-    idt_install();
-    serial_init(COM1);
-
-    ClearScreen(0x000000);
+    // ========================================================================
+    // PHASE 1: CRITICAL SYSTEM SETUP (NO INTERRUPTS)
+    // ========================================================================
+    
+     ClearScreen(0x000000);
     SetCursorPos(0, 0);
 
     char boot1[] = "AMQ OS Kernel v0.2\n";
     char boot2[] = "==================\n\n";
     printk(0xFFFFFFFF, 0x000000, boot1);
     printk(0xFFFFFFFF, 0x000000, boot2);
-char stack_msg[] = "[OK] Stack allocated: base=0x%llx, top=0x%llx, size=%llu KB\n";
-    printk(0xFF00FF00, 0x000000, stack_msg, kernel_stack_base, kernel_stack_top, 
-       (kernel_stack_top - kernel_stack_base) / 1024);
-    extern volatile int serial_initialized;
-    if (serial_initialized) {
-        char msg[] = "[OK] Serial initialized\n";
-        printk(0xFF00FF00, 0x000000, msg);
-    }
-
+    
+    enable_io_privilege();
+    printk(0xFF00FF00, 0x000000, "[OK] I/O privileges enabled\n");
+    
+    printk(0xFF00FF00, 0x000000, "[OK] Stack: base=0x%llx, top=0x%llx\n", 
+           kernel_stack_base, kernel_stack_top);
+    
+    tss_init();
+    printk(0xFF00FF00, 0x000000, "[OK] TSS initialized\n");
+    
+    gdt_install();
+    printk(0xFF00FF00, 0x000000, "[OK] GDT installed\n");
+    
     pic_remap();
-    __asm__ volatile("sti");
+    printk(0xFF00FF00, 0x000000, "[OK] PIC remapped\n");
+    
+    idt_install();
+    printk(0xFF00FF00, 0x000000, "[OK] IDT installed\n");
+    
+    printk(0xFFFFFF00, 0x000000, "\n[INIT] Initializing syscall interface...\n");
+    
+    // 1. Initialize MSRs and syscall entry point
+    syscall_init();
+    
+    // 2. Register all syscall handlers
+    syscall_register_all();
+    
+    printk(0xFF00FF00, 0x000000, "[OK] Syscalls ready\n");
 
-    for (volatile int i = 0; i < 5000000; i++);
-
-    extern volatile uint32_t interrupt_vector;
-    if (interrupt_vector > 0) {
-        char msg[] = "[OK] Interrupts working\n";
-        printk(0xFF00FF00, 0x000000, msg);
+    serial_init(COM1);
+    printk(0xFF00FF00, 0x000000, "[OK] Serial initialized\n");
+    
+    // ========================================================================
+    // CRITICAL: Initialize job system BEFORE enabling interrupts
+    // ========================================================================
+    
+    printk(0xFFFFFF00, 0x000000, "\n[INIT] Initializing job system...\n");
+    jobs_init();
+    jobs_set_active(0);  // Keep it DISABLED
+    printk(0xFF00FF00, 0x000000, "[OK] Job system initialized (INACTIVE)\n");
+    
+    // ========================================================================
+    // NOW enable timer
+    // ========================================================================
+    
+    printk(0xFFFFFF00, 0x000000, "\n[INIT] Enabling IRQ system...\n");
+    irq_init();
+    printk(0xFF00FF00, 0x000000, "[OK] IRQ system enabled\n");
+    
+    // ========================================================================
+    // CRITICAL: Test timer for a few seconds
+    // ========================================================================
+    
+    printk(0xFFFFFF00, 0x000000, "\n[TEST] Testing timer for 3 seconds...\n");
+    
+    extern volatile uint64_t timer_ticks;
+    uint64_t start_ticks = timer_ticks;
+    
+    for (int sec = 1; sec <= 3; sec++) {
+        // Wait 1 second
+        uint64_t target = start_ticks + (sec * 1000);
+        while (timer_ticks < target) {
+            __asm__ volatile("hlt");  // Wait for interrupt
+        }
+        
+        printk(0xFF00FF00, 0x000000, "[TEST] Second %d: timer_ticks=%llu\n", 
+               sec, timer_ticks);
     }
-
+    
+    printk(0xFF00FF00, 0x000000, "[OK] Timer is working correctly!\n");
+    
+    // ========================================================================
+    // Enable keyboard
+    // ========================================================================
     
     uint8_t mask = inb(0x21);
     mask &= ~0x02;
     outb(0x21, mask);
+    printk(0xFF00FF00, 0x000000, "[OK] Keyboard enabled\n");
 
-    char kbd_msg[] = "[OK] Keyboard enabled\n";
-    printk(0xFF00FF00, 0x000000, kbd_msg);
+    // ========================================================================
+    // Storage & Filesystem
+    // ========================================================================
 
-    // Initialize storage
-    char storage_header[] = "\nInitializing storage...\n";
-    printk(0xFFFFFFFF, 0x000000, storage_header);
+    printk(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing storage...\n");
     ata_init();
+    printk(0xFF00FF00, 0x000000, "[OK] ATA initialized\n");
 
-    // Initialize VFS
-    char fs_header[] = "\nInitializing filesystem...\n";
-    printk(0xFFFFFFFF, 0x000000, fs_header);
-
-    char vfs1[] = "[KERNEL] Initializing VFS...\n";
-    printk(0xFFFFFF00, 0x000000, vfs1);
+    printk(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing filesystem...\n");
     vfs_init();
-
-    char vfs2[] = "[KERNEL] Creating TinyFS instance...\n";
-    printk(0xFFFFFF00, 0x000000, vfs2);
 
     filesystem_t *tinyfs = tinyfs_create();
     if (!tinyfs) {
-        char err[] = "[ERROR] Failed to create TinyFS instance\n";
-        printk(0xFFFF0000, 0x000000, err);
+        printk(0xFFFF0000, 0x000000, "[ERROR] Failed to create TinyFS\n");
         goto boot_failed;
     }
 
-    char fmt1[] = "[OK] TinyFS instance created at %p\n";
-    printk(0xFF00FF00, 0x000000, fmt1, tinyfs);
-
-    char fmt2[] = "[DEBUG] tinyfs->name = '%s'\n";
-    printk(0xFFFFFF00, 0x000000, fmt2, tinyfs->name);
-
-    char fmt3[] = "[DEBUG] tinyfs->ops = %p\n";
-    printk(0xFFFFFF00, 0x000000, fmt3, tinyfs->ops);
-
-    char reg1[] = "[KERNEL] Registering TinyFS with VFS...\n";
-    printk(0xFFFFFF00, 0x000000, reg1);
-    int reg_result = vfs_register_filesystem(tinyfs);
-
-    char check_after[] = "[DEBUG AFTER REG] tinyfs->name = '%s' at %p\n";
-printk(0xFFFFFF00, 0x000000, check_after, tinyfs->name, tinyfs->name);
-
-   // char dbg_reg[] = "[DEBUG] vfs_register_filesystem returned %d\n";
-    //printk(0xFFFFFF00, 0x000000, dbg_reg, reg_result);
-
-    if (reg_result != 0) {
-        char err[] = "[ERROR] Failed to register TinyFS\n";
-        printk(0xFFFF0000, 0x000000, err);
+    if (vfs_register_filesystem(tinyfs) != 0) {
+        printk(0xFFFF0000, 0x000000, "[ERROR] Failed to register TinyFS\n");
         goto boot_failed;
     }
-
-    char ok_reg[] = "[OK] TinyFS registered\n";
-    printk(0xFF00FF00, 0x000000, ok_reg);
-
-    // Format disk
-    char format_msg[] = "[INFO] Formatting disk...\n";
-    printk(0xFFFFFF00, 0x000000, format_msg);
 
     char device[] = "ata0";
+    printk(0xFFFFFF00, 0x000000, "[INIT] Formatting disk...\n");
+    
     if (tinyfs_format(device) != 0) {
-        char err[] = "[ERROR] Format failed\n";
-        printk(0xFFFF0000, 0x000000, err);
+        printk(0xFFFF0000, 0x000000, "[ERROR] Format failed\n");
         goto boot_failed;
     }
 
-    char ok_fmt[] = "[OK] Disk formatted\n";
-    printk(0xFF00FF00, 0x000000, ok_fmt);
-
+    printk(0xFF00FF00, 0x000000, "[OK] Disk formatted\n");
+    
     for (volatile int i = 0; i < 10000000; i++);
 
-    // Mount filesystem
-    char mount_msg[] = "[INFO] Mounting filesystem...\n";
-    printk(0xFFFFFF00, 0x000000, mount_msg);
+    printk(0xFFFFFF00, 0x000000, "[INIT] Mounting filesystem...\n");
 
     char fs_type[] = "tinyfs";
     char mount_point[] = "/";
 
     if (vfs_mount(fs_type, device, mount_point) != 0) {
-        char err[] = "[ERROR] Mount failed\n";
-        printk(0xFFFF0000, 0x000000, err);
+        printk(0xFFFF0000, 0x000000, "[ERROR] Mount failed\n");
         goto boot_failed;
     }
 
-    char ok_mount[] = "[OK] Filesystem mounted at /\n";
-    printk(0xFF00FF00, 0x000000, ok_mount);
+    printk(0xFF00FF00, 0x000000, "[OK] Filesystem mounted\n");
 
-    vfs_debug_root();
+    // ========================================================================
+    // Process/Thread System
+    // ========================================================================
 
-    char test_msg[] = "\n[TEST] Testing filesystem operations...\n";
-    printk(0xFFFFFF00, 0x000000, test_msg);
-    char home[] = "/home";
-    if (vfs_mkdir(home, FILE_READ | FILE_WRITE) == 0) {
-        char msg[] = "[OK] Created /home directory\n";
-        printk(0xFF00FF00, 0x000000, msg);
-    } else {
-        char msg[] = "[FAIL] Could not create /home\n";
-        printk(0xFFFF0000, 0x000000, msg);
+    printk(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing processes...\n");
+    process_init();
+    scheduler_init();
+
+    // Initialize background thread data
+    extern cmd_thread_data_t bg_thread_data[MAX_JOBS];
+    for (int i = 0; i < MAX_JOBS; i++) {
+        bg_thread_data[i].job_id = 0;
+        bg_thread_data[i].command[0] = '\0';
     }
-    char bin[] = "/bin";
-    if (vfs_mkdir(bin, FILE_READ | FILE_WRITE) == 0) {
-        char msg[] = "[OK] Created /bin directory\n";
-        printk(0xFF00FF00, 0x000000, msg);
-    } else {
-        char msg[] = "[FAIL] Could not create /bin\n";
-        printk(0xFFFF0000, 0x000000, msg);
-    }
-    char readme[] = "/readme.txt";
-    if (vfs_create(readme, FILE_READ | FILE_WRITE) == 0) {
-        char msg[] = "[OK] Created /readme.txt\n";
-        printk(0xFF00FF00, 0x000000, msg);
 
-    char lst_msg[] = "\nFinal root directory contents:\n";
-    printk(0xFFFFFFFF, 0x000000, lst_msg);
-    vfs_list_directory("/");
+    init_kernel_threads();
+    printk(0xFF00FF00, 0x000000, "[OK] Threads initialized (scheduler DISABLED)\n");
 
-    char boot_complete[] = "\n=== Boot Complete ===\n";
-    printk(0xFF00FFFF, 0x000000, boot_complete);
+    // ========================================================================
+    // Enable job tracking and start shell
+    // ========================================================================
 
-    char shell_msg[] = "Starting shell...\n\n";
-    printk(0xFF00FFFF, 0x000000, shell_msg);
+    printk(0xFF00FFFF, 0x000000, "\n=== Boot Complete ===\n");
+    
+    jobs_set_active(1);
+    printk(0xFF00FF00, 0x000000, "[OK] Job tracking ENABLED\n");
 
+    printk(0xFF00FFFF, 0x000000, "\nStarting shell...\n\n");
+    
     for (volatile int i = 0; i < 5000000; i++);
 
     init_shell();
@@ -239,14 +253,8 @@ printk(0xFFFFFF00, 0x000000, check_after, tinyfs->name, tinyfs->name);
     while(1) __asm__ volatile("hlt");
 
 boot_failed:
-    char fail1[] = "\n=== BOOT FAILED ===\n";
-    printk(0xFFFF0000, 0x000000, fail1);
-
-    char fail2[] = "System halted.\n";
-    printk(0xFFFF0000, 0x000000, fail2);
-
+    printk(0xFFFF0000, 0x000000, "\n=== BOOT FAILED ===\n");
     while(1) __asm__ volatile("hlt");
 
     return EFI_SUCCESS;
-    }   
 }
