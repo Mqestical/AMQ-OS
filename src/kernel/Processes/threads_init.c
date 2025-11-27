@@ -1,5 +1,6 @@
 #include "process.h"
 #include "print.h"
+#include "string_helpers.h"
 
 // Thread entry point counter for demonstration
 static volatile uint64_t thread_tick_counter = 0;
@@ -19,7 +20,6 @@ void idle_thread_entry(void) {
         thread_tick_counter++;
     }
 }
-
 
 // ============================================================================
 // PERIODIC TASK THREAD - Demonstrates real-time periodic behavior
@@ -56,6 +56,7 @@ void high_priority_entry(void) {
         thread_yield();
     }
 }
+
 // ============================================================================
 // BACKGROUND WORKER - Low priority, long deadline
 // ============================================================================
@@ -73,6 +74,7 @@ void background_worker_entry(void) {
         thread_yield();
     }
 }
+
 // ============================================================================
 // MONITORING THREAD - Watches system state
 // ============================================================================
@@ -88,142 +90,86 @@ void monitor_thread_entry(void) {
         thread_yield();
     }
 }
+
 // ============================================================================
 // INITIALIZE ALL THREADS
 // ============================================================================
 void init_kernel_threads(void) {
-    char header[] = "\n=== Initializing Kernel Threads ===\n";
-    printk(0xFF00FFFF, 0x000000, header);
+    PRINT(0xFF00FFFF, 0x000000, "\n=== Initializing Kernel Threads ===\n");
     
     // Create init process (if not already created)
-    char init[] = "init";
-    int init_pid = process_create(init, 0xFFFF000000000000);
+    int init_pid = process_create("init", 0xFFFF000000000000);
     if (init_pid < 0) {
-        char err[] = "[ERROR] Failed to create init process\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create init process\n");
         return;
     }
     
-    // CRITICAL FIX: Use MUCH larger stacks (16KB minimum)
-    // The 8KB stacks were overflowing with all the printk calls
     const uint32_t THREAD_STACK_SIZE = 16384;  // 16KB per thread
     
-    // Thread parameters (runtime, deadline, period) in nanoseconds
-    // SCHED_DEADLINE uses: runtime <= deadline <= period
-    
-    // 1. Idle thread - lowest priority (longest deadline)
-    //    Runtime: 10ms, Deadline: 1000ms, Period: 1000ms
-    char msg1[] = "[THREAD] Creating idle thread...\n";
-    printk(0xFFFFFF00, 0x000000, msg1);
-    
+    // 1. Idle thread
+    PRINT(0xFFFFFF00, 0x000000, "[THREAD] Creating idle thread...\n");
     int idle_tid = thread_create(init_pid, idle_thread_entry, 
-                                  THREAD_STACK_SIZE,       // 16KB stack
-                                  10000000,                // 10ms runtime
-                                  1000000000,              // 1000ms deadline
-                                  1000000000);             // 1000ms period
+                                  THREAD_STACK_SIZE, 10000000, 1000000000, 1000000000);
     if (idle_tid > 0) {
-        char msg[] = "[OK] Created idle thread (TID=%d)\n";
-        printk(0xFF00FF00, 0x000000, msg, idle_tid);
+        PRINT(0xFF00FF00, 0x000000, "[OK] Created idle thread (TID=%d)\n", idle_tid);
     } else {
-        char err[] = "[ERROR] Failed to create idle thread\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create idle thread\n");
         return;
     }
     
-    // Small delay to let things settle
     for (volatile int i = 0; i < 1000000; i++);
     
-    // 2. High priority thread - shortest deadline
-    //    Runtime: 5ms, Deadline: 50ms, Period: 100ms
-    char msg2[] = "[THREAD] Creating high-priority thread...\n";
-    printk(0xFFFFFF00, 0x000000, msg2);
-    
+    // 2. High priority thread
+    PRINT(0xFFFFFF00, 0x000000, "[THREAD] Creating high-priority thread...\n");
     int high_tid = thread_create(init_pid, high_priority_entry,
-                                  THREAD_STACK_SIZE,       // 16KB stack
-                                  5000000,                 // 5ms runtime
-                                  50000000,                // 50ms deadline
-                                  100000000);              // 100ms period
-    
+                                  THREAD_STACK_SIZE, 5000000, 50000000, 100000000);
     if (high_tid > 0) {
-        char msg[] = "[OK] Created high-priority thread (TID=%d)\n";
-        printk(0xFF00FF00, 0x000000, msg, high_tid);
+        PRINT(0xFF00FF00, 0x000000, "[OK] Created high-priority thread (TID=%d)\n", high_tid);
     } else {
-        char err[] = "[ERROR] Failed to create high-priority thread\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create high-priority thread\n");
         return;
     }
     
-    // Small delay
     for (volatile int i = 0; i < 1000000; i++);
     
-    // 3. Periodic task - medium priority
-    //    Runtime: 10ms, Deadline: 200ms, Period: 200ms
-    char msg3[] = "[THREAD] Creating periodic thread...\n";
-    printk(0xFFFFFF00, 0x000000, msg3);
-    
+    // 3. Periodic task thread
+    PRINT(0xFFFFFF00, 0x000000, "[THREAD] Creating periodic thread...\n");
     int periodic_tid = thread_create(init_pid, periodic_task_entry,
-                                      THREAD_STACK_SIZE,   // 16KB stack
-                                      10000000,            // 10ms runtime
-                                      200000000,           // 200ms deadline
-                                      200000000);          // 200ms period
+                                      THREAD_STACK_SIZE, 10000000, 200000000, 200000000);
     if (periodic_tid > 0) {
-        char msg[] = "[OK] Created periodic thread (TID=%d)\n";
-        printk(0xFF00FF00, 0x000000, msg, periodic_tid);
+        PRINT(0xFF00FF00, 0x000000, "[OK] Created periodic thread (TID=%d)\n", periodic_tid);
     } else {
-        char err[] = "[ERROR] Failed to create periodic thread\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create periodic thread\n");
         return;
     }
     
-    // Small delay
     for (volatile int i = 0; i < 1000000; i++);
     
-    // 4. Background worker - low priority
-    //    Runtime: 20ms, Deadline: 500ms, Period: 500ms
-    char msg4[] = "[THREAD] Creating background worker...\n";
-    printk(0xFFFFFF00, 0x000000, msg4);
-    
+    // 4. Background worker
+    PRINT(0xFFFFFF00, 0x000000, "[THREAD] Creating background worker...\n");
     int bg_tid = thread_create(init_pid, background_worker_entry,
-                                THREAD_STACK_SIZE,         // 16KB stack
-                                20000000,                  // 20ms runtime
-                                500000000,                 // 500ms deadline
-                                500000000);                // 500ms period
+                                THREAD_STACK_SIZE, 20000000, 500000000, 500000000);
     if (bg_tid > 0) {
-        char msg[] = "[OK] Created background worker (TID=%d)\n";
-        printk(0xFF00FF00, 0x000000, msg, bg_tid);
+        PRINT(0xFF00FF00, 0x000000, "[OK] Created background worker (TID=%d)\n", bg_tid);
     } else {
-        char err[] = "[ERROR] Failed to create background worker\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create background worker\n");
         return;
     }
     
-    // Small delay
     for (volatile int i = 0; i < 1000000; i++);
     
-    // 5. System monitor - medium priority
-    //    Runtime: 8ms, Deadline: 300ms, Period: 300ms
-    char msg5[] = "[THREAD] Creating monitor thread...\n";
-    printk(0xFFFFFF00, 0x000000, msg5);
-    
+    // 5. System monitor thread
+    PRINT(0xFFFFFF00, 0x000000, "[THREAD] Creating monitor thread...\n");
     int monitor_tid = thread_create(init_pid, monitor_thread_entry,
-                                     THREAD_STACK_SIZE,    // 16KB stack
-                                     8000000,              // 8ms runtime
-                                     300000000,            // 300ms deadline
-                                     300000000);           // 300ms period
+                                     THREAD_STACK_SIZE, 8000000, 300000000, 300000000);
     if (monitor_tid > 0) {
-        char msg[] = "[OK] Created monitor thread (TID=%d)\n";
-        printk(0xFF00FF00, 0x000000, msg, monitor_tid);
+        PRINT(0xFF00FF00, 0x000000, "[OK] Created monitor thread (TID=%d)\n", monitor_tid);
     } else {
-        char err[] = "[ERROR] Failed to create monitor thread\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create monitor thread\n");
         return;
     }
     
-    char summary[] = "\n[INFO] Thread initialization complete\n";
-    char summary2[] = "[INFO] All threads created but scheduler NOT started\n";
-    char summary3[] = "[INFO] Threads will remain dormant until scheduler is activated\n\n";
-    
-    printk(0xFF00FFFF, 0x000000, summary);
-    printk(0xFF00FFFF, 0x000000, summary2);
-    printk(0xFF00FFFF, 0x000000, summary3);
+    PRINT(0xFF00FFFF, 0x000000, "\n[INFO] Thread initialization complete\n");
+    PRINT(0xFF00FFFF, 0x000000, "[INFO] All threads created but scheduler NOT started\n");
+    PRINT(0xFF00FFFF, 0x000000, "[INFO] Threads will remain dormant until scheduler is activated\n\n");
 }

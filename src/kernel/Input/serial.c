@@ -1,6 +1,7 @@
 #include "serial.h"
 #include "IO.h"
 #include "print.h"
+#include "string_helpers.h"
 
 static volatile int shift_pressed = 0;
 volatile int serial_initialized;

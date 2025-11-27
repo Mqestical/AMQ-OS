@@ -4,6 +4,7 @@
 // These functions execute the SYSCALL instruction to invoke kernel functions
 
 #include "syscall.h"
+#include "string_helpers.h"
 
 // ============================================================================
 // RAW SYSCALL INVOCATION (inline assembly)

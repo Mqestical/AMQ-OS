@@ -1,5 +1,6 @@
 #include "print.h"
 #include "FONT.h"
+#include "string_helpers.h"
 #include <stdarg.h>
 // Globals
 Framebuffer fb;
@@ -362,11 +363,8 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
 }
 
 // Helper macro to make usage easier with string literals
-// Use this instead of direct printk calls:
-#define PRINTK(fg, bg, ...) do { \
-    char _fmt[] = __VA_ARGS__; \
-    printk(fg, bg, _fmt); \
-} while(0)
+// Use this instead of direct PRINT calls:
+
 
 void buf_write(Buffer *buf, const char *str) {
     while (*str) {
@@ -375,7 +373,7 @@ void buf_write(Buffer *buf, const char *str) {
     }
 }
 
-void test_printk(void) {
+void test_PRINT(void) {
     ClearScreen(0x000000);
     SetCursorPos(0, 0);
     
@@ -383,11 +381,11 @@ void test_printk(void) {
     char* ptr = (char*)0xDEADBEEF;
     char* str = "Hello";
     
-    printk(0xFFFFFFFF, 0x000000, "Testing printk:\n");
-    printk(0xFFFFFFFF, 0x000000, "Integer: %d\n", num);
-    printk(0xFFFFFFFF, 0x000000, "Hex: 0x%x\n", num);
-    printk(0xFFFFFFFF, 0x000000, "Pointer: %p\n", ptr);
-    printk(0xFFFFFFFF, 0x000000, "String: %s\n", str);
-    printk(0xFFFFFFFF, 0x000000, "Char: %c\n", 'A');
-    printk(0xFFFFFFFF, 0x000000, "Multiple: %d %s %p\n", 123, "test", (void*)0x1234);
+    PRINT(0xFFFFFFFF, 0x000000, "Testing PRINT:\n");
+    PRINT(0xFFFFFFFF, 0x000000, "Integer: %d\n", num);
+    PRINT(0xFFFFFFFF, 0x000000, "Hex: 0x%x\n", num);
+    PRINT(0xFFFFFFFF, 0x000000, "Pointer: %p\n", ptr);
+    PRINT(0xFFFFFFFF, 0x000000, "String: %s\n", str);
+    PRINT(0xFFFFFFFF, 0x000000, "Char: %c\n", 'A');
+    PRINT(0xFFFFFFFF, 0x000000, "Multiple: %d %s %p\n", 123, "test", (void*)0x1234);
 }

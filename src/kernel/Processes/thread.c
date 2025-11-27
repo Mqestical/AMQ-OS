@@ -3,6 +3,7 @@
 #include "process.h"
 #include "memory.h"
 #include "print.h"
+#include "string_helpers.h"
 
 extern void switch_to_thread(cpu_context_t *old_ctx, cpu_context_t *new_ctx);
 
@@ -41,15 +42,13 @@ void scheduler_init(void) {
     current_thread = NULL;
     scheduler_enabled = 0;  // DISABLED by default
     
-    char msg[] = "[THREAD] Scheduler initialized (DISABLED)\n";
-    printk(0xFF00FF00, 0x000000, msg);
+    PRINT(0xFF00FF00, 0x000000, "[THREAD] Scheduler initialized (DISABLED)\n");
 }
 
 // Enable the scheduler
 void scheduler_enable(void) {
     scheduler_enabled = 1;
-    char msg[] = "[THREAD] Scheduler ENABLED\n";
-    printk(0xFF00FF00, 0x000000, msg);
+    PRINT(0xFF00FF00, 0x000000, "[THREAD] Scheduler ENABLED\n");
 }
 
 // Find free thread slot
@@ -103,13 +102,11 @@ void remove_ready_queue(thread_t *thread) {
 static void thread_entry_wrapper(void) {
     thread_t *current = get_current_thread();
     if (!current) {
-        char err[] = "[THREAD] No current thread in wrapper!\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[THREAD] No current thread in wrapper!\n");
         while(1) __asm__ volatile("hlt");
     }
     
-    char msg[] = "[THREAD] TID=%u starting execution\n";
-    printk(0xFF00FFFF, 0x000000, msg, current->tid);
+    PRINT(0xFF00FFFF, 0x000000, "[THREAD] TID=%u starting execution\n", current->tid);
     
     // Call the actual thread function
     void (*entry)(void) = (void (*)(void))current->entry_point;
@@ -118,8 +115,7 @@ static void thread_entry_wrapper(void) {
     }
     
     // Thread returned, exit it
-    char done[] = "[THREAD] TID=%u returned, exiting\n";
-    printk(0xFFFFFF00, 0x000000, done, current->tid);
+    PRINT(0xFFFFFF00, 0x000000, "[THREAD] TID=%u returned, exiting\n", current->tid);
     
     thread_exit();
 }
@@ -153,21 +149,18 @@ int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
                   uint64_t runtime, uint64_t deadline, uint64_t period) {
     process_t *proc = get_process(pid);
     if (!proc) {
-        char err[] = "[THREAD] Process PID=%u not found\n";
-        printk(0xFFFF0000, 0x000000, err, pid);
+        PRINT(0xFFFF0000, 0x000000, "[THREAD] Process PID=%u not found\n", pid);
         return -1;
     }
     
     if (proc->thread_count >= MAX_THREADS_PER_PROCESS) {
-        char err[] = "[THREAD] Max threads reached for PID=%u\n";
-        printk(0xFFFF0000, 0x000000, err, pid);
+        PRINT(0xFFFF0000, 0x000000, "[THREAD] Max threads reached for PID=%u\n", pid);
         return -1;
     }
     
     int idx = find_free_thread();
     if (idx < 0) {
-        char err[] = "[THREAD] No free thread slots\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[THREAD] No free thread slots\n");
         return -1;
     }
     
@@ -184,8 +177,7 @@ int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
     thread->stack_size = stack_size;
     thread->stack_base = kmalloc(stack_size);
     if (!thread->stack_base) {
-        char err[] = "[THREAD] Failed to allocate stack\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[THREAD] Failed to allocate stack\n");
         thread->used = 0;
         return -1;
     }
@@ -203,7 +195,7 @@ int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
     // Setup the initial stack frame properly
     setup_thread_stack(thread, thread_entry_wrapper);
     
-    // Scheduling parameters (not really used in simple round-robin)
+    // Scheduling parameters
     thread->sched.runtime = runtime;
     thread->sched.deadline = deadline;
     thread->sched.period = period;
@@ -217,9 +209,9 @@ int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
     // Add to ready queue
     insert_ready_queue(thread);
     
-    char msg[] = "[THREAD] Created TID=%u for PID=%u (entry=0x%llx, stack=0x%llx, size=%u)\n";
-    printk(0xFF00FF00, 0x000000, msg, thread->tid, proc->pid, 
-           (uint64_t)entry_point, thread->context.rsp, stack_size);
+    PRINT(0xFF00FF00, 0x000000, "[THREAD] Created TID=%u for PID=%u (entry=0x%llx, stack=0x%llx, size=%u)\n",
+          thread->tid, proc->pid, (uint64_t)entry_point, thread->context.rsp, stack_size);
+    
     return thread->tid;
 }
 
@@ -240,51 +232,34 @@ thread_t* get_thread(uint32_t tid) {
 
 // FIXED: Actual scheduler with context switch
 void schedule(void) {
-    // Don't schedule if disabled
-    if (!scheduler_enabled) {
-        return;
-    }
+    if (!scheduler_enabled) return;
     
     thread_t *prev_thread = current_thread;
     
-    // Put current thread back if it was running
     if (current_thread && current_thread->state == THREAD_STATE_RUNNING) {
         current_thread->state = THREAD_STATE_READY;
         insert_ready_queue(current_thread);
     }
     
-    // Pick next thread (first in queue)
     thread_t *next_thread = ready_queue_head;
     
-    if (!next_thread) {
-        // No threads ready - stay in current or idle
-        return;
-    }
+    if (!next_thread) return;
     
-    // Remove from ready queue
     ready_queue_head = next_thread->next;
     next_thread->next = NULL;
     
-    // Switch to this thread
     next_thread->state = THREAD_STATE_RUNNING;
     next_thread->last_scheduled = current_time_ns;
     current_thread = next_thread;
     
-    // Update parent process state
     if (next_thread->parent) {
         next_thread->parent->state = PROCESS_STATE_RUNNING;
     }
     
-    // CRITICAL: Perform actual context switch if we're switching threads
     if (prev_thread && prev_thread != next_thread) {
-        // This saves prev_thread context and loads next_thread context
         switch_to_thread(&prev_thread->context, &next_thread->context);
     } else if (!prev_thread && next_thread) {
-        // First thread ever - just load its context
-        char msg[] = "[SCHED] Starting first thread: TID=%u\n";
-        printk(0xFF00FF00, 0x000000, msg, next_thread->tid);
-        
-        // Jump to the thread's saved context
+        PRINT(0xFF00FF00, 0x000000, "[SCHED] Starting first thread: TID=%u\n", next_thread->tid);
         __asm__ volatile(
             "mov %0, %%rsp\n"
             "mov %1, %%rbp\n"
@@ -300,21 +275,15 @@ void schedule(void) {
 
 // Called by timer interrupt (~10ms)
 void scheduler_tick(void) {
-    if (!scheduler_enabled) {
-        return;  // Don't schedule if disabled
-    }
+    if (!scheduler_enabled) return;
     
     current_time_ns += 10000000;  // 10ms
-    
-    // Simple time slice: reschedule every tick
     schedule();
 }
 
 // Thread voluntarily yields CPU
 void thread_yield(void) {
-    if (!scheduler_enabled) {
-        return;  // Just return if scheduler disabled
-    }
+    if (!scheduler_enabled) return;
     schedule();
 }
 
@@ -326,14 +295,12 @@ void thread_block(uint32_t tid) {
     thread->state = THREAD_STATE_BLOCKED;
     remove_ready_queue(thread);
     
-    // If it's the current thread, schedule another
     if (thread == current_thread) {
         current_thread = NULL;
         schedule();
     }
     
-    char msg[] = "[THREAD] Blocked TID=%u\n";
-    printk(0xFFFFFF00, 0x000000, msg, tid);
+    PRINT(0xFFFFFF00, 0x000000, "[THREAD] Blocked TID=%u\n", tid);
 }
 
 // Unblock a thread
@@ -344,9 +311,7 @@ void thread_unblock(uint32_t tid) {
     if (thread->state == THREAD_STATE_BLOCKED) {
         thread->state = THREAD_STATE_READY;
         insert_ready_queue(thread);
-        
-        char msg[] = "[THREAD] Unblocked TID=%u\n";
-        printk(0xFFFFFF00, 0x000000, msg, tid);
+        PRINT(0xFFFFFF00, 0x000000, "[THREAD] Unblocked TID=%u\n", tid);
     }
 }
 
@@ -354,19 +319,16 @@ void thread_unblock(uint32_t tid) {
 void thread_exit(void) {
     if (!current_thread) return;
     
-    char msg[] = "[THREAD] Exiting TID=%u\n";
-    printk(0xFFFFFF00, 0x000000, msg, current_thread->tid);
+    PRINT(0xFFFFFF00, 0x000000, "[THREAD] Exiting TID=%u\n", current_thread->tid);
     
     current_thread->state = THREAD_STATE_TERMINATED;
     current_thread->used = 0;
     
-    // Free stack
     if (current_thread->stack_base) {
         kfree(current_thread->stack_base);
         current_thread->stack_base = NULL;
     }
     
-    // Remove from parent process
     process_t *proc = current_thread->parent;
     if (proc) {
         for (int i = 0; i < proc->thread_count; i++) {
@@ -386,14 +348,9 @@ void thread_exit(void) {
     }
     
     current_thread = NULL;
-    
-    // Schedule next thread - THIS NEVER RETURNS
     schedule();
     
-    // Should never reach here
-    while (1) {
-        __asm__ volatile("hlt");
-    }
+    while (1) __asm__ volatile("hlt");
 }
 
 // =============================================================================
@@ -403,34 +360,23 @@ void thread_exit(void) {
 __asm__(
 ".global switch_to_thread\n"
 "switch_to_thread:\n"
-"    # rdi = old context pointer\n"
-"    # rsi = new context pointer\n"
-"    \n"
-"    # Save old context\n"
-"    mov %rsp, 0(%rdi)\n"       //# Save RSP
-"    mov %rbp, 8(%rdi)\n"       //# Save RBP
-"    mov %rbx, 16(%rdi)\n"      //# Save RBX
-"    mov %r12, 24(%rdi)\n"      //# Save R12
-"    mov %r13, 32(%rdi)\n"      //# Save R13
-"    mov %r14, 40(%rdi)\n"      //# Save R14
-"    mov %r15, 48(%rdi)\n"      //# Save R15
-"    \n"
-"    # Save return address as RIP\n"
+"    mov %rsp, 0(%rdi)\n"
+"    mov %rbp, 8(%rdi)\n"
+"    mov %rbx, 16(%rdi)\n"
+"    mov %r12, 24(%rdi)\n"
+"    mov %r13, 32(%rdi)\n"
+"    mov %r14, 40(%rdi)\n"
+"    mov %r15, 48(%rdi)\n"
 "    lea 0f(%rip), %rax\n"
-"    mov %rax, 56(%rdi)\n"      //# Save RIP
-"    \n"
-"    # Load new context\n"
-"    mov 0(%rsi), %rsp\n"       //# Restore RSP
-"    mov 8(%rsi), %rbp\n"       //# Restore RBP
-"    mov 16(%rsi), %rbx\n"      //# Restore RBX
-"    mov 24(%rsi), %r12\n"      //# Restore R12
-"    mov 32(%rsi), %r13\n"      //# Restore R13
-"    mov 40(%rsi), %r14\n"      //# Restore R14
-"    mov 48(%rsi), %r15\n"      //# Restore R15
-"    \n"
-"    # Jump to saved RIP\n"
+"    mov %rax, 56(%rdi)\n"
+"    mov 0(%rsi), %rsp\n"
+"    mov 8(%rsi), %rbp\n"
+"    mov 16(%rsi), %rbx\n"
+"    mov 24(%rsi), %r12\n"
+"    mov 32(%rsi), %r13\n"
+"    mov 40(%rsi), %r14\n"
+"    mov 48(%rsi), %r15\n"
 "    jmp *56(%rsi)\n"
-"    \n"
-"0:  # Return point\n"
+"0:\n"
 "    ret\n"
 );

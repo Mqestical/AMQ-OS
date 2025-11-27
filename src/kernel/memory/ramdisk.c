@@ -1,6 +1,7 @@
 #include "ramdisk.h"
 #include "memory.h"
 #include "print.h"
+#include "string_helpers.h"
 
 #define RAMDISK_SIZE (1024 * 512)  // 512 KB
 
@@ -14,8 +15,7 @@ void ramdisk_init(void) {
     ramdisk_data = (uint8_t*)kmalloc(RAMDISK_SIZE);
     
     if (!ramdisk_data) {
-        char err[] = "Failed to allocate RAM disk\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "Failed to allocate RAM disk\n");
         return;
     }
     
@@ -26,8 +26,7 @@ void ramdisk_init(void) {
     
     ramdisk_initialized = 1;
     
-    char msg[] = "RAM disk initialized (512 KB)\n";
-    printk(0xFF00FF00, 0x000000, msg);
+    PRINT(0xFF00FF00, 0x000000, "RAM disk initialized (512 KB)\n");
 }
 
 int ramdisk_read_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
@@ -38,8 +37,7 @@ int ramdisk_read_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     
     // Bounds check
     if (offset + size > RAMDISK_SIZE) {
-        char err[] = "RAM disk read out of bounds\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "RAM disk read out of bounds\n");
         return -1;
     }
     
@@ -59,8 +57,7 @@ int ramdisk_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     
     // Bounds check
     if (offset + size > RAMDISK_SIZE) {
-        char err[] = "RAM disk write out of bounds\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "RAM disk write out of bounds\n");
         return -1;
     }
     

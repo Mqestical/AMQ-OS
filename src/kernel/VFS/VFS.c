@@ -1,7 +1,11 @@
+// VFS.c - FIXED: All string literals replaced with local arrays
+
 #include "vfs.h"
 #include "memory.h"
 #include "print.h"
 #include "tinyfs.h"
+#include "string_helpers.h"
+
 // Global VFS state
 static vfs_node_t *root_node = NULL;
 static vfs_node_t *current_dir = NULL;
@@ -34,20 +38,13 @@ static void str_cpy(char *dest, const char *src, int max_len) {
 }
 
 void vfs_init(void) {
-     // Debug: Check if BSS is actually zeroed
-    char msg0[] = "[VFS] vfs_init called\n";
-    printk(0xFFFFFF00, 0x000000, msg0);
+    PRINT(0xFFFFFF00, 0x000000,"[VFS] vfs_init called\n");
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] Initial root_node value: %p\n", root_node);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] Initial num_filesystems value: %d\n", num_filesystems);
     
-    char msg_root[] = "[VFS] Initial root_node value: %p\n";
-    printk(0xFFFFFF00, 0x000000, msg_root, root_node);
-    
-    char msg_numfs[] = "[VFS] Initial num_filesystems value: %d\n";
-    printk(0xFFFFFF00, 0x000000, msg_numfs, num_filesystems);
-    
-    // Explicitly set to NULL/0 to be safe
     root_node = NULL;
     num_filesystems = 0;
-    // Clear file descriptor table
+    
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         vfs_fd_table[i].used = 0;
         vfs_fd_table[i].node = NULL;
@@ -55,26 +52,20 @@ void vfs_init(void) {
         vfs_fd_table[i].flags = 0;
     }
     
-    // Clear filesystem registry
     for (int i = 0; i < 16; i++) {
         registered_filesystems[i] = NULL;
     }
-    
-    root_node = NULL;
-    num_filesystems = 0;
-    
-    char msg[] = "[VFS] Initialized\n";
-    printk(0xFF00FF00, 0x000000, msg);
+
+    PRINT(0xFF00FF00, 0x000000, "[VFS] Initialized\n");
 }
 
 int vfs_register_filesystem(filesystem_t *fs) {
-    if (!fs || !fs->name) return -1;  // Add this check
+    if (!fs || !fs->name) return -1;
     if (num_filesystems >= 16) return -1;
     
     registered_filesystems[num_filesystems++] = fs;
     
-    char msg[] = "[VFS] Registered filesystem: %s\n";
-    printk(0xFF00FF00, 0x000000, msg, fs->name);
+    PRINT(0xFF00FF00, 0x000000, "[VFS] Registered filesystem: %s\n", fs->name);
     
     return 0;
 }
@@ -85,158 +76,104 @@ vfs_node_t* vfs_get_root(void) {
 
 void vfs_debug_root(void) {
     if (!root_node) {
-        char msg[] = "[VFS DEBUG] root_node is NULL\n";
-        printk(0xFFFF0000, 0x000000, msg);
+        PRINT(0xFFFF0000, 0x000000, "[VFS DEBUG] root_node is NULL\n");
     } else {
-        char msg1[] = "[VFS DEBUG] root_node at %p\n";
-        char msg2[] = "[VFS DEBUG]   name: '%s'\n";
-        char msg3[] = "[VFS DEBUG]   type: %d\n";
-        char msg4[] = "[VFS DEBUG]   fs: %p\n";
-        char msg5[] = "[VFS DEBUG]   ops: %p\n";
-        
-        printk(0xFF00FF00, 0x000000, msg1, root_node);
-        printk(0xFF00FF00, 0x000000, msg2, root_node->name);
-        printk(0xFF00FF00, 0x000000, msg3, root_node->type);
-        printk(0xFF00FF00, 0x000000, msg4, root_node->fs);
-        printk(0xFF00FF00, 0x000000, msg5, root_node->ops);
+        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG] root_node at %p\n", root_node);
+        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   name: '%s'\n", root_node->name);
+        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   type: %d\n", root_node->type);
+        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   fs: %p\n", root_node->fs);
+        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   ops: %p\n", root_node->ops);
         
         if (root_node->fs) {
-            char msg6[] = "[VFS DEBUG]   fs->name: '%s'\n";
-            char msg7[] = "[VFS DEBUG]   fs->ops: %p\n";
-            char msg8[] = "[VFS DEBUG]   fs->private_data: %p\n";
-            
-            printk(0xFF00FF00, 0x000000, msg6, root_node->fs->name);
-            printk(0xFF00FF00, 0x000000, msg7, root_node->fs->ops);
-            printk(0xFF00FF00, 0x000000, msg8, root_node->fs->private_data);
+            PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   fs->name: '%s'\n", root_node->fs->name);
+            PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   fs->ops: %p\n", root_node->fs->ops);
+            PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   fs->private_data: %p\n", root_node->fs->private_data);
         }
     }
 }
 
 int vfs_mount(const char *fs_type, const char *device, const char *mountpoint) {
-    char msg0[] = "[VFS] === vfs_mount START ===\n";
-    printk(0xFFFFFF00, 0x000000, msg0);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] === vfs_mount START ===\n");
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] fs_type='%s', device='%s', mountpoint='%s'\n", fs_type, device, mountpoint);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] root_node BEFORE mount: %p\n", root_node);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] DEBUG: num_filesystems = %d\n", num_filesystems);
     
-    char msg_params[] = "[VFS] fs_type='%s', device='%s', mountpoint='%s'\n";
-    printk(0xFFFFFF00, 0x000000, msg_params, fs_type, device, mountpoint);
-    
-    char msg_root_before[] = "[VFS] root_node BEFORE mount: %p\n";
-    printk(0xFFFFFF00, 0x000000, msg_root_before, root_node);
-    
-    char msg_debug1[] = "[VFS] DEBUG: num_filesystems = %d\n";
-    printk(0xFFFFFF00, 0x000000, msg_debug1, num_filesystems);
-    
-       char verify[] = "[VFS MOUNT START] Verifying registered filesystems:\n";
-    printk(0xFFFFFF00, 0x000000, verify);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS MOUNT START] Verifying registered filesystems:\n");
     for (int i = 0; i < num_filesystems; i++) {
-        char check[] = "[VFSX_DEBUG]   fs[%d] at %p, name at %p: '%s'\n";
-        printk(0xFFFFFF00, 0x000000, check, i, 
+        PRINT(0xFFFFFF00, 0x000000, "[VFSX_DEBUG]   fs[%d] at %p, name at %p: '%s'\n", i, 
                registered_filesystems[i],
                registered_filesystems[i]->name,
                registered_filesystems[i]->name);
     }
 
-    // List all registered filesystems
-    char msg_list[] = "[VFS] Registered filesystems:\n";
-    printk(0xFFFFFF00, 0x000000, msg_list);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] Registered filesystems:\n");
     for (int i = 0; i < num_filesystems; i++) {
         if (registered_filesystems[i]) {
-            char msg_item[] = "[VFS]  [%d] '%s' at %p\n";
-            printk(0xFFFFFF00, 0x000000, msg_item, i, 
+            PRINT(0xFFFFFF00, 0x000000, "[VFS]  [%d] '%s' at %p\n", i, 
                    registered_filesystems[i]->name, 
                    registered_filesystems[i]);
         }
     }
     
-    // Find filesystem type
-   // Find filesystem type
-filesystem_t *fs = NULL;
-for (int i = 0; i < num_filesystems; i++) {
-    char msg_check[] = "[VFS] Checking index %d: %p\n";
-    printk(0xFFFFFF00, 0x000000, msg_check, i, registered_filesystems[i]);
-    
-    char debug_fs_type[] = "[VFS-DEBUG] fs_type[0]='%c' fs_type addr=%p\n";
-printk(0xFFFFFF00, 0x000000, debug_fs_type, fs_type[0], fs_type);
+    filesystem_t *fs = NULL;
+    for (int i = 0; i < num_filesystems; i++) {
+        PRINT(0xFFFFFF00, 0x000000, "[VFS] Checking index %d: %p\n", i, registered_filesystems[i]);
+        PRINT(0xFFFFFF00, 0x000000, "[VFS-DEBUG] fs_type[0]='%c' fs_type addr=%p\n", fs_type[0], fs_type);
 
-char debug_name[] = "[VFS-DEBUG] name[0]='%c' name addr=%p\n";
-printk(0xFFFFFF00, 0x000000, debug_name, registered_filesystems[i]->name[0], 
-       registered_filesystems[i]->name);
+        PRINT(0xFFFFFF00, 0x000000, "[VFS-DEBUG] name[0]='%c' name addr=%p\n", registered_filesystems[i]->name[0], 
+           registered_filesystems[i]->name);
 
-    if (registered_filesystems[i] != NULL && registered_filesystems[i]->name != NULL) {
-        char msg_cmp[] = "[VFS] Comparing '%s' with '%s'\n";
-        printk(0xFFFFFF00, 0x000000, msg_cmp, fs_type, registered_filesystems[i]->name);
-        
-        if (str_cmp(fs_type, registered_filesystems[i]->name) == 0) {
-            fs = registered_filesystems[i];
-            char msg2[] = "[VFS] Found filesystem type: %s\n";
-            printk(0xFF00FF00, 0x000000, msg2, fs_type);
-            break;
+        if (registered_filesystems[i] != NULL && registered_filesystems[i]->name != NULL) {
+            PRINT(0xFFFFFF00, 0x000000, "[VFS] Comparing '%s' with '%s'\n", fs_type, registered_filesystems[i]->name);
+            
+            if (str_cmp(fs_type, registered_filesystems[i]->name) == 0) {
+                fs = registered_filesystems[i];
+                PRINT(0xFF00FF00, 0x000000, "[VFS] Found filesystem type: %s\n", fs_type);
+                break;
+            }
         }
     }
-}
     
     if (!fs) {
-        char err[] = "[VFS] Filesystem type not found: %s\n"; 
-        printk(0xFFFF0000, 0x000000, err, fs_type);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] Filesystem type not found: %s\n", fs_type);
         return -1;
     }
     
-    char msg3[] = "[VFS] Calling fs->ops->mount()...\n";
-    printk(0xFFFFFF00, 0x000000, msg3);
+    PRINT(0xFFFFFF00, 0x000000,"[VFS] Calling fs->ops->mount()...\n");
     
-    // Mount the filesystem
     if (fs->ops->mount(fs, device) != 0) {
-        char err[] = "[VFS] Failed to mount %s on device %s\n";
-        printk(0xFFFF0000, 0x000000, err, fs_type, device);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] Failed to mount %s on device %s\n", fs_type, device);
         return -1;
     }
     
-    char msg4[] = "[VFS] Mount operation successful\n";
-    printk(0xFF00FF00, 0x000000, msg4);
+    PRINT(0xFF00FF00, 0x000000, "[VFS] Mount operation successful\n");
     
-    // Set root node if mounting to /
+    // Check if mounting to root
     if (mountpoint[0] == '/' && mountpoint[1] == '\0') {
-        char msg5[] = "[VFS] Getting root node from filesystem...\n";
-        printk(0xFFFFFF00, 0x000000, msg5);
-
-        char ERRmsg[] = "[VALUE] FSVAL: \n";
-        printk(0xFFFFFF00, 0x000000, ERRmsg, fs->ops->get_root(fs));
+        PRINT(0xFFFFFF00, 0x000000, "[VFS] Getting root node from filesystem...\n");
         root_node = fs->ops->get_root(fs);
-        
-        char msg_root_after[] = "[VFS] root_node AFTER get_root: %p\n";
-        printk(0xFFFFFF00, 0x000000, msg_root_after, root_node);
+        PRINT(0xFFFFFF00, 0x000000, "[VFS] root_node AFTER get_root: %p\n", root_node);
         
         if (!root_node) {
-            char err[] = "[VFS] CRITICAL: get_root returned NULL!\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "[VFS] CRITICAL: get_root returned NULL!\n");
             return -1;
         }
         
-        // CRITICAL: Ensure the root node has the filesystem reference
         root_node->fs = fs;
         current_dir = root_node;
-        char msg6[] = "[VFS] Root node set successfully:\n";
-        char msg7[] = "[VFS]   root_node = %p\n";
-        char msg8[] = "[VFS]   root_node->fs = %p\n";
-        char msg9[] = "[VFS]   root_node->ops = %p\n";
-        char msg10[] = "[VFS]   root_node->name = '%s'\n";
-        char msg11[] = "[VFS]   root_node->type = %d\n";
-        
-        printk(0xFF00FF00, 0x000000, msg6);
-        printk(0xFF00FF00, 0x000000, msg7, root_node);
-        printk(0xFF00FF00, 0x000000, msg8, root_node->fs);
-        printk(0xFF00FF00, 0x000000, msg9, root_node->ops);
-        printk(0xFF00FF00, 0x000000, msg10, root_node->name);
-        printk(0xFF00FF00, 0x000000, msg11, root_node->type);
+        PRINT(0xFF00FF00, 0x000000, "[VFS] Root node set successfully:\n");
+        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node = %p\n", root_node);
+        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node->fs = %p\n", root_node->fs);
+        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node->ops = %p\n", root_node->ops);
+        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node->name = '%s'\n", root_node->name);
+        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node->type = %d\n", root_node->type);
     }
     
-    char msg12[] = "[VFS] Mounted %s at %s\n";
-    printk(0xFF00FF00, 0x000000, msg12, fs_type, mountpoint);
+    PRINT(0xFF00FF00, 0x000000, "[VFS] Mounted %s at %s\n", fs_type, mountpoint);
     
     return 0;
 }
 
-
-// Allocate a file descriptor
 static int allocate_fd(void) {
     for (int i = 3; i < MAX_OPEN_FILES; i++) {
         if (!vfs_fd_table[i].used) {
@@ -247,13 +184,11 @@ static int allocate_fd(void) {
     return -1;
 }
 
-// Simple path tokenizer
 static void tokenize_path(const char *path, char tokens[][MAX_FILENAME], int *token_count) {
     *token_count = 0;
     int token_idx = 0;
     int char_idx = 0;
     
-    // Skip leading slash
     int start = (path[0] == '/') ? 1 : 0;
     
     for (int i = start; path[i]; i++) {
@@ -277,31 +212,29 @@ static void tokenize_path(const char *path, char tokens[][MAX_FILENAME], int *to
     
     *token_count = token_idx;
 }
+
 vfs_node_t* vfs_resolve_path(const char *path) {
-    char msg1[] = "[VFS] resolve_path: '%s'\n";
-    printk(0xFFFFFF00, 0x000000, msg1, path);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] resolve_path: '%s'\n", path);
     
     if (!root_node) {
-        char err[] = "[VFS] resolve_path: root_node is NULL!\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: root_node is NULL!\n");
         return NULL;
     }
-    char msg2[] = "[VFS] resolve_path: root_node = %p\n";
-    printk(0xFF00FF00, 0x000000, msg2, root_node);
+    
+    PRINT(0xFF00FF00, 0x000000, "[VFS] resolve_path: root_node = %p\n", root_node);
+    
     if (!path) {
-        char err[] = "[VFS] resolve_path: path is NULL\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: path is NULL\n");
         return NULL;
     }
-    // Handle root directory
-        if (path[0] == '/' && path[1] == '\0') {
-        char msg3[] = "[VFS] resolve_path: returning root\n";
-        printk(0xFF00FF00, 0x000000, msg3);
+    
+    if (path[0] == '/' && path[1] == '\0') {
+        PRINT(0xFF00FF00, 0x000000, "[VFS] resolve_path: returning root\n");
         return root_node;
     }
+    
     if (path[0] != '/') {
-        char err[] = "[VFS] resolve_path: path must be absolute: %s\n";
-        printk(0xFFFF0000, 0x000000, err, path);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: path must be absolute: %s\n", path);
         return NULL;
     }
     
@@ -309,45 +242,37 @@ vfs_node_t* vfs_resolve_path(const char *path) {
     int token_count = 0;
     tokenize_path(path, tokens, &token_count);
     
-    char msg4[] = "[VFS] resolve_path: %d path components\n";
-    printk(0xFFFFFF00, 0x000000, msg4, token_count);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] resolve_path: %d path components\n", token_count);
     
     vfs_node_t *current = root_node;
     
     for (int i = 0; i < token_count; i++) {
-        char msg5[] = "[VFS] resolve_path: looking for '%s'\n";
-        printk(0xFFFFFF00, 0x000000, msg5, tokens[i]);
+        PRINT(0xFFFFFF00, 0x000000, "[VFS] resolve_path: looking for '%s'\n", tokens[i]);
         
         if (!current) {
-            char err[] = "[VFS] resolve_path: current node is NULL at component '%s'\n";
-            printk(0xFFFF0000, 0x000000, err, tokens[i]);
+            PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: current node is NULL at component '%s'\n", tokens[i]);
             return NULL;
         }
         
         if (current->type != FILE_TYPE_DIRECTORY) {
-            char err[] = "[VFS] resolve_path: '%s' is not a directory\n";
-            printk(0xFFFF0000, 0x000000, err, tokens[i]);
+            PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: '%s' is not a directory\n", tokens[i]);
             return NULL;
         }
         
         current = vfs_finddir(current, tokens[i]);
         if (!current) {
-            char err[] = "[VFS] resolve_path: component not found: '%s'\n";
-            printk(0xFFFF0000, 0x000000, err, tokens[i]);
+            PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: component not found: '%s'\n", tokens[i]);
             return NULL;
         }
-        
-        char msg6[] = "[VFS] resolve_path: found '%s'\n";
-        printk(0xFF00FF00, 0x000000, msg6, tokens[i]);
+        PRINT(0xFF00FF00, 0x000000, "[VFS] resolve_path: found '%s'\n", tokens[i]);
     }
     
-    char msg7[] = "[VFS] resolve_path: success, returning %p\n";
-    printk(0xFF00FF00, 0x000000, msg7, current);
+    PRINT(0xFF00FF00, 0x000000, "[VFS] resolve_path: success, returning %p\n", current);
     return current;
 }
 
 int vfs_open(const char *path, uint32_t flags) {
-    vfs_node_t *node = vfs_resolve_path(path);  // FAILURE AFTER ROOT NODE = ... (PRINTK)
+    vfs_node_t *node = vfs_resolve_path(path);
     if (!node) return -1;
 
     int fd = allocate_fd();
@@ -356,6 +281,7 @@ int vfs_open(const char *path, uint32_t flags) {
     vfs_fd_table[fd].node = node;
     vfs_fd_table[fd].position = 0;
     vfs_fd_table[fd].flags = flags;
+    
     if (node->ops && node->ops->open) {
         node->ops->open(node, flags);
     }
@@ -459,16 +385,13 @@ vfs_node_t* vfs_finddir(vfs_node_t *node, const char *name) {
 }
 
 int vfs_create(const char *path, uint32_t permissions) {
-    char msg1[] = "[VFS] vfs_create: '%s'\n";
-    printk(0xFFFFFF00, 0x000000, msg1, path);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_create: '%s'\n", path);
     
     if (!path || path[0] != '/') {
-        char err[] = "[VFS] vfs_create: Invalid path\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: Invalid path\n");
         return -1;
     }
     
-    // Find parent directory
     char parent_path[256];
     char filename[MAX_FILENAME];
     
@@ -478,12 +401,10 @@ int vfs_create(const char *path, uint32_t permissions) {
     }
     
     if (last_slash < 0) {
-        char err[] = "[VFS] vfs_create: No slash in path\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: No slash in path\n");
         return -1;
     }
     
-    // Extract parent path and filename
     if (last_slash == 0) {
         parent_path[0] = '/';
         parent_path[1] = '\0';
@@ -500,66 +421,47 @@ int vfs_create(const char *path, uint32_t permissions) {
     }
     filename[j] = '\0';
     
-    char msg2[] = "[VFS] vfs_create: parent='%s', filename='%s'\n";
-    printk(0xFFFFFF00, 0x000000, msg2, parent_path, filename);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_create: parent='%s', filename='%s'\n", parent_path, filename);
     
-    // Get parent directory
     vfs_node_t *parent = vfs_resolve_path(parent_path);
     if (!parent) {
-        char err[] = "[VFS] vfs_create: Parent directory not found: %s\n";
-        printk(0xFFFF0000, 0x000000, err, parent_path);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: Parent directory not found: %s\n", parent_path);
         return -1;
     }
     
-    char msg3[] = "[VFS] vfs_create: parent found at %p\n";
-    printk(0xFF00FF00, 0x000000, msg3, parent);
+    PRINT(0xFF00FF00, 0x000000, "[VFS] vfs_create: parent found at %p\n", parent);
     
     if (parent->type != FILE_TYPE_DIRECTORY) {
-        char err[] = "[VFS] vfs_create: Parent is not a directory\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: Parent is not a directory\n");
         return -1;
     }
     
     if (!parent->ops || !parent->ops->create) {
-        char err1[] = "[VFS] vfs_create: Parent has no create operation\n";
-        char err2[] = "[VFS]   parent->ops = %p\n";
-        printk(0xFFFF0000, 0x000000, err1);
-        printk(0xFFFF0000, 0x000000, err2, parent->ops);
-        if (parent->ops) {
-            char err3[] = "[VFS]   parent->ops->create = %p\n";
-            printk(0xFFFF0000, 0x000000, err3, parent->ops->create);
-        }
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: Parent has no create operation\n");
         return -1;
     }
+
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_create: Calling parent->ops->create()...\n");
     
-    char msg4[] = "[VFS] vfs_create: Calling parent->ops->create()...\n";
-    printk(0xFFFFFF00, 0x000000, msg4);
-    
-    // Create file
     int result = parent->ops->create(parent, filename, FILE_TYPE_REGULAR, permissions);
     
     if (result == 0) {
-        char msg5[] = "[VFS] vfs_create: SUCCESS\n";
-        printk(0xFF00FF00, 0x000000, msg5);
+        PRINT(0xFF00FF00, 0x000000, "[VFS] vfs_create: SUCCESS\n");
     } else {
-        char err[] = "[VFS] vfs_create: FAILED\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: FAILED\n");
     }
     
     return result;
 }
 
 int vfs_mkdir(const char *path, uint32_t permissions) {
-    char msg1[] = "[VFS] vfs_mkdir: '%s'\n";
-    printk(0xFFFFFF00, 0x000000, msg1, path);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_mkdir: '%s'\n", path);
     
     if (!path || path[0] != '/') {
-        char err[] = "[VFS] vfs_mkdir: Invalid path\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: Invalid path\n");
         return -1;
     }
     
-    // Find parent directory
     char parent_path[256];
     char dirname[MAX_FILENAME];
     
@@ -569,12 +471,10 @@ int vfs_mkdir(const char *path, uint32_t permissions) {
     }
     
     if (last_slash < 0) {
-        char err[] = "[VFS] vfs_mkdir: No slash in path\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: No slash in path\n");
         return -1;
     }
     
-    // Extract parent path and dirname
     if (last_slash == 0) {
         parent_path[0] = '/';
         parent_path[1] = '\0';
@@ -590,45 +490,35 @@ int vfs_mkdir(const char *path, uint32_t permissions) {
         dirname[j++] = path[i];
     }
     dirname[j] = '\0';
+
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_mkdir: parent='%s', dirname='%s'\n", parent_path, dirname);
     
-    char msg2[] = "[VFS] vfs_mkdir: parent='%s', dirname='%s'\n";
-    printk(0xFFFFFF00, 0x000000, msg2, parent_path, dirname);
-    
-    // Get parent directory
     vfs_node_t *parent = vfs_resolve_path(parent_path);
     if (!parent) {
-        char err[] = "[VFS] vfs_mkdir: Parent directory not found: %s\n";
-        printk(0xFFFF0000, 0x000000, err, parent_path);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: Parent directory not found: %s\n", parent_path);
         return -1;
     }
-    
-    char msg3[] = "[VFS] vfs_mkdir: parent found at %p\n";
-    printk(0xFF00FF00, 0x000000, msg3, parent);
+
+    PRINT(0xFF00FF00, 0x000000, "[VFS] vfs_mkdir: parent found at %p\n", parent);
     
     if (parent->type != FILE_TYPE_DIRECTORY) {
-        char err[] = "[VFS] vfs_mkdir: Parent is not a directory\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: Parent is not a directory\n");
         return -1;
     }
     
     if (!parent->ops || !parent->ops->create) {
-        char err[] = "[VFS] vfs_mkdir: Parent has no create operation\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: Parent has no create operation\n");
         return -1;
     }
+
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_mkdir: Calling parent->ops->create()...\n");
     
-    char msg4[] = "[VFS] vfs_mkdir: Calling parent->ops->create()...\n";
-    printk(0xFFFFFF00, 0x000000, msg4);
-    
-    // Create directory
     int result = parent->ops->create(parent, dirname, FILE_TYPE_DIRECTORY, permissions);
     
     if (result == 0) {
-        char msg5[] = "[VFS] vfs_mkdir: SUCCESS\n";
-        printk(0xFF00FF00, 0x000000, msg5);
+        PRINT(0xFF00FF00, 0x000000, "[VFS] vfs_mkdir: SUCCESS\n");
     } else {
-        char err[] = "[VFS] vfs_mkdir: FAILED\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: FAILED\n");
     }
     
     return result;
@@ -637,7 +527,6 @@ int vfs_mkdir(const char *path, uint32_t permissions) {
 int vfs_unlink(const char *path) {
     if (!path || path[0] != '/') return -1;
     
-    // Find parent directory
     char parent_path[256];
     char name[MAX_FILENAME];
     
@@ -648,7 +537,6 @@ int vfs_unlink(const char *path) {
     
     if (last_slash < 0) return -1;
     
-    // Extract parent path and name
     if (last_slash == 0) {
         parent_path[0] = '/';
         parent_path[1] = '\0';
@@ -665,35 +553,29 @@ int vfs_unlink(const char *path) {
     }
     name[j] = '\0';
     
-    // Get parent directory
     vfs_node_t *parent = vfs_resolve_path(parent_path);
     if (!parent || parent->type != FILE_TYPE_DIRECTORY) return -1;
     
-    // Remove entry
     if (!parent->ops || !parent->ops->unlink) return -1;
     
     return parent->ops->unlink(parent, name);
 }
 
 void vfs_list_directory(const char *path) {
-    char msg1[] = "[VFS] list_directory: '%s'\n";
-    printk(0xFFFFFF00, 0x000000, msg1, path);
+    PRINT(0xFFFFFF00, 0x000000, "[VFS] list_directory: '%s'\n", path);
     
     vfs_node_t *dir = vfs_resolve_path(path);
     if (!dir) {
-        char err[] = "Directory not found: %s\n";
-        printk(0xFFFF0000, 0x000000, err, path);
+        PRINT(0xFFFF0000, 0x000000, "Directory not found: %s\n", path);
         return;
     }
     
     if (dir->type != FILE_TYPE_DIRECTORY) {
-        char err[] = "Not a directory: %s\n";
-        printk(0xFFFF0000, 0x000000, err, path);
+        PRINT(0xFFFF0000, 0x000000, "Not a directory: %s\n", path);
         return;
     }
-    
-    char msg2[] = "Contents of %s:\n";
-    printk(0xFFFFFFFF, 0x000000, msg2, path);
+
+    PRINT(0xFFFFFFFF, 0x000000, "Contents of %s:\n", path);
     
     uint32_t i = 0;
     vfs_node_t *entry;
@@ -701,16 +583,14 @@ void vfs_list_directory(const char *path) {
     
     while ((entry = vfs_readdir(dir, i++)) != NULL) {
         char type = (entry->type == FILE_TYPE_DIRECTORY) ? 'd' : 'f';
-        char msg3[] = "  [%c] %s %d bytes\n";
-        printk(0xFFFFFFFF, 0x000000, msg3, type, entry->name, entry->size);
+        PRINT(0xFFFFFFFF, 0x000000, "  [%c] %s %d bytes\n", type, entry->name, entry->size);
         count++;
         
         kfree(entry);
     }
     
     if (count == 0) {
-        char msg4[] = "  (empty)\n";
-        printk(0xFFFFFF00, 0x000000, msg4);
+        PRINT(0xFFFFFF00, 0x000000, "  (empty)\n");
     }
 }
 
@@ -725,45 +605,34 @@ int vfs_statfs(const char *path, fs_stats_t *stats) {
     return -1;
 }
 
-// Get current working directory node
 vfs_node_t* vfs_get_cwd(void) {
     return current_dir ? current_dir : root_node;
 }
 
-// Get current working directory path string
 const char* vfs_get_cwd_path(void) {
     return current_path;
 }
 
-// Change directory
-// Change directory
 int vfs_chdir(const char *path) {
     if (!path) return -1;
     
     vfs_node_t *target;
     char full_path[256];
     
-    // Handle absolute vs relative paths
     if (path[0] == '/') {
-        // Absolute path
         str_cpy(full_path, path, 256);
         target = vfs_resolve_path(path);
     } else {
-        // Relative path - build full path
-        
-        // Copy current path
         int i = 0;
         while (current_path[i] && i < 255) {
             full_path[i] = current_path[i];
             i++;
         }
         
-        // Add slash if not at root
         if (i > 0 && full_path[i-1] != '/') {
             full_path[i++] = '/';
         }
         
-        // Add relative path
         int j = 0;
         while (path[j] && i < 255) {
             full_path[i++] = path[j++];
@@ -774,21 +643,17 @@ int vfs_chdir(const char *path) {
     }
     
     if (!target) {
-        char err[] = "cd: directory not found: %s\n";
-        printk(0xFFFF0000, 0x000000, err, path);
+        PRINT(0xFFFF0000, 0x000000, "cd: directory not found: %s\n", path);
         return -1;
     }
     
     if (target->type != FILE_TYPE_DIRECTORY) {
-        char err[] = "cd: not a directory: %s\n";
-        printk(0xFFFF0000, 0x000000, err, path);
+        PRINT(0xFFFF0000, 0x000000, "cd: not a directory: %s\n", path);
         return -1;
     }
     
-    // Update current directory
     current_dir = target;
     
-    // Update path string - NOW WORKS FOR BOTH ABSOLUTE AND RELATIVE
     int i = 0;
     while (full_path[i] && i < 255) {
         current_path[i] = full_path[i];
@@ -796,7 +661,6 @@ int vfs_chdir(const char *path) {
     }
     current_path[i] = '\0';
     
-    // Remove trailing slash (unless it's root "/")
     if (i > 1 && current_path[i-1] == '/') {
         current_path[i-1] = '\0';
     }
