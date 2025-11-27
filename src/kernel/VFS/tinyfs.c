@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "print.h"
 #include "vfs.h"
+#include "string_helpers.h"
 
 #define EOF 0xFFFFFFFF
 
@@ -73,11 +74,11 @@ static int write_superblock(tinyfs_data_t *data) {
     tinyfs_superblock_t *sb = (tinyfs_superblock_t*)buffer;
     *sb = data->sb;
     
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Writing superblock (free_blocks=%u)...\n", sb->free_blocks);
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Writing superblock (free_blocks=%u)...\n", sb->free_blocks);
     
     int result = ata_write_sectors(0, 1, buffer);
     if (result != 0) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to write superblock\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to write superblock\n");
         return -1;
     }
     
@@ -88,7 +89,7 @@ static int write_fat(tinyfs_data_t *data) {
     uint8_t buffer[TINYFS_BLOCK_SIZE];
     int entries_per_block = TINYFS_BLOCK_SIZE / sizeof(uint32_t);
     
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Writing FAT...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Writing FAT...\n");
     
     for (int i = 0; i < 10; i++) {
         // Clear buffer
@@ -106,12 +107,12 @@ static int write_fat(tinyfs_data_t *data) {
         
         // Write buffer to disk
         if (ata_write_sectors(data->sb.fat_start + i, 1, buffer) != 0) {
-            printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to write FAT block %d\n", i);
+            PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to write FAT block %d\n", i);
             return -1;
         }
     }
     
-    printk(0xFF00FF00, 0x000000, "[TINYFS] FAT written successfully\n");
+    PRINT(0xFF00FF00, 0x000000, "[TINYFS] FAT written successfully\n");
     return 0;
 }
 
@@ -119,7 +120,7 @@ static int write_directory(tinyfs_data_t *data) {
     uint8_t buffer[TINYFS_BLOCK_SIZE];
     int entries_per_block = TINYFS_BLOCK_SIZE / sizeof(tinyfs_dirent_t);
     
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Writing directory (90 blocks)...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Writing directory (90 blocks)...\n");
     
     for (int i = 0; i < 90; i++) {
         // Clear buffer
@@ -137,12 +138,12 @@ static int write_directory(tinyfs_data_t *data) {
         
         // Write buffer to disk
         if (ata_write_sectors(data->sb.dir_start + i, 1, buffer) != 0) {
-            printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to write dir block %d\n", i);
+            PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to write dir block %d\n", i);
             return -1;
         }
     }
     
-    printk(0xFF00FF00, 0x000000, "[TINYFS] Directory written successfully\n");
+    PRINT(0xFF00FF00, 0x000000, "[TINYFS] Directory written successfully\n");
     return 0;
 }
 
@@ -155,12 +156,12 @@ static int allocate_block(tinyfs_data_t *data) {
         if (data->fat[i] == 0) {
             data->fat[i] = EOF;
             data->sb.free_blocks--;
-            printk(0xFF00FF00, 0x000000, "[TINYFS] Allocated block %d (free_blocks=%u)\n", 
+            PRINT(0xFF00FF00, 0x000000, "[TINYFS] Allocated block %d (free_blocks=%u)\n", 
                    i, data->sb.free_blocks);
             return i;
         }
     }
-    printk(0xFFFF0000, 0x000000, "[TINYFS] No free blocks available\n");
+    PRINT(0xFFFF0000, 0x000000, "[TINYFS] No free blocks available\n");
     return -1;
 }
 
@@ -176,7 +177,7 @@ static void free_block_chain(tinyfs_data_t *data, uint32_t first_block) {
 }
 
 static int find_free_dirent(tinyfs_data_t *data) {
-    for (int i = 0; i < TINYFS_MAX_FILES; i++) {
+    for (int i = 1; i < TINYFS_MAX_FILES; i++) {
         if (!data->dirents[i].used) {
             return i;
         }
@@ -189,7 +190,7 @@ static int find_free_dirent(tinyfs_data_t *data) {
 // ============================================================================
 
 int tinyfs_format(const char *device) {
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Formatting disk...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Formatting disk...\n");
     
     uint8_t buffer[TINYFS_BLOCK_SIZE];
     
@@ -207,14 +208,14 @@ int tinyfs_format(const char *device) {
     sb->data_start = 101;
     sb->free_blocks = 1024 - 101;  // 923 free blocks
     
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Writing superblock...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Writing superblock...\n");
     if (ata_write_sectors(0, 1, buffer) != 0) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to write superblock\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to write superblock\n");
         return -1;
     }
     
     // Initialize FAT - mark reserved blocks as EOF
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Writing FAT (10 blocks)...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Writing FAT (10 blocks)...\n");
     for (int i = 1; i <= 10; i++) {
         // Clear buffer
         for (int k = 0; k < TINYFS_BLOCK_SIZE; k++) {
@@ -235,25 +236,25 @@ int tinyfs_format(const char *device) {
         }
         
         if (ata_write_sectors(i, 1, buffer) != 0) {
-            printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to write FAT block %d\n", i);
+            PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to write FAT block %d\n", i);
             return -1;
         }
     }
     
     // Clear directory blocks
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Clearing directory (90 blocks)...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Clearing directory (90 blocks)...\n");
     for (int i = 0; i < TINYFS_BLOCK_SIZE; i++) {
         buffer[i] = 0;
     }
     
     for (int i = 11; i <= 100; i++) {
         if (ata_write_sectors(i, 1, buffer) != 0) {
-            printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to write dir block %d\n", i);
+            PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to write dir block %d\n", i);
             return -1;
         }
     }
     
-    printk(0xFF00FF00, 0x000000, "[TINYFS] Format successful\n");
+    PRINT(0xFF00FF00, 0x000000, "[TINYFS] Format successful\n");
     return 0;
 }
 
@@ -262,11 +263,11 @@ int tinyfs_format(const char *device) {
 // ============================================================================
 
 static int tinyfs_mount(filesystem_t *fs, const char *device) {
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Mounting filesystem...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Mounting filesystem...\n");
     
     tinyfs_data_t *data = (tinyfs_data_t*)kmalloc(sizeof(tinyfs_data_t));
     if (!data) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to allocate memory\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to allocate memory\n");
         return -1;
     }
     
@@ -275,29 +276,29 @@ static int tinyfs_mount(filesystem_t *fs, const char *device) {
     // Read superblock
     uint8_t buffer[TINYFS_BLOCK_SIZE];
     if (ata_read_sectors(0, 1, buffer) != 0) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to read superblock\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to read superblock\n");
         kfree(data);
         return -1;
     }
     
     tinyfs_superblock_t *sb = (tinyfs_superblock_t*)buffer;
     if (sb->magic != TINYFS_MAGIC) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] Invalid magic: 0x%x (expected 0x%x)\n", 
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] Invalid magic: 0x%x (expected 0x%x)\n", 
                sb->magic, TINYFS_MAGIC);
         kfree(data);
         return -1;
     }
     
     data->sb = *sb;
-    printk(0xFF00FF00, 0x000000, "[TINYFS] Superblock loaded (free_blocks=%u)\n", 
+    PRINT(0xFF00FF00, 0x000000, "[TINYFS] Superblock loaded (free_blocks=%u)\n", 
            data->sb.free_blocks);
     
     // Read FAT
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Reading FAT...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Reading FAT...\n");
     int fat_entries_per_block = TINYFS_BLOCK_SIZE / sizeof(uint32_t);
     for (int i = 0; i < 10; i++) {
         if (ata_read_sectors(data->sb.fat_start + i, 1, buffer) != 0) {
-            printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to read FAT block %d\n", i);
+            PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to read FAT block %d\n", i);
             kfree(data);
             return -1;
         }
@@ -311,11 +312,11 @@ static int tinyfs_mount(filesystem_t *fs, const char *device) {
     }
     
     // Read directory
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] Reading directory...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] Reading directory...\n");
     int entries_per_block = TINYFS_BLOCK_SIZE / sizeof(tinyfs_dirent_t);
     for (int i = 0; i < 90; i++) {
         if (ata_read_sectors(data->sb.dir_start + i, 1, buffer) != 0) {
-            printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to read directory block %d\n", i);
+            PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to read directory block %d\n", i);
             kfree(data);
             return -1;
         }
@@ -329,7 +330,7 @@ static int tinyfs_mount(filesystem_t *fs, const char *device) {
     }
     
     fs->private_data = data;
-    printk(0xFF00FF00, 0x000000, "[TINYFS] Mount successful\n");
+    PRINT(0xFF00FF00, 0x000000, "[TINYFS] Mount successful\n");
     return 0;
 }
 
@@ -360,7 +361,7 @@ static vfs_node_t* tinyfs_get_root(filesystem_t *fs) {
     root->ops = &tinyfs_vfs_ops;
     root->private_data = NULL;
     
-    printk(0xFF00FF00, 0x000000, "[TINYFS] Root node created\n");
+    PRINT(0xFF00FF00, 0x000000, "[TINYFS] Root node created\n");
     return root;
 }
 
@@ -561,7 +562,7 @@ static vfs_node_t* tinyfs_finddir(vfs_node_t *node, const char *name) {
     
     for (int i = 0; i < TINYFS_MAX_FILES; i++) {
         if (data->dirents[i].used && 
-            data->dirents[i].parent_inode == current_inode &&  // ADD THIS CHECK
+            data->dirents[i].parent_inode == current_inode &&
             strcmp_safe(data->dirents[i].name, name) == 0) {
             
             vfs_node_t *entry = (vfs_node_t*)kmalloc(sizeof(vfs_node_t));
@@ -586,18 +587,18 @@ static vfs_node_t* tinyfs_finddir(vfs_node_t *node, const char *name) {
 
 static int tinyfs_create_node(vfs_node_t *parent, const char *name, uint8_t type, uint32_t permissions) {
     if (!parent || !parent->fs || !parent->fs->private_data) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] create_node: invalid parent\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] create_node: invalid parent\n");
         return -1;
     }
     
     if (parent->type != FILE_TYPE_DIRECTORY) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] create_node: parent not a directory\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] create_node: parent not a directory\n");
         return -1;
     }
     
     tinyfs_data_t *data = (tinyfs_data_t*)parent->fs->private_data;
     
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] create_node: Creating '%s' (type=%d)\n", name, type);
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] create_node: Creating '%s' (type=%d)\n", name, type);
     
     // Check for duplicates in the SAME directory
     uint32_t parent_inode = parent->inode;
@@ -605,18 +606,18 @@ static int tinyfs_create_node(vfs_node_t *parent, const char *name, uint8_t type
         if (data->dirents[i].used && 
             data->dirents[i].parent_inode == parent_inode &&
             strcmp_safe(data->dirents[i].name, name) == 0) {
-            printk(0xFFFF0000, 0x000000, "[TINYFS] File '%s' already exists\n", name);
+            PRINT(0xFFFF0000, 0x000000, "[TINYFS] File '%s' already exists\n", name);
             return -1;
         }
     }
     
     int free_idx = find_free_dirent(data);
     if (free_idx < 0) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] No free directory entries\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] No free directory entries\n");
         return -1;
     }
     
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] create_node: Using dirent index %d\n", free_idx);
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] create_node: Using dirent index %d\n", free_idx);
     
     tinyfs_dirent_t *dirent = &data->dirents[free_idx];
     strcpy_safe(dirent->name, name, TINYFS_MAX_FILENAME);
@@ -626,16 +627,16 @@ static int tinyfs_create_node(vfs_node_t *parent, const char *name, uint8_t type
     dirent->used = 1;
     dirent->parent_inode = parent_inode;  // ADD THIS LINE
     
-    printk(0xFFFFFF00, 0x000000, "[TINYFS] create_node: Writing directory to disk...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] create_node: Writing directory to disk...\n");
     
     // Write changes to disk
     if (write_directory(data) != 0) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to write directory\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to write directory\n");
         dirent->used = 0;
         return -1;
     }
     
-    printk(0xFF00FF00, 0x000000, "[TINYFS] Created %s '%s' at index %d (parent=%d)\n", 
+    PRINT(0xFF00FF00, 0x000000, "[TINYFS] Created %s '%s' at index %d (parent=%d)\n", 
            (type == FILE_TYPE_DIRECTORY) ? "directory" : "file", name, free_idx, parent_inode);
     return 0;
 }
@@ -663,7 +664,7 @@ static int tinyfs_unlink(vfs_node_t *parent, const char *name) {
             write_directory(data);
             write_superblock(data);
             
-            printk(0xFF00FF00, 0x000000, "[TINYFS] Removed '%s'\n", name);
+            PRINT(0xFF00FF00, 0x000000, "[TINYFS] Removed '%s'\n", name);
             return 0;
         }
     }
@@ -675,10 +676,11 @@ static int tinyfs_unlink(vfs_node_t *parent, const char *name) {
 // CREATE FILESYSTEM
 // ============================================================================
 
+
 filesystem_t* tinyfs_create(void) {
     filesystem_t *fs = (filesystem_t*)kmalloc(sizeof(filesystem_t));
     if (!fs) {
-        printk(0xFFFF0000, 0x000000, "[TINYFS] Failed to allocate filesystem\n");
+        PRINT(0xFFFF0000, 0x000000, "[TINYFS] Failed to allocate filesystem\n");
         return NULL;
     }
     
@@ -690,17 +692,15 @@ filesystem_t* tinyfs_create(void) {
     // USE A LOCAL ARRAY INSTEAD OF STRING LITERAL:
     char name_str[] = "tinyfs";
     
-    char debug1[] = "[TINYFS] About to call strcpy_safe with '%s'...\n";
-    printk(0xFFFFFF00, 0x000000, debug1, name_str);
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS] About to call strcpy_safe with '%s'...\n", name_str);
     
     strcpy_safe(fs->name, name_str, 32);
     
-    char debug2[] = "[TINYFS-STRCPY] AFTER strcpy_safe: fs->name = '%s'\n";
-    printk(0xFFFFFF00, 0x000000, debug2, fs->name);
+    PRINT(0xFFFFFF00, 0x000000, "[TINYFS-STRCPY] AFTER strcpy_safe: fs->name = '%s'\n", fs->name);
     
     fs->ops = &tinyfs_fs_ops;
     fs->private_data = NULL;
     
-    printk(0xFF00FF00, 0x000000, "[TINYFS] Filesystem created\n");
+    PRINT(0xFF00FF00, 0x000000, "[TINYFS] Filesystem created\n");
     return fs;
 }

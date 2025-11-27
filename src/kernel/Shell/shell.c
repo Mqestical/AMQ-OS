@@ -81,8 +81,7 @@ void bg_command_thread(void) {
     
     cmd_thread_data_t *data = (cmd_thread_data_t*)current->private_data;
     
-    char msg[] = "\n[%d] Running: %s\n";
-    printk(0xFFFFFF00, 0x000000, msg, data->job_id, data->command);
+    PRINT(0xFFFFFF00, 0x000000, "\n[%d] Running: %s\n", data->job_id, data->command);
     
     // Parse and execute the command
     if (strncmp(data->command, "sleep ", 6) == 0) {
@@ -100,12 +99,10 @@ void bg_command_thread(void) {
     }
     else if (strncmp(data->command, "echo ", 5) == 0) {
         char *text = data->command + 5;
-        char fmt[] = "\n[%d] Output: %s\n";
-        printk(0xFFFFFF00, 0x000000, fmt, data->job_id, text);
+        PRINT(0xFFFFFF00, 0x000000, "\n[%d] Output: %s\n", data->job_id, text);
     }
     else {
-        char unknown[] = "\n[%d] Unknown command: %s\n";
-        printk(0xFFFF0000, 0x000000, unknown, data->job_id, data->command);
+        PRINT(0xFFFF0000, 0x000000, "\n[%d] Unknown command: %s\n", data->job_id, data->command);
     }
     
     // CRITICAL: Mark slot as free BEFORE exiting thread
@@ -123,21 +120,18 @@ void bg_command_thread(void) {
 void bring_to_foreground(int job_id) {
     job_t *job = get_job(job_id);
     if (!job) {
-        char err[] = "fg: job %d not found\n";
-        printk(0xFFFF0000, 0x000000, err, job_id);
+        PRINT(0xFFFF0000, 0x000000, "fg: job %d not found\n", job_id);
         return;
     }
     
     if (!job->is_background) {
-        char err[] = "fg: job %d is already in foreground\n";
-        printk(0xFFFFFF00, 0x000000, err, job_id);
+        PRINT(0xFFFFFF00, 0x000000, "fg: job %d is already in foreground\n", job_id);
         return;
     }
     
     thread_t *thread = get_thread(job->tid);
     if (!thread) {
-        char err[] = "fg: thread %u not found for job %d\n";
-        printk(0xFFFF0000, 0x000000, err, job->tid, job_id);
+        PRINT(0xFFFF0000, 0x000000, "fg: thread %u not found for job %d\n", job->tid, job_id);
         return;
     }
     
@@ -150,14 +144,12 @@ void bring_to_foreground(int job_id) {
     
     // Move to foreground
     job->is_background = 0;
-    
-    char msg[] = "fg: job %d (%s) brought to foreground\n";
-    printk(0xFF00FF00, 0x000000, msg, job_id, job->command);
+
+    PRINT(0xFF00FF00, 0x000000, "fg: job %d (%s) brought to foreground\n", job_id, job->command);
     
     // CRITICAL: Without scheduler, we can't actually "wait" for completion
     // Just inform the user and let update_jobs() handle cleanup
-    char note[] = "Note: Job will continue running. Use 'jobs' to check status.\n";
-    printk(0xFFFFFF00, 0x000000, note);
+    PRINT(0xFFFFFF00, 0x000000, "Note: Job will continue running. Use 'jobs' to check status.\n");
 }
 
 // ============================================================================
@@ -167,21 +159,18 @@ void bring_to_foreground(int job_id) {
 void send_to_background(int job_id) {
     job_t *job = get_job(job_id);
     if (!job) {
-        char err[] = "bg: job %d not found\n";
-        printk(0xFFFF0000, 0x000000, err, job_id);
+        PRINT(0xFFFF0000, 0x000000, "bg: job %d not found\n", job_id);
         return;
     }
     
     if (job->is_background) {
-        char err[] = "bg: job %d is already in background\n";
-        printk(0xFFFFFF00, 0x000000, err, job_id);
+        PRINT(0xFFFFFF00, 0x000000, "bg: job %d is already in background\n", job_id);
         return;
     }
     
     job->is_background = 1;
-    
-    char msg[] = "bg: job %d (%s) sent to background\n";
-    printk(0xFF00FF00, 0x000000, msg, job_id, job->command);
+
+    PRINT(0xFF00FF00, 0x000000, "bg: job %d (%s) sent to background\n", job_id, job->command);
 }
 
 void process_command(char* cmd) {
@@ -204,20 +193,17 @@ void process_command(char* cmd) {
         }
         // Skip if command is now empty
         if (len == 0 || cmd[0] == '\0') {
-            char err[] = "Invalid command\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "Invalid command\n");
             return;
         }
 
-        char bg_msg[] = "[SHELL] Running in background: %s\n";
-        printk(0xFFFFFF00, 0x000000, bg_msg, cmd);
+        PRINT(0xFFFFFF00, 0x000000, "[SHELL] Running in background: %s\n", cmd);
 
         // Create background job
         // 1. Get/create a process for background jobs
         process_t *proc = get_process(1); // Use init process (PID=1)
         if (!proc) {
-            char err[] = "[ERROR] Init process not found\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "[ERROR] Init process not found\n");
             return;
         }
 
@@ -230,8 +216,7 @@ void process_command(char* cmd) {
             }
         }
         if (data_idx < 0) {
-            char err[] = "[ERROR] No free background slots\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "[ERROR] No free background slots\n");
             return;
         }
 
@@ -249,8 +234,7 @@ void process_command(char* cmd) {
             500000000           // 500ms period
         );
         if (tid < 0) {
-            char err[] = "[ERROR] Failed to create background thread\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create background thread\n");
             bg_thread_data[data_idx].job_id = 0; // Free the slot
             return;
         }
@@ -266,8 +250,7 @@ void process_command(char* cmd) {
         if (job_id > 0) {
             bg_thread_data[data_idx].job_id = job_id;
         } else {
-            char err[] = "[ERROR] Failed to add background job\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to add background job\n");
             // Thread will still run but won't be tracked
         }
 
@@ -303,56 +286,33 @@ void process_command(char* cmd) {
     char cmd22[] = "syscalltest";
     // --- Basic commands ---
     if (strcmp(cmd, cmd1) == 0) {
-        char msg[] = "Hello from AMQ OS!\n";
-        printk(0xFF00FF00, 0x000000, msg);
+        PRINT(0xFF00FF00, 0x000000, "hello :D");
     }
     else if (strcmp(cmd, cmd2) == 0) {
-        char msg1[] = "Available commands:\n";
-        char msg2[] = "  hello - Say hello\n";
-        char msg3[] = "  clear - Clear screen\n";
-        char msg4[] = "  echo <text> - Echo text\n";
-        char msg5[] = "  ls [path] - List directory\n";
-        char msg6[] = "  cat <file> - Display file\n";
-        char msg7[] = "  touch <file> - Create file\n";
-        char msg8[] = "  mkdir <dir> - Create directory\n";
-        char msg9[] = "  rm <file> - Remove file/dir\n";
-        char msg10[] = "  write <file> - Write to file\n";
-        char msg11[] = "  df - Filesystem stats\n";
-        char msg12[] = "  memstats - Memory stats\n";
-        char msg13[] = "  format - Format disk (WARNING: DISK WILL BE WIPED!)\n";
-        char msg14[] = "  cd <dir> - Change directory\n";
-        char msg15[] = "  pwd - Print working directory\n";
-        char msg16[] = "  ps - Show processes\n";
-        char msg17[] = "  threads - Show threads\n";
-        char msg18[] = "  jobs - List all jobs\n";
-        char msg19[] = "  fg <job_id> - Bring to foreground\n";
-        char msg20[] = "  bg <job_id> - Send to background\n";
-        char msg21[] = "  sleep <sec> - Sleep for seconds\n";
-        char msg22[] = "  command & - Run in background\n";
-        char msg23[] = "syscalltest";
-        printk(0xFFFFFFFF, 0x000000, msg1);
-        printk(0xFFFFFFFF, 0x000000, msg2);
-        printk(0xFFFFFFFF, 0x000000, msg3);
-        printk(0xFFFFFFFF, 0x000000, msg4);
-        printk(0xFFFFFFFF, 0x000000, msg5);
-        printk(0xFFFFFFFF, 0x000000, msg6);
-        printk(0xFFFFFFFF, 0x000000, msg7);
-        printk(0xFFFFFFFF, 0x000000, msg8);
-        printk(0xFFFFFFFF, 0x000000, msg9);
-        printk(0xFFFFFFFF, 0x000000, msg10);
-        printk(0xFFFFFFFF, 0x000000, msg11);
-        printk(0xFFFFFFFF, 0x000000, msg12);
-        printk(0xFFFF0000, 0x000000, msg13);
-        printk(0xFFFFFFFF, 0x000000, msg14);
-        printk(0xFFFFFFFF, 0x000000, msg15);
-        printk(0xFF00FFFF, 0x000000, msg16);
-        printk(0xFF00FFFF, 0x000000, msg17);
-        printk(0xFF00FFFF, 0x000000, msg18);
-        printk(0xFF00FFFF, 0x000000, msg19);
-        printk(0xFF00FFFF, 0x000000, msg20);
-        printk(0xFF00FFFF, 0x000000, msg21);
-        printk(0xFFFFFF00, 0x000000, msg22);
-        printk(0xFF00FFFF, 0x000000, msg23);
+        PRINT(0xFFFFFFFF, 0x000000, "Available commands:\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  hello - Say hello\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  clear - Clear screen\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  echo <text> - Echo text\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  ls [path] - List directory\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  cat <file> - Display file\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  touch <file> - Create file\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  mkdir <dir> - Create directory\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  rm <file> - Remove file/dir\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  write <file> - Write to file\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  df - Filesystem stats\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  memstats - Memory stats\n");
+        PRINT(0xFFFF0000, 0x000000, "  format - Format disk (WARNING: DISK WILL BE WIPED!)\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  cd <dir> - Change directory\n");
+        PRINT(0xFFFFFFFF, 0x000000, "  pwd - Print working directory\n");
+        PRINT(0xFF00FFFF, 0x000000, "  ps - Show processes\n");
+        PRINT(0xFF00FFFF, 0x000000, "  threads - Show threads\n");
+        PRINT(0xFF00FFFF, 0x000000, "  jobs - List all jobs\n");
+        PRINT(0xFF00FFFF, 0x000000, "  fg <job_id> - Bring to foreground\n");
+        PRINT(0xFF00FFFF, 0x000000, "  bg <job_id> - Send to background\n");
+        PRINT(0xFF00FFFF, 0x000000, "  sleep <sec> - Sleep for seconds\n");
+        PRINT(0xFFFFFF00, 0x000000, "  command & - Run in background\n");
+        PRINT(0xFF00FFFF, 0x000000, "syscalltest\n");
+
     }
     else if (strcmp(cmd, cmd3) == 0) {
         ClearScreen(0x000000);
@@ -360,8 +320,7 @@ void process_command(char* cmd) {
     }
     else if (strncmp(cmd, cmd4, 5) == 0) {
         char* text = cmd + 5;
-        char fmt[] = "%s\n";
-        printk(0xFFFFFFFF, 0x000000, fmt, text);
+        PRINT(0xFFFFFFFF, 0x000000, "%s\n", text);
     }
     else if (strcmp(cmd, cmd12) == 0) {
         memory_stats();
@@ -371,16 +330,13 @@ void process_command(char* cmd) {
         print_process_table();
     }
     else if (strcmp(cmd, cmd17) == 0) {
-        char header[] = "\n=== Thread Information ===\n";
-        printk(0xFFFFFFFF, 0x000000, header);
+        PRINT(0xFFFFFFFF, 0x000000, "\n=== Thread Information ===\n");
 
         thread_t *current = get_current_thread();
         if (current) {
-            char msg[] = "Current thread: TID=%u (PID=%u)\n";
-            printk(0xFF00FF00, 0x000000, msg, current->tid, current->parent->pid);
+            PRINT(0xFF00FF00, 0x000000, "Current thread: TID=%u (PID=%u)\n", current->tid, current->parent->pid);
         } else {
-            char msg[] = "No thread currently running\n";
-            printk(0xFFFFFF00, 0x000000, msg);
+            PRINT(0xFFFFFF00, 0x000000, "No thread currently running\n");
         }
 
         // Count threads by state
@@ -393,14 +349,10 @@ void process_command(char* cmd) {
             }
         }
 
-        char stats[] = "\nThread states:\n";
-        char stats1[] = "  Running: %d\n";
-        char stats2[] = "  Ready: %d\n";
-        char stats3[] = "  Blocked: %d\n";
-        printk(0xFFFFFFFF, 0x000000, stats);
-        printk(0xFF00FF00, 0x000000, stats1, running);
-        printk(0xFFFFFF00, 0x000000, stats2, ready);
-        printk(0xFFFF0000, 0x000000, stats3, blocked);
+        PRINT(0xFFFFFFFF, 0x000000, "\nThread states:\n");
+        PRINT(0xFF00FF00, 0x000000, "  Running: %d\n", running);
+        PRINT(0xFFFFFF00, 0x000000, "  Ready: %d\n", ready);
+        PRINT(0xFFFF0000, 0x000000, "  Blocked: %d\n, blocked");
     }
     // --- Job control commands ---
     else if (strcmp(cmd, cmd18) == 0) {
@@ -416,8 +368,7 @@ void process_command(char* cmd) {
         if (job_id > 0) {
             bring_to_foreground(job_id);
         } else {
-            char err[] = "Usage: fg <job_id>\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "Usage: fg <job_id>\n");
         }
     }
     else if (strncmp(cmd, cmd20, 3) == 0) {
@@ -430,8 +381,7 @@ void process_command(char* cmd) {
         if (job_id > 0) {
             send_to_background(job_id);
         } else {
-            char err[] = "Usage: bg <job_id>\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "Usage: bg <job_id>\n");
         }
     }
  else if (strncmp(cmd, cmd21, 6) == 0) {
@@ -444,17 +394,14 @@ void process_command(char* cmd) {
         }
         
         if (seconds > 0) {
-            char msg[] = "Sleeping for %u seconds...\n";
-            printk(0xFFFFFF00, 0x000000, msg, seconds);
+            PRINT(0xFFFFFF00, 0x000000, "Sleeping for %u seconds...\n", seconds);
             
-            // Use the REAL sleep_seconds from sleep.c (timer-based)
+            // use sleep_seconds from sleep.c (timer-based)
             sleep_seconds(seconds);
-            
-            char done[] = "Awake!\n";
-            printk(0xFF00FF00, 0x000000, done);
+
+            PRINT(0xFF00FF00, 0x000000, "Awake!\n");
         } else {
-            char err[] = "Usage: sleep <seconds>\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "error: sleep count can not be under 0!");
         }
     }
     // --- VFS commands ---
@@ -510,16 +457,13 @@ void process_command(char* cmd) {
             int bytes = vfs_read(fd, buffer, 512);
             if (bytes > 0) {
                 buffer[bytes] = '\0';
-                char fmt[] = "%s\n";
-                printk(0xFFFFFFFF, 0x000000, fmt, buffer);
+                PRINT(0xFFFFFFFF, 0x000000, "%s\n\n", buffer);
             } else {
-                char err[] = "File is empty or read error\n";
-                printk(0xFFFF0000, 0x000000, err);
+                PRINT(0xFFFF0000, 0x000000, "File is empty or read error\n");
             }
             vfs_close(fd);
         } else {
-            char err[] = "File not found: %s\n";
-            printk(0xFFFF0000, 0x000000, err, fullpath);
+            PRINT(0xFFFF0000, 0x000000, "File not found: %s\n", fullpath);
         }
     }
     else if (strncmp(cmd, cmd7, 6) == 0) {
@@ -543,11 +487,9 @@ void process_command(char* cmd) {
             fullpath[i] = '\0';
         }
         if (vfs_create(fullpath, FILE_READ | FILE_WRITE) == 0) {
-            char msg[] = "Created file: %s\n";
-            printk(0xFF00FF00, 0x000000, msg, fullpath);
+            PRINT(0xFF00FF00, 0x000000, "Created file: %s\n\n\n", fullpath);
         } else {
-            char err[] = "Failed to create file\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "Failed to create file\n");
         }
     }
     else if (strncmp(cmd, cmd8, 6) == 0) {
@@ -571,11 +513,9 @@ void process_command(char* cmd) {
             fullpath[i] = '\0';
         }
         if (vfs_mkdir(fullpath, FILE_READ | FILE_WRITE) == 0) {
-            char msg[] = "Created directory: %s\n";
-            printk(0xFF00FF00, 0x000000, msg, fullpath);
+            PRINT(0xFF00FF00, 0x000000, "Created directory: %s\n\n\n", fullpath);
         } else {
-            char err[] = "Failed to create directory\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "Failed to create directory\n");
         }
     }
     else if (strncmp(cmd, cmd9, 3) == 0) {
@@ -599,11 +539,9 @@ void process_command(char* cmd) {
             fullpath[i] = '\0';
         }
         if (vfs_unlink(fullpath) == 0) {
-            char msg[] = "Removed: %s\n";
-            printk(0xFF00FF00, 0x000000, msg, fullpath);
+            PRINT(0xFF00FF00, 0x000000, "Removed: %s\n", fullpath);
         } else {
-            char err[] = "Failed to remove: %s\n";
-            printk(0xFFFF0000, 0x000000, err, fullpath);
+            PRINT(0xFFFF0000, 0x000000, "Failed to remove: %s\n", fullpath);
         }
     }
     else if (strncmp(cmd, cmd10, 6) == 0) {
@@ -627,8 +565,7 @@ void process_command(char* cmd) {
         content[j] = '\0';
         
         if (filename[0] == '\0' || content[0] == '\0') {
-            char err[] = "Usage: write <file> <content>\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "Usage: write <file> <content>\n");
         } else {
             char fullpath[256];
             if (filename[0] == '/') {
@@ -653,15 +590,12 @@ void process_command(char* cmd) {
                 int written = vfs_write(fd, (uint8_t*)content, strlen_local(content));
                 vfs_close(fd);
                 if (written > 0) {
-                    char msg[] = "Wrote %d bytes to %s\n";
-                    printk(0xFF00FF00, 0x000000, msg, written, fullpath);
+                    PRINT(0xFF00FF00, 0x000000, "Wrote %d bytes to %s\n", written, fullpath);
                 } else {
-                    char err[] = "Write failed\n";
-                    printk(0xFFFF0000, 0x000000, err);
+                    PRINT(0xFFFF0000, 0x000000, "Write failed\n";);
                 }
             } else {
-                char err[] = "Cannot open file: %s\n";
-                printk(0xFFFF0000, 0x000000, err, fullpath);
+                PRINT(0xFFFF0000, 0x000000, "Cannot open file: %s\n", fullpath);
             }
         }
     }
@@ -669,36 +603,25 @@ void process_command(char* cmd) {
         fs_stats_t stats;
         char path[] = "/";
         if (vfs_statfs(path, &stats) == 0) {
-            char msg1[] = "Filesystem statistics:\n";
-            char msg2[] = "  Total blocks: %u\n";
-            char msg3[] = "  Free blocks: %u\n";
-            char msg4[] = "  Used blocks: %u\n";
-            char msg5[] = "  Block size: %u bytes\n";
-            char msg6[] = "  Total size: %u KB\n";
-            char msg7[] = "  Used size: %u KB\n";
-            char msg8[] = "  Free size: %u KB\n";
-            printk(0xFFFFFFFF, 0x000000, msg1);
-            printk(0xFFFFFFFF, 0x000000, msg2, stats.total_blocks);
-            printk(0xFFFFFFFF, 0x000000, msg3, stats.free_blocks);
-            printk(0xFFFFFFFF, 0x000000, msg4, stats.total_blocks - stats.free_blocks);
-            printk(0xFFFFFFFF, 0x000000, msg5, stats.block_size);
+            PRINT(0xFFFFFFFF, 0x000000, "Filesystem statistics:\n");
+            PRINT(0xFFFFFFFF, 0x000000, "  Total blocks: %u\n", stats.total_blocks);
+            PRINT(0xFFFFFFFF, 0x000000, "  Free blocks: %u\n", stats.free_blocks);
+            PRINT(0xFFFFFFFF, 0x000000, "  Used blocks: %u\n", stats.total_blocks - stats.free_blocks);
+            PRINT(0xFFFFFFFF, 0x000000, "  Block size: %u bytes\n", stats.block_size);
             uint32_t total_kb = (stats.total_blocks * stats.block_size) / 1024;
             uint32_t free_kb = (stats.free_blocks * stats.block_size) / 1024;
             uint32_t used_kb = total_kb - free_kb;
-            printk(0xFFFFFFFF, 0x000000, msg6, total_kb);
-            printk(0xFFFFFFFF, 0x000000, msg7, used_kb);
-            printk(0xFFFFFFFF, 0x000000, msg8, free_kb);
+            PRINT(0xFFFFFFFF, 0x000000, "  Total size: %u KB\n", total_kb);
+            PRINT(0xFFFFFFFF, 0x000000, "  Used size: %u KB\n", used_kb);
+            PRINT(0xFFFFFFFF, 0x000000, "  Free size: %u KB\n", free_kb);
         } else {
-            char err[] = "Cannot get filesystem stats\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "Cannot get filesystem stats\n");
         }
     }
     else if (strcmp(cmd, cmd13) == 0) {
-        char warning[] = "DISK HAS BEEN WIPED!\n";
-        printk(0xFFFF0000, 0x000000, warning);
-        
-        char unmount_msg[] = "Unmounting filesystem...\n";
-        printk(0xFFFFFF00, 0x000000, unmount_msg);
+
+        PRINT(0xFFFF0000, 0x000000, "DISK HAS BEEN WIPED!\n");
+        PRINT(0xFFFFFF00, 0x000000, "Unmounting filesystem...\n");
         vfs_node_t *root = vfs_get_root();
         if (root && root->fs && root->fs->ops && root->fs->ops->unmount) {
             root->fs->ops->unmount(root->fs);
@@ -706,28 +629,23 @@ void process_command(char* cmd) {
         
         char device[] = "ata0";
         if (tinyfs_format(device) != 0) {
-            char err[] = "[ERROR] Format failed\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "[ERROR] Format failed\n");
             for (;;) {}
         }
         
-        char mount_msg[] = "Remounting filesystem...\n";
-        printk(0xFFFFFF00, 0x000000, mount_msg);
+        PRINT(0xFFFFFF00, 0x000000, "Remounting filesystem...\n");
         char fs_type[] = "tinyfs";
         char mount_point[] = "/";
         if (vfs_mount(fs_type, device, mount_point) != 0) {
-            char err[] = "[ERROR] Remount failed\n";
-            printk(0xFFFF0000, 0x000000, err);
+            PRINT(0xFFFF0000, 0x000000, "[ERROR] Remount failed\n");
             for (;;) {}
         }
-        char success[] = "Format complete - filesystem remounted\n";
-        printk(0xFF00FF00, 0x000000, success);
+        PRINT(0xFF00FF00, 0x000000, "Format complete - filesystem remounted\n");
     }
     else if (strcmp(cmd, cmd144) == 0) {
         char root[] = "/";
         if (vfs_chdir(root) == 0) {
-            char msg[] = "%s\n";
-            printk(0xFF00FF00, 0x000000, msg, vfs_get_cwd_path());
+            PRINT(0xFF00FF00, 0x000000, "%s\n", vfs_get_cwd_path());
         }
     }
     else if (strncmp(cmd, cmd14, 3) == 0) {
@@ -743,19 +661,16 @@ void process_command(char* cmd) {
         if (dir[0] == '\0') {
             char root[] = "/";
             if (vfs_chdir(root) == 0) {
-                char msg[] = "%s\n";
-                printk(0xFF00FF00, 0x000000, msg, vfs_get_cwd_path());
+                PRINT(0xFF00FF00, 0x000000, "%s\n", vfs_get_cwd_path());
             }
         } else {
             if (vfs_chdir(dir) == 0) {
-                char msg[] = "%s\n";
-                printk(0xFF00FF00, 0x000000, msg, vfs_get_cwd_path());
+                PRINT(0xFF00FF00, 0x000000, "%s\n", vfs_get_cwd_path());
             }
         }
     }
     else if (strcmp(cmd, cmd15) == 0) {
-        char msg[] = "%s\n";
-        printk(0xFFFFFFFF, 0x000000, msg, vfs_get_cwd_path());
+        PRINT(0xFFFFFFFF, 0x000000, "%s\n", vfs_get_cwd_path());
     }
 
     else if (strcmp(cmd, cmd22) == 0) {
@@ -763,26 +678,18 @@ void process_command(char* cmd) {
 }
 
     else {
-        char err1[] = "Unknown command: %s\n";
-        char err2[] = "Try 'help' for available commands\n";
-        printk(0xFFFF0000, 0x000000, err1, cmd);
-        printk(0xFFFF0000, 0x000000, err2);
+        PRINT(0xFFFF0000, 0x000000, "Unknown command: %s\n", cmd);
+        PRINT(0xFFFF0000, 0x000000, "Try 'help' for available commands\n");
     }
 }
 
 void run_text_demo(void) {
-    char line1[] = "==========================================\n";
-    char title[] = "    AMQ Operating System v0.2\n";
-    char line2[] = "==========================================\n";
-    char welcome[] = "Welcome! Type 'help' for commands.\n\n";
-    
-    printk(0x00FFFFFF, 0x000000, line1);
-    printk(0x00FFFFFF, 0x000000, title);
-    printk(0x00FFFFFF, 0x000000, line2);
-    printk(0xFFFFFFFF, 0x000000, welcome);
-    
-    char prompt_fmt[] = "%s> ";
-    printk(0xFF00FF00, 0x000000, prompt_fmt, vfs_get_cwd_path());
+
+    PRINT(0x00FFFFFF, 0x000000, "==========================================\n");
+    PRINT(0x00FFFFFF, 0x000000, "    AMQ Operating System v0.2\n");
+    PRINT(0x00FFFFFF, 0x000000, "==========================================\n");
+    PRINT(0xFFFFFFFF, 0x000000, "Welcome! Type 'help' for commands.\n\n");
+    PRINT(0xFF00FF00, 0x000000, "%s> ", vfs_get_cwd_path());
 
     int cursor_visible = 1;
     int cursor_timer = 0;
@@ -797,7 +704,7 @@ void run_text_demo(void) {
         if (input_available()) {
             char* input = get_input_and_reset();
             process_command(input);
-            printk(0xFF00FF00, 0x000000, prompt_fmt, vfs_get_cwd_path());
+            PRINT(0xFF00FF00, 0x000000, "%s> ", vfs_get_cwd_path());
         }
         
         // Blink cursor
@@ -819,40 +726,40 @@ void init_shell(void) {
 }
 
 void test_syscall_interface(void) {
-    printk(0xFF00FFFF, 0x000000, "\n=== Testing Syscall Interface ===\n");
+    PRINT(0xFF00FFFF, 0x000000, "\n=== Testing Syscall Interface ===\n");
     
     // We need to switch to user mode to test syscalls
     // For now, we can test the handlers directly
     
-    SAFE_PRINTK(0xFFFFFF00, 0x000000, "[TEST] Calling sys_getpid...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TEST] Calling sys_getpid...\n");
     int64_t pid = sys_getpid();
-    SAFE_PRINTK(0xFF00FF00, 0x000000, "[TEST] PID = %lld\n", pid);
+    PRINT(0xFF00FF00, 0x000000, "[TEST] PID = %lld\n", pid);
     
-    SAFE_PRINTK(0xFFFFFF00, 0x000000, "[TEST] Calling sys_uptime...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TEST] Calling sys_uptime...\n");
     int64_t uptime = sys_uptime();
-    SAFE_PRINTK(0xFF00FF00, 0x000000, "[TEST] Uptime = %lld seconds\n", uptime);
+    PRINT(0xFF00FF00, 0x000000, "[TEST] Uptime = %lld seconds\n", uptime);
     
-    SAFE_PRINTK(0xFFFFFF00, 0x000000, "[TEST] Calling sys_getcwd...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TEST] Calling sys_getcwd...\n");
     char cwd[256];
     sys_getcwd(cwd, 256);
-    SAFE_PRINTK(0xFF00FF00, 0x000000, "[TEST] CWD = %s\n", cwd);
+    PRINT(0xFF00FF00, 0x000000, "[TEST] CWD = %s\n", cwd);
     
-    SAFE_PRINTK(0xFFFFFF00, 0x000000, "[TEST] Testing sys_mkdir...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TEST] Testing sys_mkdir...\n");
     char t1[] = "/syscall_test";
     int ret = sys_mkdir(t1, FILE_READ | FILE_WRITE);
     if (ret == 0) {
-        SAFE_PRINTK(0xFF00FF00, 0x000000, "[TEST] Created /syscall_test\n");
+        PRINT(0xFF00FF00, 0x000000, "[TEST] Created /syscall_test\n");
     } else {
-        SAFE_PRINTK(0xFFFF0000, 0x000000, "[TEST] mkdir failed: %d\n", ret);
+        PRINT(0xFFFF0000, 0x000000, "[TEST] mkdir failed: %d\n", ret);
     }
     
-    SAFE_PRINTK(0xFFFFFF00, 0x000000, "[TEST] Testing sys_open/write/close...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[TEST] Testing sys_open/write/close...\n");
     char t2[] = "/test_syscall.txt";
     int fd = sys_open(t2, FILE_WRITE, 0);
     if (fd >= 0) {
         char data[] = "Hello from syscall!\n";
         int64_t written = sys_write(fd, data, sizeof(data) - 1);
-        SAFE_PRINTK(0xFF00FF00, 0x000000, "[TEST] Wrote %lld bytes\n", written);
+        PRINT(0xFF00FF00, 0x000000, "[TEST] Wrote %lld bytes\n", written);
         sys_close(fd);
         
         // Read it back
@@ -863,13 +770,13 @@ void test_syscall_interface(void) {
             int64_t bytes = sys_read(fd, buf, 63);
             if (bytes > 0) {
                 buf[bytes] = '\0';
-                SAFE_PRINTK(0xFF00FF00, 0x000000, "[TEST] Read back: %s", buf);
+                PRINT(0xFF00FF00, 0x000000, "[TEST] Read back: %s", buf);
             }
             sys_close(fd);
         }
     }
     
-    SAFE_PRINTK(0xFF00FFFF, 0x000000, "=== Syscall Tests Complete ===\n\n");
+    PRINT(0xFF00FFFF, 0x000000, "=== Syscall Tests Complete ===\n\n");
 }
 
 // ============================================================================
@@ -878,7 +785,7 @@ void test_syscall_interface(void) {
 
 // This function switches from kernel mode (ring 0) to user mode (ring 3)
 void switch_to_user_mode(void (*user_func)(void)) {
-    printk(0xFFFFFF00, 0x000000, "[SWITCH] Entering user mode...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[SWITCH] Entering user mode...\n");
     
     // Set up user stack (allocate from heap)
     extern void* kmalloc(size_t size);
@@ -888,8 +795,8 @@ void switch_to_user_mode(void (*user_func)(void)) {
     // Align stack
     user_stack_top &= ~0xF;
     
-    SAFE_PRINTK(0xFFFFFF00, 0x000000, "[SWITCH] User stack at 0x%llx\n", user_stack_top);
-    SAFE_PRINTK(0xFFFFFF00, 0x000000, "[SWITCH] User function at 0x%llx\n", (uint64_t)user_func);
+    PRINT(0xFFFFFF00, 0x000000, "[SWITCH] User stack at 0x%llx\n", user_stack_top);
+    PRINT(0xFFFFFF00, 0x000000, "[SWITCH] User function at 0x%llx\n", (uint64_t)user_func);
     
     // Switch to user mode using IRET
     __asm__ volatile(
@@ -910,7 +817,7 @@ void switch_to_user_mode(void (*user_func)(void)) {
     );
     
     // Should never reach here
-    SAFE_PRINTK(0xFFFF0000, 0x000000, "[ERROR] Failed to switch to user mode\n");
+    PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to switch to user mode\n");
 }
 
 // ============================================================================

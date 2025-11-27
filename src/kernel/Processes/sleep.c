@@ -9,7 +9,7 @@
 #include "print.h"
 #include "process.h"
 #include "fg.h"
-
+#include "string_helpers.h"
 #define TIMER_FREQ 1000
 
 // ============================================================================
@@ -45,15 +45,15 @@ void sleep_ticks(uint64_t ticks) {
             fg_table[i].sleep_until = wake_time_ms;
             job_found = 1;
             
-            char msg[] = "[SLEEP TID=%u JOB=%d] Sleeping until %llu ms\n";
-            printk(0xFFFFFF00, 0x000000, msg, current->tid, fg_table[i].job_id, wake_time_ms);
+            PRINT(0xFFFFFF00, 0x000000, "[SLEEP TID=%u JOB=%d] Sleeping until %llu ms\n",
+                  current->tid, fg_table[i].job_id, wake_time_ms);
             break;
         }
     }
     
     if (!job_found) {
-        char warn[] = "[SLEEP TID=%u] WARNING: No job found for this thread\n";
-        printk(0xFFFFFF00, 0x000000, warn, current->tid);
+        PRINT(0xFFFFFF00, 0x000000, "[SLEEP TID=%u] WARNING: No job found for this thread\n",
+              current->tid);
     }
     
     // Block this thread - update_jobs() will unblock us
@@ -64,8 +64,8 @@ void sleep_ticks(uint64_t ticks) {
         __asm__ volatile("hlt");
     }
     
-    char wake[] = "[SLEEP TID=%u] Woke up at %llu ticks\n";
-    printk(0xFF00FF00, 0x000000, wake, current->tid, get_timer_ticks());
+    PRINT(0xFF00FF00, 0x000000, "[SLEEP TID=%u] Woke up at %llu ticks\n",
+          current->tid, get_timer_ticks());
 }
 
 // Sleep for milliseconds
@@ -86,8 +86,8 @@ void sleep_seconds(uint32_t seconds) {
     uint64_t target_ticks = start_ticks + (seconds * TIMER_FREQ);
     
     if (current) {
-        char msg[] = "[SLEEP TID=%u] Sleeping for %u seconds (%llu ticks)\n";
-        printk(0xFFFFFF00, 0x000000, msg, current->tid, seconds, target_ticks - start_ticks);
+        PRINT(0xFFFFFF00, 0x000000, "[SLEEP TID=%u] Sleeping for %u seconds (%llu ticks)\n",
+              current->tid, seconds, target_ticks - start_ticks);
     }
     
     sleep_ticks(seconds * TIMER_FREQ);
@@ -96,8 +96,8 @@ void sleep_seconds(uint32_t seconds) {
     uint64_t elapsed = end_ticks - start_ticks;
     
     if (current) {
-        char msg2[] = "[SLEEP TID=%u] Awake! Slept for %llu ticks (%llu ms)\n";
-        printk(0xFF00FF00, 0x000000, msg2, current->tid, elapsed, (elapsed * 1000) / TIMER_FREQ);
+        PRINT(0xFF00FF00, 0x000000, "[SLEEP TID=%u] Awake! Slept for %llu ticks (%llu ms)\n",
+              current->tid, elapsed, (elapsed * 1000) / TIMER_FREQ);
     }
 }
 
@@ -189,25 +189,19 @@ uint64_t timeout_remaining_ms(timeout_t *timeout) {
 // ============================================================================
 
 void sleep_test(void) {
-    char msg[] = "\n=== Sleep Function Tests ===\n";
-    printk(0xFFFFFFFF, 0x000000, msg);
+    PRINT(0xFFFFFFFF, 0x000000, "\n=== Sleep Function Tests ===\n");
     
-    char test1[] = "Test 1: sleep_seconds(1)...\n";
-    printk(0xFFFFFF00, 0x000000, test1);
+    PRINT(0xFFFFFF00, 0x000000, "Test 1: sleep_seconds(1)...\n");
     uint64_t start1 = get_timer_ticks();
     sleep_seconds(1);
     uint64_t end1 = get_timer_ticks();
-    char result1[] = "  Result: %llu ticks elapsed\n";
-    printk(0xFF00FF00, 0x000000, result1, end1 - start1);
+    PRINT(0xFF00FF00, 0x000000, "  Result: %llu ticks elapsed\n", end1 - start1);
     
-    char test2[] = "Test 2: sleep_ms(500)...\n";
-    printk(0xFFFFFF00, 0x000000, test2);
+    PRINT(0xFFFFFF00, 0x000000, "Test 2: sleep_ms(500)...\n");
     uint64_t start2 = get_timer_ticks();
     sleep_ms(500);
     uint64_t end2 = get_timer_ticks();
-    char result2[] = "  Result: %llu ticks elapsed\n";
-    printk(0xFF00FF00, 0x000000, result2, end2 - start2);
+    PRINT(0xFF00FF00, 0x000000, "  Result: %llu ticks elapsed\n", end2 - start2);
     
-    char done[] = "\nSleep tests completed!\n";
-    printk(0xFF00FF00, 0x000000, done);
+    PRINT(0xFF00FF00, 0x000000, "\nSleep tests completed!\n");
 }

@@ -9,6 +9,7 @@
 #include "irq.h"
 #include "process.h"
 #include "fg.h"
+#include "string_helpers.h"
 
 // PIC ports
 #define PIC1_COMMAND 0x20
@@ -128,23 +129,17 @@ void irq_common_handler(int irq_num) {
 // ============================================================================
 
 void timer_irq_handler(void) {
-    // Just increment counter - NOTHING ELSE
     timer_ticks++;
     
-    // Update seconds counter
     if (timer_ticks % TIMER_FREQ == 0) {
         timer_seconds++;
     }
     
-    // ONLY call update_jobs if we're past early boot
-    // This is checked every 10ms (10 ticks at 1000Hz)
     if (timer_ticks % 10 == 0) {
-        // SAFETY: Only call if jobs are initialized
         extern void update_jobs_safe(void);
         update_jobs_safe();
     }
     
-    // Send EOI LAST
     pic_send_eoi(0);
 }
 
@@ -155,7 +150,6 @@ void timer_irq_handler(void) {
 __attribute__((naked))
 void timer_handler_asm(void) {
     __asm__ volatile(
-        // Save ALL registers
         "push %rax\n"
         "push %rbx\n"
         "push %rcx\n"
@@ -171,25 +165,11 @@ void timer_handler_asm(void) {
         "push %r13\n"
         "push %r14\n"
         "push %r15\n"
-        
-        // Save original RSP
         "mov %rsp, %rbp\n"
-        
-        // CRITICAL: Align stack to 16 bytes
-        // System V ABI requires RSP to be 16-byte aligned before 'call'
         "and $-16, %rsp\n"
-        
-        // Subtract 8 to account for the 'call' instruction push
-        // This ensures that when we enter the function, RSP is 16-byte aligned
         "sub $8, %rsp\n"
-        
-        // Call the C handler
         "call timer_irq_handler\n"
-        
-        // Restore original stack pointer
         "mov %rbp, %rsp\n"
-        
-        // Restore registers in reverse order
         "pop %r15\n"
         "pop %r14\n"
         "pop %r13\n"
@@ -205,8 +185,6 @@ void timer_handler_asm(void) {
         "pop %rcx\n"
         "pop %rbx\n"
         "pop %rax\n"
-        
-        // Return from interrupt
         "iretq\n"
     );
 }
@@ -218,16 +196,10 @@ void timer_handler_asm(void) {
 void pit_init(uint32_t frequency) {
     uint32_t divisor = 1193182 / frequency;
     
-    // Command byte: 0x36 = Channel 0, lobyte/hibyte, square wave, binary
     outb(PIT_COMMAND, 0x36);
-    
-    // Delay
     for (volatile int i = 0; i < 1000; i++);
-    
-    // Send divisor (low byte, then high byte)
     outb(PIT_CHANNEL0, (uint8_t)(divisor & 0xFF));
     for (volatile int i = 0; i < 1000; i++);
-    
     outb(PIT_CHANNEL0, (uint8_t)((divisor >> 8) & 0xFF));
     for (volatile int i = 0; i < 1000; i++);
 }
@@ -237,51 +209,34 @@ void pit_init(uint32_t frequency) {
 // ============================================================================
 
 void irq_init(void) {
-    char msg[] = "[IRQ] Initializing IRQ system...\n";
-    printk(0xFFFFFF00, 0x000000, msg);
+    PRINT(0xFFFFFF00, 0x000000, "[IRQ] Initializing IRQ system...\n");
     
-    // Clear handler table
     for (int i = 0; i < 16; i++) {
         irq_handlers[i] = NULL;
     }
     
-    // Reset tick counters
     timer_ticks = 0;
     timer_seconds = 0;
     
-    // Initialize PIT at 1000 Hz (1ms resolution)
     pit_init(TIMER_FREQ);
     
-    char msg2[] = "[IRQ] Unmasking IRQ0 (timer)...\n";
-    printk(0xFFFFFF00, 0x000000, msg2);
-    
-    // Unmask IRQ0 at the PIC
+    PRINT(0xFFFFFF00, 0x000000, "[IRQ] Unmasking IRQ0 (timer)...\n");
     pic_clear_mask(0);
-    
-    // Small delay
     for (volatile int i = 0; i < 10000; i++);
     
-    // Verify mask
     uint8_t mask = inb(0x21);
-    char mask_msg[] = "[IRQ] PIC1 mask after unmask: 0x%x\n";
-    printk(0xFFFFFF00, 0x000000, mask_msg, mask);
+    PRINT(0xFFFFFF00, 0x000000, "[IRQ] PIC1 mask after unmask: 0x%x\n", mask);
     
     if (mask & 0x01) {
-        char warn[] = "[WARNING] IRQ0 still masked!\n";
-        printk(0xFFFF0000, 0x000000, warn);
+        PRINT(0xFFFF0000, 0x000000, "[WARNING] IRQ0 still masked!\n");
     } else {
-        char ok[] = "[OK] IRQ0 is unmasked\n";
-        printk(0xFF00FF00, 0x000000, ok);
+        PRINT(0xFF00FF00, 0x000000, "[OK] IRQ0 is unmasked\n");
     }
     
-    char msg3[] = "[IRQ] Enabling interrupts...\n";
-    printk(0xFFFFFF00, 0x000000, msg3);
-    
-    // Enable interrupts
+    PRINT(0xFFFFFF00, 0x000000, "[IRQ] Enabling interrupts...\n");
     __asm__ volatile("sti");
     
-    char msg4[] = "[IRQ] IRQ system ready\n";
-    printk(0xFF00FF00, 0x000000, msg4);
+    PRINT(0xFF00FF00, 0x000000, "[IRQ] IRQ system ready\n");
 }
 
 // ============================================================================
@@ -297,20 +252,9 @@ uint64_t get_uptime_seconds(void) {
 }
 
 void show_timer_info(void) {
-    char msg[] = "\n=== Timer Information ===\n";
-    printk(0xFFFFFFFF, 0x000000, msg);
-    
-    char msg1[] = "Ticks: %llu\n";
-    printk(0xFFFFFFFF, 0x000000, msg1, timer_ticks);
-    
-    char msg2[] = "Uptime: %llu seconds\n";
-    printk(0xFFFFFFFF, 0x000000, msg2, timer_seconds);
-    
-    uint64_t ms = (timer_ticks * 1000) / TIMER_FREQ;
-    char msg3[] = "Milliseconds: %llu\n";
-    printk(0xFFFFFFFF, 0x000000, msg3, ms);
-    
-    uint8_t mask = pic_get_mask();
-    char msg4[] = "PIC1 mask: 0x%x\n";
-    printk(0xFFFFFFFF, 0x000000, msg4, mask);
+    PRINT(0xFFFFFFFF, 0x000000, "\n=== Timer Information ===\n");
+    PRINT(0xFFFFFFFF, 0x000000, "Ticks: %llu\n", timer_ticks);
+    PRINT(0xFFFFFFFF, 0x000000, "Uptime: %llu seconds\n", timer_seconds);
+    PRINT(0xFFFFFFFF, 0x000000, "Milliseconds: %llu\n", (timer_ticks * 1000) / TIMER_FREQ);
+    PRINT(0xFFFFFFFF, 0x000000, "PIC1 mask: 0x%x\n", pic_get_mask());
 }

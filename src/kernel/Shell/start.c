@@ -1,4 +1,4 @@
-// start.c - SAFE INITIALIZATION ORDER
+// start.c - FIXED: All string literals replaced with local arrays
 
 #include <efi.h>
 #include <efilib.h>
@@ -19,6 +19,7 @@
 #include "irq.h"
 #include "fg.h"
 #include "syscall.h"
+#include "string_helpers.h"
 
 extern void syscall_register_all(void);
 extern void pmm_init(EFI_MEMORY_DESCRIPTOR* map, UINTN desc_count, UINTN desc_size);
@@ -41,9 +42,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
     uefi_call_wrapper(ST->ConOut->SetCursorPosition, 3, ST->ConOut, 0, 0);
-
-    CHAR16 msg1[] = L"AMQ OS - Booting...\r\n";
-    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg1);
+    uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, L"AMQ OS - Booting...\r\n");
 
     // Get memory map
     EFI_MEMORY_DESCRIPTOR *memory_map = NULL;
@@ -63,8 +62,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     init_kernel_heap();
 
     if (stackalloc(16, 4096) != EXIT_SUCCESS) {
-        CHAR16 err[] = L"Failed to allocate kernel stack!\r\n";
-        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, err);
+        uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, L"Failed to allocate kernel stack!\r\n");
         goto boot_failed;
     }
 
@@ -84,144 +82,141 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     // PHASE 1: CRITICAL SYSTEM SETUP (NO INTERRUPTS)
     // ========================================================================
     
-     ClearScreen(0x000000);
+    ClearScreen(0x000000);
     SetCursorPos(0, 0);
 
-    char boot1[] = "AMQ OS Kernel v0.2\n";
-    char boot2[] = "==================\n\n";
-    printk(0xFFFFFFFF, 0x000000, boot1);
-    printk(0xFFFFFFFF, 0x000000, boot2);
-    
+    PRINT(0xFFFFFFFF, 0x000000, "AMQ OS Kernel v0.2\n");
+    PRINT(0xFFFFFFFF, 0x000000, "==================\n\n");
+
     enable_io_privilege();
-    printk(0xFF00FF00, 0x000000, "[OK] I/O privileges enabled\n");
-    
-    printk(0xFF00FF00, 0x000000, "[OK] Stack: base=0x%llx, top=0x%llx\n", 
-           kernel_stack_base, kernel_stack_top);
-    
+    PRINT(0xFF00FF00, 0x000000, "[OK] I/O privileges enabled\n");
+
+    PRINT(0xFF00FF00, 0x000000, "[OK] Stack: base=0x%llx, top=0x%llx\n", 
+          kernel_stack_base, kernel_stack_top);
+
     tss_init();
-    printk(0xFF00FF00, 0x000000, "[OK] TSS initialized\n");
-    
+    PRINT(0xFF00FF00, 0x000000, "[OK] TSS initialized\n");
+
     gdt_install();
-    printk(0xFF00FF00, 0x000000, "[OK] GDT installed\n");
-    
+    PRINT(0xFF00FF00, 0x000000, "[OK] GDT installed\n");
+
     pic_remap();
-    printk(0xFF00FF00, 0x000000, "[OK] PIC remapped\n");
-    
+    PRINT(0xFF00FF00, 0x000000, "[OK] PIC remapped\n");
+
     idt_install();
-    printk(0xFF00FF00, 0x000000, "[OK] IDT installed\n");
-    
-    printk(0xFFFFFF00, 0x000000, "\n[INIT] Initializing syscall interface...\n");
-    
-    // 1. Initialize MSRs and syscall entry point
+    PRINT(0xFF00FF00, 0x000000, "[OK] IDT installed\n");
+
+    PRINT(0xFFFFFF00, 0x000000, "\n[INIT] Initializing syscall interface...\n");
+
     syscall_init();
-    
-    // 2. Register all syscall handlers
     syscall_register_all();
-    
-    printk(0xFF00FF00, 0x000000, "[OK] Syscalls ready\n");
+
+    PRINT(0xFF00FF00, 0x000000, "[OK] Syscalls ready\n");
 
     serial_init(COM1);
-    printk(0xFF00FF00, 0x000000, "[OK] Serial initialized\n");
-    
+    PRINT(0xFF00FF00, 0x000000, "[OK] Serial initialized\n");
+
     // ========================================================================
     // CRITICAL: Initialize job system BEFORE enabling interrupts
     // ========================================================================
-    
-    printk(0xFFFFFF00, 0x000000, "\n[INIT] Initializing job system...\n");
+
+    PRINT(0xFFFFFF00, 0x000000, "\n[INIT] Initializing job system...\n");
     jobs_init();
-    jobs_set_active(0);  // Keep it DISABLED
-    printk(0xFF00FF00, 0x000000, "[OK] Job system initialized (INACTIVE)\n");
-    
+    jobs_set_active(0);
+    PRINT(0xFF00FF00, 0x000000, "[OK] Job system initialized (INACTIVE)\n");
+
     // ========================================================================
     // NOW enable timer
     // ========================================================================
-    
-    printk(0xFFFFFF00, 0x000000, "\n[INIT] Enabling IRQ system...\n");
+
+    PRINT(0xFFFFFF00, 0x000000, "\n[INIT] Enabling IRQ system...\n");
     irq_init();
-    printk(0xFF00FF00, 0x000000, "[OK] IRQ system enabled\n");
-    
+    PRINT(0xFF00FF00, 0x000000, "[OK] IRQ system enabled\n");
+
     // ========================================================================
     // CRITICAL: Test timer for a few seconds
     // ========================================================================
-    
-    printk(0xFFFFFF00, 0x000000, "\n[TEST] Testing timer for 3 seconds...\n");
-    
+
+    PRINT(0xFFFFFF00, 0x000000, "\n[TEST] Testing timer for 3 seconds...\n");
+
     extern volatile uint64_t timer_ticks;
     uint64_t start_ticks = timer_ticks;
-    
+
     for (int sec = 1; sec <= 3; sec++) {
-        // Wait 1 second
         uint64_t target = start_ticks + (sec * 1000);
         while (timer_ticks < target) {
-            __asm__ volatile("hlt");  // Wait for interrupt
+            __asm__ volatile("hlt");
         }
-        
-        printk(0xFF00FF00, 0x000000, "[TEST] Second %d: timer_ticks=%llu\n", 
-               sec, timer_ticks);
+
+        PRINT(0xFF00FF00, 0x000000, "[TEST] Second %d: timer_ticks=%llu\n", 
+              sec, timer_ticks);
     }
-    
-    printk(0xFF00FF00, 0x000000, "[OK] Timer is working correctly!\n");
-    
+
+    PRINT(0xFF00FF00, 0x000000, "[OK] Timer is working correctly!\n");
+
     // ========================================================================
     // Enable keyboard
     // ========================================================================
-    
+
     uint8_t mask = inb(0x21);
     mask &= ~0x02;
     outb(0x21, mask);
-    printk(0xFF00FF00, 0x000000, "[OK] Keyboard enabled\n");
+    PRINT(0xFF00FF00, 0x000000, "[OK] Keyboard enabled\n");
 
     // ========================================================================
     // Storage & Filesystem
     // ========================================================================
 
-    printk(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing storage...\n");
+    PRINT(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing storage...\n");
     ata_init();
-    printk(0xFF00FF00, 0x000000, "[OK] ATA initialized\n");
+    PRINT(0xFF00FF00, 0x000000, "[OK] ATA initialized\n");
 
-    printk(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing filesystem...\n");
+    PRINT(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing filesystem...\n");
     vfs_init();
 
     filesystem_t *tinyfs = tinyfs_create();
     if (!tinyfs) {
-        printk(0xFFFF0000, 0x000000, "[ERROR] Failed to create TinyFS\n");
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create TinyFS\n");
         goto boot_failed;
     }
 
     if (vfs_register_filesystem(tinyfs) != 0) {
-        printk(0xFFFF0000, 0x000000, "[ERROR] Failed to register TinyFS\n");
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to register TinyFS\n");
         goto boot_failed;
     }
 
-    char device[] = "ata0";
-    printk(0xFFFFFF00, 0x000000, "[INIT] Formatting disk...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[INIT] Formatting disk...\n");
     
-    if (tinyfs_format(device) != 0) {
-        printk(0xFFFF0000, 0x000000, "[ERROR] Format failed\n");
+    // FIXED: Use local arrays instead of string literals
+    char device_name[] = "ata0";
+    if (tinyfs_format(device_name) != 0) {
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Format failed\n");
         goto boot_failed;
     }
 
-    printk(0xFF00FF00, 0x000000, "[OK] Disk formatted\n");
-    
+    PRINT(0xFF00FF00, 0x000000, "[OK] Disk formatted\n");
+
     for (volatile int i = 0; i < 10000000; i++);
 
-    printk(0xFFFFFF00, 0x000000, "[INIT] Mounting filesystem...\n");
+    PRINT(0xFFFFFF00, 0x000000, "[INIT] Mounting filesystem...\n");
 
+    // FIXED: Use local arrays for all three parameters
     char fs_type[] = "tinyfs";
-    char mount_point[] = "/";
+    char device[] = "ata0";
+    char mountpoint[] = "/";
 
-    if (vfs_mount(fs_type, device, mount_point) != 0) {
-        printk(0xFFFF0000, 0x000000, "[ERROR] Mount failed\n");
+    if (vfs_mount(fs_type, device, mountpoint) != 0) {
+        PRINT(0xFFFF0000, 0x000000, "[ERROR] Mount failed\n");
         goto boot_failed;
     }
 
-    printk(0xFF00FF00, 0x000000, "[OK] Filesystem mounted\n");
+    PRINT(0xFF00FF00, 0x000000, "[OK] Filesystem mounted\n");
 
     // ========================================================================
     // Process/Thread System
     // ========================================================================
 
-    printk(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing processes...\n");
+    PRINT(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing processes...\n");
     process_init();
     scheduler_init();
 
@@ -233,18 +228,18 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     }
 
     init_kernel_threads();
-    printk(0xFF00FF00, 0x000000, "[OK] Threads initialized (scheduler DISABLED)\n");
+    PRINT(0xFF00FF00, 0x000000, "[OK] Threads initialized (scheduler DISABLED)\n");
 
     // ========================================================================
     // Enable job tracking and start shell
     // ========================================================================
 
-    printk(0xFF00FFFF, 0x000000, "\n=== Boot Complete ===\n");
-    
-    jobs_set_active(1);
-    printk(0xFF00FF00, 0x000000, "[OK] Job tracking ENABLED\n");
+    PRINT(0xFF00FFFF, 0x000000, "\n=== Boot Complete ===\n");
 
-    printk(0xFF00FFFF, 0x000000, "\nStarting shell...\n\n");
+    jobs_set_active(1);
+    PRINT(0xFF00FF00, 0x000000, "[OK] Job tracking ENABLED\n");
+
+    PRINT(0xFF00FFFF, 0x000000, "\nStarting shell...\n\n");
     
     for (volatile int i = 0; i < 5000000; i++);
 
@@ -253,7 +248,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     while(1) __asm__ volatile("hlt");
 
 boot_failed:
-    printk(0xFFFF0000, 0x000000, "\n=== BOOT FAILED ===\n");
+    PRINT(0xFFFF0000, 0x000000, "\n=== BOOT FAILED ===\n");
     while(1) __asm__ volatile("hlt");
 
     return EFI_SUCCESS;

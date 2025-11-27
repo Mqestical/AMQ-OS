@@ -22,7 +22,7 @@
 // ============================================================================
 // Use this for printing with string literals
 
-#define SAFE_PRINTK(fg, bg, literal, ...) do { \
+#define PRINT(fg, bg, literal, ...) do { \
     char _msg[128]; \
     char _tmp[] = literal; \
     int _i = 0; \

@@ -1,10 +1,7 @@
-// ============================================================================
-// fg.c - SAFE: Job tracking can be disabled during initialization
-// ============================================================================
-
 #include "fg.h"
 #include "print.h"
 #include "process.h"
+#include "string_helpers.h"
 
 static job_t fg_table[MAX_JOBS];
 static int next_job_id = 1;
@@ -25,19 +22,16 @@ void jobs_init(void) {
     
     jobs_active = 0;  // Start disabled
     
-    char msg[] = "[FG] Job control initialized (INACTIVE)\n";
-    printk(0xFF00FF00, 0x000000, msg);
+    PRINT(0xFF00FF00, 0x000000, "[FG] Job control initialized (INACTIVE)\n");
 }
 
 // NEW: Enable/disable job tracking
 void jobs_set_active(int active) {
     jobs_active = active;
     if (active) {
-        char msg[] = "[FG] Job tracking ENABLED\n";
-        printk(0xFF00FF00, 0x000000, msg);
+        PRINT(0xFF00FF00, 0x000000, "[FG] Job tracking ENABLED\n");
     } else {
-        char msg[] = "[FG] Job tracking DISABLED\n";
-        printk(0xFFFFFF00, 0x000000, msg);
+        PRINT(0xFFFFFF00, 0x000000, "[FG] Job tracking DISABLED\n");
     }
 }
 
@@ -53,8 +47,7 @@ static int find_free_slot(void) {
 int add_fg_job(const char *command, uint32_t pid, uint32_t tid) {
     int idx = find_free_slot();
     if (idx < 0) {
-        char err[] = "[FG] No free job slots\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[FG] No free job slots\n");
         return -1;
     }
     
@@ -80,8 +73,7 @@ int add_fg_job(const char *command, uint32_t pid, uint32_t tid) {
 int add_bg_job(const char *command, uint32_t pid, uint32_t tid) {
     int idx = find_free_slot();
     if (idx < 0) {
-        char err[] = "[BG] No free job slots\n";
-        printk(0xFFFF0000, 0x000000, err);
+        PRINT(0xFFFF0000, 0x000000, "[BG] No free job slots\n");
         return -1;
     }
     
@@ -101,8 +93,7 @@ int add_bg_job(const char *command, uint32_t pid, uint32_t tid) {
     }
     job->command[i] = '\0';
     
-    char msg[] = "[%d] %d\n";
-    printk(0xFFFFFF00, 0x000000, msg, job->job_id, job->pid);
+    PRINT(0xFFFFFF00, 0x000000, "[%d] %d\n", job->job_id, job->pid);
     
     return job->job_id;
 }
@@ -110,8 +101,8 @@ int add_bg_job(const char *command, uint32_t pid, uint32_t tid) {
 void remove_job(int job_id) {
     for (int i = 0; i < MAX_JOBS; i++) {
         if (fg_table[i].used && fg_table[i].job_id == job_id) {
-            char msg[] = "[%d]+ Done                    %s\n";
-            printk(0xFF00FF00, 0x000000, msg, job_id, fg_table[i].command);
+            PRINT(0xFF00FF00, 0x000000, "[%d]+ Done                    %s\n",
+                  job_id, fg_table[i].command);
             
             fg_table[i].used = 0;
             fg_table[i].state = JOB_DONE;
@@ -121,8 +112,7 @@ void remove_job(int job_id) {
 }
 
 void list_jobs(void) {
-    char header[] = "\nJobs:\n";
-    printk(0xFFFFFFFF, 0x000000, header);
+    PRINT(0xFFFFFFFF, 0x000000, "\nJobs:\n");
     
     int count = 0;
     for (int i = 0; i < MAX_JOBS; i++) {
@@ -136,19 +126,18 @@ void list_jobs(void) {
             else state_str = "Done";
             
             if (job->is_background) {
-                char line[] = "[%d]  %s                    %s\n";
-                printk(0xFFFFFF00, 0x000000, line, job->job_id, state_str, job->command);
+                PRINT(0xFFFFFF00, 0x000000, "[%d]  %s                    %s\n",
+                      job->job_id, state_str, job->command);
             } else {
-                char line[] = "[%d]  %s (fg)               %s\n";
-                printk(0xFFFFFF00, 0x000000, line, job->job_id, state_str, job->command);
+                PRINT(0xFFFFFF00, 0x000000, "[%d]  %s (fg)               %s\n",
+                      job->job_id, state_str, job->command);
             }
             count++;
         }
     }
     
     if (count == 0) {
-        char empty[] = "(No jobs)\n";
-        printk(0xFFFFFF00, 0x000000, empty);
+        PRINT(0xFFFFFF00, 0x000000, "(No jobs)\n");
     }
 }
 
@@ -205,8 +194,8 @@ void update_jobs(void) {
         // If thread is gone or terminated, remove the job
         if (!thread || thread->state == THREAD_STATE_TERMINATED) {
             if (job->is_background && job->state != JOB_DONE) {
-                char msg[] = "\n[%d]+ Done                    %s\n";
-                printk(0xFF00FF00, 0x000000, msg, job->job_id, job->command);
+                PRINT(0xFF00FF00, 0x000000, "\n[%d]+ Done                    %s\n",
+                      job->job_id, job->command);
             }
             
             job->used = 0;
@@ -221,8 +210,8 @@ void update_jobs(void) {
                 job->state = JOB_RUNNING;
                 
                 if (job->is_background) {
-                    char msg[] = "\n[%d]  Woke up from sleep       %s\n";
-                    printk(0xFF00FF00, 0x000000, msg, job->job_id, job->command);
+                    PRINT(0xFF00FF00, 0x000000, "\n[%d]  Woke up from sleep       %s\n",
+                          job->job_id, job->command);
                 }
             }
         }
@@ -230,8 +219,7 @@ void update_jobs(void) {
 }
 
 void list_bg_jobs(void) {
-    char header[] = "\nBackground Jobs:\n";
-    printk(0xFFFFFFFF, 0x000000, header);
+    PRINT(0xFFFFFFFF, 0x000000, "\nBackground Jobs:\n");
     
     int count = 0;
     for (int i = 0; i < MAX_JOBS; i++) {
@@ -244,14 +232,13 @@ void list_bg_jobs(void) {
             else if (job->state == JOB_SLEEPING) state_str = "Sleeping";
             else state_str = "Done";
             
-            char line[] = "[%d]  %s                    %s\n";
-            printk(0xFFFFFF00, 0x000000, line, job->job_id, state_str, job->command);
+            PRINT(0xFFFFFF00, 0x000000, "[%d]  %s                    %s\n",
+                  job->job_id, state_str, job->command);
             count++;
         }
     }
     
     if (count == 0) {
-        char empty[] = "(No background jobs)\n";
-        printk(0xFFFFFF00, 0x000000, empty);
+        PRINT(0xFFFFFF00, 0x000000, "(No background jobs)\n");
     }
 }

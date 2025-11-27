@@ -4,6 +4,7 @@
 #include "memory.h"
 #include "definitions.h"
 #include "print.h"
+#include "string_helpers.h"
 
 // Physical memory management
 static FreePage* free_list = NULL;
@@ -357,30 +358,30 @@ void memory_stats(void) {
 
     cursor.fg_color = 0xFFFFFFFF;
     cursor.bg_color = 0xFF0000FF;
-printk(0xFFFFFFFF, 0xFF0000FF, "=== Memory Statistics ===\n");
+PRINT(0xFFFFFFFF, 0xFF0000FF, "=== Memory Statistics ===\n");
 
-printk(0xFFFFFFFF, 0xFF0000FF, "Physical Memory:\n");
-printk(0xFFFFFFFF, 0xFF0000FF, "  Total pages: %llu\n", total_pages);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Used pages: %llu\n", used_pages);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Free pages: %llu\n", total_pages - used_pages);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Total size: %llu KB\n", (total_pages * 4) / 1);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "Physical Memory:\n");
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Total pages: %llu\n", total_pages);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Used pages: %llu\n", used_pages);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Free pages: %llu\n", total_pages - used_pages);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Total size: %llu KB\n", (total_pages * 4) / 1);
 
-printk(0xFFFFFFFF, 0xFF0000FF, "\nHeap Memory:\n");
-printk(0xFFFFFFFF, 0xFF0000FF, "  Base: 0x%llx\n", kernel_heap_base);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", kernel_heap_size / 1024);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Used: %llu KB\n", kernel_heap_used / 1024);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Free: %llu KB\n", (kernel_heap_size - kernel_heap_used) / 1024);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "\nHeap Memory:\n");
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Base: 0x%llx\n", kernel_heap_base);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", kernel_heap_size / 1024);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Used: %llu KB\n", kernel_heap_used / 1024);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Free: %llu KB\n", (kernel_heap_size - kernel_heap_used) / 1024);
 
-printk(0xFFFFFFFF, 0xFF0000FF, "\nHeap Operations:\n");
-printk(0xFFFFFFFF, 0xFF0000FF, "  Allocations: %llu\n", alloc_count);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Frees: %llu\n", free_count);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Splits: %llu\n", split_count);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Coalesces: %llu\n", coalesce_count);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "\nHeap Operations:\n");
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Allocations: %llu\n", alloc_count);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Frees: %llu\n", free_count);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Splits: %llu\n", split_count);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Coalesces: %llu\n", coalesce_count);
 
-printk(0xFFFFFFFF, 0xFF0000FF, "\nStack:\n");
-printk(0xFFFFFFFF, 0xFF0000FF, "  Base: 0x%llx\n", kernel_stack_base);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Top: 0x%llx\n", kernel_stack_top);
-printk(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", (kernel_stack_top - kernel_stack_base) / 1024);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "\nStack:\n");
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Base: 0x%llx\n", kernel_stack_base);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Top: 0x%llx\n", kernel_stack_top);
+PRINT(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", (kernel_stack_top - kernel_stack_base) / 1024);
 }
 
 
@@ -398,70 +399,70 @@ int memory_test(void) {
     cursor.fg_color = 0xFFFFFFFF; // White text
     cursor.bg_color = 0xFF0000FF;  // Blue background
     
-    printk(0xFFFFFFFF, 0xFF0000FF, "=== Memory Allocator Tests ===\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "=== Memory Allocator Tests ===\n");
     
     // Test 1: Basic allocation and free
-    printk(0xFFFFFFFF, 0xFF0000FF, "Test 1: Basic allocation... ");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 1: Basic allocation... ");
     void* p1 = kmalloc(100);
     if (!p1) {
-        printk(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
         return 0;
     }
     kfree(p1);
-    printk(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
 
     // Test 2: Multiple allocations
-    printk(0xFFFFFFFF, 0xFF0000FF, "Test 2: Multiple allocations... ");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 2: Multiple allocations... ");
     void* p2 = kmalloc(50);
     void* p3 = kmalloc(200);
     void* p4 = kmalloc(1000);
     if (!p2 || !p3 || !p4) {
-        printk(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
         return 0;
     }
-    printk(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
 
     // Test 3: Free in different order
-    printk(0xFFFFFFFF, 0xFF0000FF, "Test 3: Non-sequential free... ");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 3: Non-sequential free... ");
     kfree(p3);
     kfree(p2);
     kfree(p4);
-    printk(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
 
     // Test 4: Coalescing
-    printk(0xFFFFFFFF, 0xFF0000FF, "Test 4: Block coalescing... ");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 4: Block coalescing... ");
     void* p5 = kmalloc(100);
     void* p6 = kmalloc(100);
     void* p7 = kmalloc(100);
     kfree(p5);
     kfree(p7);
     kfree(p6); // Should coalesce all three
-    printk(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
 
     // Test 5: Large allocation
-    printk(0xFFFFFFFF, 0xFF0000FF, "Test 5: Large allocation... ");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 5: Large allocation... ");
     void* p8 = kmalloc(10000);
     if (!p8) {
-        printk(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
         return 0;
     }
     kfree(p8);
-    printk(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
 
     // Test 6: Zero allocation
-    printk(0xFFFFFFFF, 0xFF0000FF, "Test 6: Zero size allocation... ");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 6: Zero size allocation... ");
     void* p9 = kmalloc(0);
     if (p9 != NULL) {
-        printk(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
         return 0;
     }
-    printk(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
 
     // Test 7: kcalloc
-    printk(0xFFFFFFFF, 0xFF0000FF, "Test 7: kcalloc... ");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 7: kcalloc... ");
     uint8_t* p10 = (uint8_t*)kcalloc(100, sizeof(uint8_t));
     if (!p10) {
-        printk(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
         return 0;
     }
     int all_zero = 1;
@@ -473,23 +474,23 @@ int memory_test(void) {
     }
     kfree(p10);
     if (!all_zero) {
-        printk(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
         return 0;
     }
-    printk(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
 
     // Test 8: krealloc
-    printk(0xFFFFFFFF, 0xFF0000FF, "Test 8: krealloc... ");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 8: krealloc... ");
     void* p11 = kmalloc(50);
     void* p12 = krealloc(p11, 200);
     if (!p12) {
-        printk(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
         return 0;
     }
     kfree(p12);
-    printk(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
 
-    printk(0xFFFFFFFF, 0xFF0000FF, "\nAll tests PASSED!\n");
+    PRINT(0xFFFFFFFF, 0xFF0000FF, "\nAll tests PASSED!\n");
     return 1;
 }
 
