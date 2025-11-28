@@ -75,41 +75,64 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
 void bg_command_thread(void) {
     thread_t *current = get_current_thread();
     if (!current || !current->private_data) {
+        PRINT(0xFFFF0000, 0x000000, "[BG ERROR] Invalid thread data\n");
         thread_exit();
         return;
     }
     
     cmd_thread_data_t *data = (cmd_thread_data_t*)current->private_data;
     
-    PRINT(0xFFFFFF00, 0x000000, "\n[%d] Running: %s\n", data->job_id, data->command);
+    PRINT(0xFF00FFFF, 0x000000, "\n[BG %d] Starting: %s\n", data->job_id, data->command);
     
-    // Parse and execute the command
-    if (strncmp(data->command, "sleep ", 6) == 0) {
-        char *arg = data->command + 6;
-        uint32_t seconds = 0;
+    // Parse command
+    char cmd_name[64];
+    int i = 0;
+    while (data->command[i] && data->command[i] != ' ' && i < 63) {
+        cmd_name[i] = data->command[i];
+        i++;
+    }
+    cmd_name[i] = '\0';
+    
+    // Execute command
+    if (strcmp(cmd_name, "sleep") == 0) {
+        char *arg = data->command;
+        while (*arg && *arg != ' ') arg++;
+        while (*arg == ' ') arg++;
         
+        uint32_t seconds = 0;
         while (*arg >= '0' && *arg <= '9') {
             seconds = seconds * 10 + (*arg - '0');
             arg++;
         }
         
         if (seconds > 0) {
-            sleep_seconds(seconds);
+            PRINT(0xFFFFFF00, 0x000000, "[BG %d] Sleeping %u seconds\n", data->job_id, seconds);
+            
+            // Busy-wait with yields
+            for (uint32_t s = 0; s < seconds; s++) {
+                for (volatile uint64_t j = 0; j < 50000000; j++) {
+                    if (j % 5000000 == 0) {
+                        thread_yield();
+                    }
+                }
+                PRINT(0xFFFFFF00, 0x000000, "[BG %d] %u/%u\n", data->job_id, s + 1, seconds);
+            }
+            
+            PRINT(0xFF00FF00, 0x000000, "[BG %d] Done!\n", data->job_id);
         }
     }
-    else if (strncmp(data->command, "echo ", 5) == 0) {
+    else if (strcmp(cmd_name, "echo") == 0) {
         char *text = data->command + 5;
-        PRINT(0xFFFFFF00, 0x000000, "\n[%d] Output: %s\n", data->job_id, text);
+        PRINT(0xFFFFFF00, 0x000000, "[BG %d] %s\n", data->job_id, text);
     }
     else {
-        PRINT(0xFFFF0000, 0x000000, "\n[%d] Unknown command: %s\n", data->job_id, data->command);
+        PRINT(0xFFFF0000, 0x000000, "[BG %d] Unknown command: %s\n", data->job_id, cmd_name);
     }
     
-    // CRITICAL: Mark slot as free BEFORE exiting thread
+    // Clean up
     data->job_id = 0;
     data->command[0] = '\0';
     
-    // Thread exit will trigger job cleanup in update_jobs()
     thread_exit();
 }
 
@@ -135,21 +158,27 @@ void bring_to_foreground(int job_id) {
         return;
     }
     
-    // If sleeping, wake it up
+    PRINT(0xFF00FFFF, 0x000000, "fg: job %d (%s) - thread state = %d\n", 
+          job_id, job->command, thread->state);
+    
+    // If blocked/sleeping, wake it up
     if (thread->state == THREAD_STATE_BLOCKED) {
+        PRINT(0xFFFFFF00, 0x000000, "fg: Unblocking thread %u...\n", thread->tid);
         thread_unblock(job->tid);
         job->state = JOB_RUNNING;
         job->sleep_until = 0;
     }
     
+    // If it's ready but not running, it will be scheduled automatically
+    if (thread->state == THREAD_STATE_READY) {
+        PRINT(0xFF00FF00, 0x000000, "fg: Thread %u is ready, will be scheduled\n", thread->tid);
+    }
+    
     // Move to foreground
     job->is_background = 0;
-
-    PRINT(0xFF00FF00, 0x000000, "fg: job %d (%s) brought to foreground\n", job_id, job->command);
     
-    // CRITICAL: Without scheduler, we can't actually "wait" for completion
-    // Just inform the user and let update_jobs() handle cleanup
-    PRINT(0xFFFFFF00, 0x000000, "Note: Job will continue running. Use 'jobs' to check status.\n");
+    PRINT(0xFF00FF00, 0x000000, "fg: job %d (%s) moved to foreground\n", job_id, job->command);
+    PRINT(0xFFFFFF00, 0x000000, "Note: Job continues running. Check with 'jobs' command.\n");
 }
 
 // ============================================================================
@@ -199,15 +228,15 @@ void process_command(char* cmd) {
 
         PRINT(0xFFFFFF00, 0x000000, "[SHELL] Running in background: %s\n", cmd);
 
-        // Create background job
-        // 1. Get/create a process for background jobs
-        process_t *proc = get_process(1); // Use init process (PID=1)
+        // Get init process (PID=1)
+        process_t *proc = get_process(1);
         if (!proc) {
             PRINT(0xFFFF0000, 0x000000, "[ERROR] Init process not found\n");
             return;
         }
 
-        // 2. Find free bg_thread_data slot
+        // Find free bg_thread_data slot
+        extern cmd_thread_data_t bg_thread_data[MAX_JOBS];
         int data_idx = -1;
         for (int i = 0; i < MAX_JOBS; i++) {
             if (bg_thread_data[i].job_id == 0) {
@@ -220,45 +249,48 @@ void process_command(char* cmd) {
             return;
         }
 
-        // 3. Copy command to thread data
+        // Copy command to thread data
         strcpy_safe_local(bg_thread_data[data_idx].command, cmd, 256);
-        bg_thread_data[data_idx].job_id = -1; // Will be set after thread creation
+        bg_thread_data[data_idx].job_id = -1; // Temporary value
 
-        // 4. Create thread
+        // Create thread
         int tid = thread_create(
-            proc->pid,          // Parent process
-            bg_command_thread,  // Entry point
-            8192,               // 8KB stack
-            50000000,           // 50ms runtime
-            500000000,          // 500ms deadline
-            500000000           // 500ms period
+            proc->pid,
+            bg_command_thread,
+            65536,  // Larger stack - 64KB
+            50000000,
+            500000000,
+            500000000
         );
+        
         if (tid < 0) {
             PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create background thread\n");
-            bg_thread_data[data_idx].job_id = 0; // Free the slot
+            bg_thread_data[data_idx].job_id = 0;
             return;
         }
 
-        // 5. Set thread private data
+        // Set thread private data
         thread_t *thread = get_thread(tid);
         if (thread) {
             thread->private_data = &bg_thread_data[data_idx];
         }
 
-        // 6. Add to background job table
+        // Add to background job table
         int job_id = add_bg_job(cmd, proc->pid, tid);
         if (job_id > 0) {
             bg_thread_data[data_idx].job_id = job_id;
+            PRINT(0xFF00FF00, 0x000000, "[SHELL] Created background job %d (TID=%d)\n", 
+                  job_id, tid);
         } else {
             PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to add background job\n");
-            // Thread will still run but won't be tracked
+            bg_thread_data[data_idx].job_id = 0;
         }
 
-        return; // Don't execute the command in foreground
+        return; // Don't execute in foreground
     }
 
     // ========================================================================
-    // FOREGROUND COMMAND PROCESSING (original commands)
+    // FOREGROUND COMMAND PROCESSING
     // ========================================================================
     char cmd1[] = "hello";
     char cmd2[] = "help";
@@ -284,9 +316,11 @@ void process_command(char* cmd) {
     char cmd20[] = "bg ";
     char cmd21[] = "sleep ";
     char cmd22[] = "syscalltest";
+    char cmd23[] = "testbg";
+
     // --- Basic commands ---
     if (strcmp(cmd, cmd1) == 0) {
-        PRINT(0xFF00FF00, 0x000000, "hello :D");
+        PRINT(0xFF00FF00, 0x000000, "hello :D\n");
     }
     else if (strcmp(cmd, cmd2) == 0) {
         PRINT(0xFFFFFFFF, 0x000000, "Available commands:\n");
@@ -311,16 +345,15 @@ void process_command(char* cmd) {
         PRINT(0xFF00FFFF, 0x000000, "  bg <job_id> - Send to background\n");
         PRINT(0xFF00FFFF, 0x000000, "  sleep <sec> - Sleep for seconds\n");
         PRINT(0xFFFFFF00, 0x000000, "  command & - Run in background\n");
-        PRINT(0xFF00FFFF, 0x000000, "syscalltest\n");
-
+        PRINT(0xFF00FFFF, 0x000000, "  syscalltest - Test syscall interface\n");
+        PRINT(0xFF00FFFF, 0x000000, "  testbg - Test background jobs\n");
     }
     else if (strcmp(cmd, cmd3) == 0) {
         ClearScreen(0x000000);
         SetCursorPos(0, 0);
     }
     else if (strncmp(cmd, cmd4, 5) == 0) {
-        char* text = cmd + 5;
-        PRINT(0xFFFFFFFF, 0x000000, "%s\n", text);
+        PRINT(0xFFFFFFFF, 0x000000, "%s\n", cmd + 5);
     }
     else if (strcmp(cmd, cmd12) == 0) {
         memory_stats();
@@ -331,7 +364,6 @@ void process_command(char* cmd) {
     }
     else if (strcmp(cmd, cmd17) == 0) {
         PRINT(0xFFFFFFFF, 0x000000, "\n=== Thread Information ===\n");
-
         thread_t *current = get_current_thread();
         if (current) {
             PRINT(0xFF00FF00, 0x000000, "Current thread: TID=%u (PID=%u)\n", current->tid, current->parent->pid);
@@ -352,15 +384,15 @@ void process_command(char* cmd) {
         PRINT(0xFFFFFFFF, 0x000000, "\nThread states:\n");
         PRINT(0xFF00FF00, 0x000000, "  Running: %d\n", running);
         PRINT(0xFFFFFF00, 0x000000, "  Ready: %d\n", ready);
-        PRINT(0xFFFF0000, 0x000000, "  Blocked: %d\n, blocked");
+        PRINT(0xFFFF0000, 0x000000, "  Blocked: %d\n", blocked);
     }
     // --- Job control commands ---
     else if (strcmp(cmd, cmd18) == 0) {
         list_jobs();
     }
     else if (strncmp(cmd, cmd19, 3) == 0) {
-        char *arg = cmd + 3;
         int job_id = 0;
+        char *arg = cmd + 3;
         while (*arg >= '0' && *arg <= '9') {
             job_id = job_id * 10 + (*arg - '0');
             arg++;
@@ -372,8 +404,8 @@ void process_command(char* cmd) {
         }
     }
     else if (strncmp(cmd, cmd20, 3) == 0) {
-        char *arg = cmd + 3;
         int job_id = 0;
+        char *arg = cmd + 3;
         while (*arg >= '0' && *arg <= '9') {
             job_id = job_id * 10 + (*arg - '0');
             arg++;
@@ -384,30 +416,48 @@ void process_command(char* cmd) {
             PRINT(0xFFFF0000, 0x000000, "Usage: bg <job_id>\n");
         }
     }
- else if (strncmp(cmd, cmd21, 6) == 0) {
-        char *arg = cmd + 6;
+    else if (strncmp(cmd, cmd21, 6) == 0) {
         uint32_t seconds = 0;
-        
+        char *arg = cmd + 6;
         while (*arg >= '0' && *arg <= '9') {
             seconds = seconds * 10 + (*arg - '0');
             arg++;
         }
-        
         if (seconds > 0) {
             PRINT(0xFFFFFF00, 0x000000, "Sleeping for %u seconds...\n", seconds);
-            
-            // use sleep_seconds from sleep.c (timer-based)
             sleep_seconds(seconds);
-
             PRINT(0xFF00FF00, 0x000000, "Awake!\n");
         } else {
-            PRINT(0xFFFF0000, 0x000000, "error: sleep count can not be under 0!");
+            PRINT(0xFFFF0000, 0x000000, "error: sleep count can not be under 0!\n");
         }
     }
     // --- VFS commands ---
     else if (strcmp(cmd, cmd55) == 0) {
-        const char* cwd = vfs_get_cwd_path();
-        vfs_list_directory(cwd);
+        vfs_list_directory(vfs_get_cwd_path());
+    }
+    else if (strcmp(cmd, cmd15) == 0) {
+        PRINT(0xFFFFFFFF, 0x000000, "%s\n", vfs_get_cwd_path());
+    }
+    else if (strcmp(cmd, cmd22) == 0) {
+        test_syscall_interface();
+    }
+    else if (strcmp(cmd, cmd23) == 0) {
+        PRINT(0xFF00FFFF, 0x000000, "\n=== Testing Background Jobs ===\n");
+        
+        // Test 1: Simple echo
+        PRINT(0xFFFFFF00, 0x000000, "Test 1: echo test &\n");
+        char test1[] = "echo Hello from background! &";
+        process_command(test1);
+        
+        // Wait a bit
+        for (volatile int i = 0; i < 10000000; i++);
+        
+        // Test 2: Sleep
+        PRINT(0xFFFFFF00, 0x000000, "Test 2: sleep 3 &\n");
+        char test2[] = "sleep 3 &";
+        process_command(test2);
+        
+        PRINT(0xFF00FFFF, 0x000000, "\nCheck with 'jobs' command\n");
     }
     else if (strncmp(cmd, cmd5, 3) == 0) {
         char* path = cmd + 3;
@@ -592,7 +642,7 @@ void process_command(char* cmd) {
                 if (written > 0) {
                     PRINT(0xFF00FF00, 0x000000, "Wrote %d bytes to %s\n", written, fullpath);
                 } else {
-                    PRINT(0xFFFF0000, 0x000000, "Write failed\n";);
+                    PRINT(0xFFFF0000, 0x000000, "Write failed\n");
                 }
             } else {
                 PRINT(0xFFFF0000, 0x000000, "Cannot open file: %s\n", fullpath);
@@ -619,7 +669,6 @@ void process_command(char* cmd) {
         }
     }
     else if (strcmp(cmd, cmd13) == 0) {
-
         PRINT(0xFFFF0000, 0x000000, "DISK HAS BEEN WIPED!\n");
         PRINT(0xFFFFFF00, 0x000000, "Unmounting filesystem...\n");
         vfs_node_t *root = vfs_get_root();
@@ -669,14 +718,6 @@ void process_command(char* cmd) {
             }
         }
     }
-    else if (strcmp(cmd, cmd15) == 0) {
-        PRINT(0xFFFFFFFF, 0x000000, "%s\n", vfs_get_cwd_path());
-    }
-
-    else if (strcmp(cmd, cmd22) == 0) {
-    test_syscall_interface();
-}
-
     else {
         PRINT(0xFFFF0000, 0x000000, "Unknown command: %s\n", cmd);
         PRINT(0xFFFF0000, 0x000000, "Try 'help' for available commands\n");
@@ -684,7 +725,7 @@ void process_command(char* cmd) {
 }
 
 void run_text_demo(void) {
-
+    scheduler_enable();
     PRINT(0x00FFFFFF, 0x000000, "==========================================\n");
     PRINT(0x00FFFFFF, 0x000000, "    AMQ Operating System v0.2\n");
     PRINT(0x00FFFFFF, 0x000000, "==========================================\n");
@@ -819,9 +860,3 @@ void switch_to_user_mode(void (*user_func)(void)) {
     // Should never reach here
     PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to switch to user mode\n");
 }
-
-// ============================================================================
-// EXAMPLE: FULL BOOT SEQUENCE WITH SYSCALLS
-// ============================================================================
-
-

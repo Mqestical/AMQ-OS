@@ -46,5 +46,7 @@ void list_jobs(void);
 void list_bg_jobs(void);
 job_t* get_job(int job_id);
 void update_jobs(void);  // Called from timer interrupt
+void scheduler_enable(void);
+void update_jobs_safe(void);
 
 #endif // FG_H
