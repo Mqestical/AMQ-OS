@@ -93,7 +93,6 @@ void bg_command_thread(void) {
     }
     cmd_name[i] = '\0';
     
-    // Execute command
     if (strcmp(cmd_name, "sleep") == 0) {
         char *arg = data->command;
         while (*arg && *arg != ' ') arg++;
@@ -174,16 +173,12 @@ void bring_to_foreground(int job_id) {
         PRINT(0xFF00FF00, 0x000000, "fg: Thread %u is ready, will be scheduled\n", thread->tid);
     }
     
-    // Move to foreground
+    // move to fg
     job->is_background = 0;
     
     PRINT(0xFF00FF00, 0x000000, "fg: job %d (%s) moved to foreground\n", job_id, job->command);
     PRINT(0xFFFFFF00, 0x000000, "Note: Job continues running. Check with 'jobs' command.\n");
 }
-
-// ============================================================================
-// FIXED: send_to_background
-// ============================================================================
 
 void send_to_background(int job_id) {
     job_t *job = get_job(job_id);
@@ -203,7 +198,7 @@ void send_to_background(int job_id) {
 }
 
 void process_command(char* cmd) {
-    // Skip empty input
+    // don't do anything if input is empty.
     if (cmd[0] == '\0') return;
 
     // ========================================================================
@@ -213,14 +208,12 @@ void process_command(char* cmd) {
     int is_background = 0;
     if (len > 0 && cmd[len-1] == '&') {
         is_background = 1;
-        cmd[len-1] = '\0'; // Remove the '&'
-        // Trim trailing spaces
+        cmd[len-1] = '\0';
         len--;
         while (len > 0 && cmd[len-1] == ' ') {
             cmd[len-1] = '\0';
             len--;
         }
-        // Skip if command is now empty
         if (len == 0 || cmd[0] == '\0') {
             PRINT(0xFFFF0000, 0x000000, "Invalid command\n");
             return;
@@ -228,14 +221,14 @@ void process_command(char* cmd) {
 
         PRINT(0xFFFFFF00, 0x000000, "[SHELL] Running in background: %s\n", cmd);
 
-        // Get init process (PID=1)
+        // get init process (PID=1)
         process_t *proc = get_process(1);
         if (!proc) {
             PRINT(0xFFFF0000, 0x000000, "[ERROR] Init process not found\n");
             return;
         }
 
-        // Find free bg_thread_data slot
+        // find free bg_thread_data slot
         extern cmd_thread_data_t bg_thread_data[MAX_JOBS];
         int data_idx = -1;
         for (int i = 0; i < MAX_JOBS; i++) {
@@ -249,15 +242,15 @@ void process_command(char* cmd) {
             return;
         }
 
-        // Copy command to thread data
+        // copy command to thread data
         strcpy_safe_local(bg_thread_data[data_idx].command, cmd, 256);
-        bg_thread_data[data_idx].job_id = -1; // Temporary value
+        bg_thread_data[data_idx].job_id = -1; // temp value
 
         // Create thread
         int tid = thread_create(
             proc->pid,
             bg_command_thread,
-            65536,  // Larger stack - 64KB
+            65536,  // 64kb stack
             50000000,
             500000000,
             500000000
@@ -286,7 +279,7 @@ void process_command(char* cmd) {
             bg_thread_data[data_idx].job_id = 0;
         }
 
-        return; // Don't execute in foreground
+        return; 
     }
 
     // ========================================================================
@@ -371,7 +364,7 @@ void process_command(char* cmd) {
             PRINT(0xFFFFFF00, 0x000000, "No thread currently running\n");
         }
 
-        // Count threads by state
+        // count threads by state
         int ready = 0, running = 0, blocked = 0;
         for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
             if (thread_table[i].used) {
@@ -386,7 +379,7 @@ void process_command(char* cmd) {
         PRINT(0xFFFFFF00, 0x000000, "  Ready: %d\n", ready);
         PRINT(0xFFFF0000, 0x000000, "  Blocked: %d\n", blocked);
     }
-    // --- Job control commands ---
+    // --- job control commands ---
     else if (strcmp(cmd, cmd18) == 0) {
         list_jobs();
     }
@@ -443,16 +436,12 @@ void process_command(char* cmd) {
     }
     else if (strcmp(cmd, cmd23) == 0) {
         PRINT(0xFF00FFFF, 0x000000, "\n=== Testing Background Jobs ===\n");
-        
-        // Test 1: Simple echo
         PRINT(0xFFFFFF00, 0x000000, "Test 1: echo test &\n");
         char test1[] = "echo Hello from background! &";
         process_command(test1);
-        
-        // Wait a bit
+
         for (volatile int i = 0; i < 10000000; i++);
         
-        // Test 2: Sleep
         PRINT(0xFFFFFF00, 0x000000, "Test 2: sleep 3 &\n");
         char test2[] = "sleep 3 &";
         process_command(test2);
@@ -737,11 +726,10 @@ void run_text_demo(void) {
 
     while (1) {
         cursor_timer++;
-        
-        // Process keyboard input
+
         process_keyboard_buffer();
         
-        // Check if user pressed Enter
+        // check if user pressed Enter
         if (input_available()) {
             char* input = get_input_and_reset();
             process_command(input);
@@ -768,10 +756,6 @@ void init_shell(void) {
 
 void test_syscall_interface(void) {
     PRINT(0xFF00FFFF, 0x000000, "\n=== Testing Syscall Interface ===\n");
-    
-    // We need to switch to user mode to test syscalls
-    // For now, we can test the handlers directly
-    
     PRINT(0xFFFFFF00, 0x000000, "[TEST] Calling sys_getpid...\n");
     int64_t pid = sys_getpid();
     PRINT(0xFF00FF00, 0x000000, "[TEST] PID = %lld\n", pid);
@@ -803,7 +787,7 @@ void test_syscall_interface(void) {
         PRINT(0xFF00FF00, 0x000000, "[TEST] Wrote %lld bytes\n", written);
         sys_close(fd);
         
-        // Read it back
+        // read it back
         char t3[] = "/test_syscall";
         fd = sys_open(t3, FILE_READ, 0);
         if (fd >= 0) {
@@ -824,7 +808,7 @@ void test_syscall_interface(void) {
 // SWITCHING TO USER MODE (for real syscall testing)
 // ============================================================================
 
-// This function switches from kernel mode (ring 0) to user mode (ring 3)
+// switch to ring 3 (usermode, kernel ring=0)
 void switch_to_user_mode(void (*user_func)(void)) {
     PRINT(0xFFFFFF00, 0x000000, "[SWITCH] Entering user mode...\n");
     

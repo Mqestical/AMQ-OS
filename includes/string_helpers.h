@@ -5,7 +5,6 @@
 // ============================================================================
 // SAFE STRING COPY MACRO
 // ============================================================================
-// Use this instead of direct string literals to avoid .rodata issues
 
 #define SAFE_STR(dest, literal) do { \
     char _tmp[] = literal; \
