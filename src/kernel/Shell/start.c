@@ -44,7 +44,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     uefi_call_wrapper(ST->ConOut->SetCursorPosition, 3, ST->ConOut, 0, 0);
     uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, L"AMQ OS - Booting...\r\n");
 
-    // Get memory map
+    // get memory map
     EFI_MEMORY_DESCRIPTOR *memory_map = NULL;
     UINTN memory_map_size = 0;
     UINTN map_key = 0;
@@ -68,7 +68,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     init_graphics(ST);
 
-    // Exit boot services
+    /*exit uefi BS*/
     EFI_STATUS status = uefi_call_wrapper(BS->ExitBootServices, 2, ImageHandle, map_key);
     if (EFI_ERROR(status)) {
         uefi_call_wrapper(BS->GetMemoryMap, 5, &memory_map_size, memory_map, &map_key, &descriptor_size, &descriptor_version);
@@ -77,10 +77,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
             while(1) __asm__ volatile("hlt");
         }
     }
-
-    // ========================================================================
-    // PHASE 1: CRITICAL SYSTEM SETUP (NO INTERRUPTS)
-    // ========================================================================
     
     ClearScreen(0x000000);
     SetCursorPos(0, 0);
@@ -117,7 +113,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     PRINT(0xFF00FF00, 0x000000, "[OK] Serial initialized\n");
 
     // ========================================================================
-    // CRITICAL: Initialize job system BEFORE enabling interrupts
+    // Initialize job system before enabling interrupts
     // ========================================================================
 
     PRINT(0xFFFFFF00, 0x000000, "\n[INIT] Initializing job system...\n");
@@ -125,16 +121,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     jobs_set_active(0);
     PRINT(0xFF00FF00, 0x000000, "[OK] Job system initialized (INACTIVE)\n");
 
-    // ========================================================================
-    // NOW enable timer
-    // ========================================================================
-
     PRINT(0xFFFFFF00, 0x000000, "\n[INIT] Enabling IRQ system...\n");
     irq_init();
     PRINT(0xFF00FF00, 0x000000, "[OK] IRQ system enabled\n");
 
     // ========================================================================
-    // CRITICAL: Test timer for a few seconds
+    // Test timer for a few seconds
     // ========================================================================
 
     PRINT(0xFFFFFF00, 0x000000, "\n[TEST] Testing timer for 3 seconds...\n");
@@ -187,7 +179,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     PRINT(0xFFFFFF00, 0x000000, "[INIT] Formatting disk...\n");
     
-    // FIXED: Use local arrays instead of string literals
     char device_name[] = "ata0";
     if (tinyfs_format(device_name) != 0) {
         PRINT(0xFFFF0000, 0x000000, "[ERROR] Format failed\n");
@@ -200,7 +191,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     PRINT(0xFFFFFF00, 0x000000, "[INIT] Mounting filesystem...\n");
 
-    // FIXED: Use local arrays for all three parameters
     char fs_type[] = "tinyfs";
     char device[] = "ata0";
     char mountpoint[] = "/";

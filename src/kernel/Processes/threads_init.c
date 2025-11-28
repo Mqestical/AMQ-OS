@@ -46,7 +46,7 @@ void test_thread_entry(void) {
     }
 }
 // ============================================================================
-// PERIODIC TASK THREAD - Demonstrates real-time periodic behavior
+// PERIODIC TASK THREAD - Real-time periodic behavior
 // ============================================================================
 void periodic_task_entry(void) {
     uint64_t iteration = 0;

@@ -625,7 +625,7 @@ static int tinyfs_create_node(vfs_node_t *parent, const char *name, uint8_t type
     dirent->size = 0;
     dirent->is_directory = (type == FILE_TYPE_DIRECTORY) ? 1 : 0;
     dirent->used = 1;
-    dirent->parent_inode = parent_inode;  // ADD THIS LINE
+    dirent->parent_inode = parent_inode;
     
     PRINT(0xFFFFFF00, 0x000000, "[TINYFS] create_node: Writing directory to disk...\n");
     
@@ -684,12 +684,10 @@ filesystem_t* tinyfs_create(void) {
         return NULL;
     }
     
-    // ZERO OUT THE MEMORY FIRST:
     for (int i = 0; i < sizeof(filesystem_t); i++) {
         ((uint8_t*)fs)[i] = 0;
     }
     
-    // USE A LOCAL ARRAY INSTEAD OF STRING LITERAL:
     char name_str[] = "tinyfs";
     
     PRINT(0xFFFFFF00, 0x000000, "[TINYFS] About to call strcpy_safe with '%s'...\n", name_str);

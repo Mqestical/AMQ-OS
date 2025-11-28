@@ -132,7 +132,7 @@ void timer_irq_handler(void) {
     timer_ticks++;
     
     // Update job states (wake sleeping jobs, clean up finished jobs)
-    update_jobs_safe();  // CRITICAL: This must be called!
+    update_jobs_safe(); 
     
     // If scheduler is enabled, tick it
     extern void scheduler_tick(void);
