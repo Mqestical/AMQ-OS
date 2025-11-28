@@ -131,16 +131,15 @@ void irq_common_handler(int irq_num) {
 void timer_irq_handler(void) {
     timer_ticks++;
     
-    if (timer_ticks % TIMER_FREQ == 0) {
-        timer_seconds++;
-    }
+    // Update job states (wake sleeping jobs, clean up finished jobs)
+    update_jobs_safe();  // CRITICAL: This must be called!
     
-    if (timer_ticks % 10 == 0) {
-        extern void update_jobs_safe(void);
-        update_jobs_safe();
-    }
+    // If scheduler is enabled, tick it
+    extern void scheduler_tick(void);
+    scheduler_tick();
     
-    pic_send_eoi(0);
+    // Send EOI
+    outb(0x20, 0x20);
 }
 
 // ============================================================================

@@ -108,7 +108,7 @@ void print_process_table(void) {
                     else if (t->state == THREAD_STATE_BLOCKED) tstate_str = "BLOCKED";
                     else tstate_str = "TERMINATED";
                     
-                    PRINT(0xFFFFFF00, 0x000000, "  └─ TID=%u | %s | Deadline=%llu ns\n",
+                    PRINT(0xFFFFFF00, 0x000000, "  â””â”€ TID=%u | %s | Deadline=%llu ns\n",
                           t->tid, tstate_str, t->sched.absolute_deadline);
                 }
             }

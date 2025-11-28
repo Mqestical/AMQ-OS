@@ -181,13 +181,6 @@ void update_jobs(void) {
         
         job_t *job = &fg_table[i];
         
-        // SAFETY: Check thread table bounds
-        if (job->tid == 0 || job->tid >= MAX_THREADS_GLOBAL) {
-            job->used = 0;
-            job->state = JOB_DONE;
-            continue;
-        }
-        
         // Check if thread still exists
         thread_t *thread = get_thread(job->tid);
         
@@ -206,11 +199,15 @@ void update_jobs(void) {
         // Wake up sleeping jobs
         if (job->state == JOB_SLEEPING) {
             if (system_time_ms >= job->sleep_until) {
+                PRINT(0xFFFFFF00, 0x000000, "\n[JOB %d] Waking up at %llu ms (target was %llu)\n",
+                      job->job_id, system_time_ms, job->sleep_until);
+                
                 thread_unblock(job->tid);
                 job->state = JOB_RUNNING;
+                job->sleep_until = 0;
                 
                 if (job->is_background) {
-                    PRINT(0xFF00FF00, 0x000000, "\n[%d]  Woke up from sleep       %s\n",
+                    PRINT(0xFF00FF00, 0x000000, "[%d]  Resumed                  %s\n",
                           job->job_id, job->command);
                 }
             }
