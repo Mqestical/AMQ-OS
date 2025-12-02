@@ -20,6 +20,7 @@
 #include "fg.h"
 #include "syscall.h"
 #include "string_helpers.h"
+#include "mouse.h"
 
 extern void syscall_register_all(void);
 extern void pmm_init(EFI_MEMORY_DESCRIPTOR* map, UINTN desc_count, UINTN desc_size);
@@ -228,7 +229,11 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     jobs_set_active(1);
     PRINT(0xFF00FF00, 0x000000, "[OK] Job tracking ENABLED\n");
-
+    for(;;) {
+        ClearScreen(0x000000);
+        while (1) {
+        mouse();
+    }}
     PRINT(0xFF00FFFF, 0x000000, "\nStarting shell...\n\n");
     
     for (volatile int i = 0; i < 5000000; i++);

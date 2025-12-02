@@ -11,6 +11,7 @@
 #include "sleep.h"
 #include "syscall.h"
 #include "string_helpers.h"
+
 #define CURSOR_BLINK_RATE 50000
 
 void bg_command_thread(void);
@@ -310,7 +311,7 @@ void process_command(char* cmd) {
     char cmd21[] = "sleep ";
     char cmd22[] = "syscalltest";
     char cmd23[] = "testbg";
-
+    char cmd24[] = "stum -r3";
     // --- Basic commands ---
     if (strcmp(cmd, cmd1) == 0) {
         PRINT(0xFF00FF00, 0x000000, "hello :D\n");
@@ -340,6 +341,7 @@ void process_command(char* cmd) {
         PRINT(0xFFFFFF00, 0x000000, "  command & - Run in background\n");
         PRINT(0xFF00FFFF, 0x000000, "  syscalltest - Test syscall interface\n");
         PRINT(0xFF00FFFF, 0x000000, "  testbg - Test background jobs\n");
+        PRINT(0xFFFF00FF, 0x000000, "  Switching to usermode...\n");
     }
     else if (strcmp(cmd, cmd3) == 0) {
         ClearScreen(0x000000);
@@ -706,6 +708,9 @@ void process_command(char* cmd) {
                 PRINT(0xFF00FF00, 0x000000, "%s\n", vfs_get_cwd_path());
             }
         }
+    } else if (strncmp(cmd, cmd24, 9) == 0) {
+        // TODO: implement this later, return for now.
+        return;
     }
     else {
         PRINT(0xFFFF0000, 0x000000, "Unknown command: %s\n", cmd);
