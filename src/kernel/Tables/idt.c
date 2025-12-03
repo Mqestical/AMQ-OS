@@ -257,12 +257,12 @@ static char scancode_to_ascii(uint8_t scancode, int shifted) {
             case 0x17: return 'i';
             case 0x18: return 'o';
             case 0x19: return 'p';
-            case 0x1A: return '[';   // added
-            case 0x1B: return ']';   // added
-            case 0x2B: return '\\';  // added (backslash key)
-            case 0x29: return '`';   // added (backtick)
-            case 0x27: return ';';   // added (semicolon)
-            case 0x28: return '\'';  // added (quote)
+            case 0x1A: return '[';
+            case 0x1B: return ']';
+            case 0x2B: return '\\';
+            case 0x29: return '`';
+            case 0x27: return ';';
+            case 0x28: return '\'';
             case 0x1E: return 'a';
             case 0x1F: return 's';
             case 0x20: return 'd';
@@ -308,12 +308,12 @@ static char scancode_to_ascii(uint8_t scancode, int shifted) {
             case 0x17: return 'I';
             case 0x18: return 'O';
             case 0x19: return 'P';
-            case 0x1A: return '{';   // added shifted [
-            case 0x1B: return '}';   // added shifted ]
-            case 0x2B: return '|';   // added shifted backslash
-            case 0x29: return '~';   // added shifted backtick
-            case 0x27: return ':';   // added shifted semicolon
-            case 0x28: return '"';   // added shifted quote
+            case 0x1A: return '{';
+            case 0x1B: return '}';
+            case 0x2B: return '|';
+            case 0x29: return '~';
+            case 0x27: return ':';
+            case 0x28: return '"';
             case 0x1E: return 'A';
             case 0x1F: return 'S';
             case 0x20: return 'D';

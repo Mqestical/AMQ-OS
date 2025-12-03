@@ -87,7 +87,6 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
 
 
 void create_elf_from_asm(const char *output_path, const char *asm_code) {
-    // Assemble the code
     asm_context_t asm_ctx;
     asm_init(&asm_ctx);
     
@@ -108,7 +107,6 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
     
     PRINT(MAGENTA, BLACK, "[ASM] Generated %zu bytes of machine code\n", code_size);
     
-    // Build ELF structure
     size_t total_size = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + code_size;
     uint8_t *elf = kmalloc(total_size);
     
@@ -117,12 +115,10 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         return;
     }
     
-    // Zero initialize
     for (size_t i = 0; i < total_size; i++) {
         elf[i] = 0;
     }
     
-    // ELF Header
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)elf;
     ehdr->e_ident[EI_MAG0] = 0x7F;
     ehdr->e_ident[EI_MAG1] = 'E';
@@ -140,7 +136,6 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
     ehdr->e_phentsize = sizeof(Elf64_Phdr);
     ehdr->e_phnum = 1;
     
-    // Program Header
     Elf64_Phdr *phdr = (Elf64_Phdr *)(elf + sizeof(Elf64_Ehdr));
     phdr->p_type = PT_LOAD;
     phdr->p_flags = PF_R | PF_X;
@@ -151,13 +146,11 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
     phdr->p_memsz = code_size;
     phdr->p_align = 0x1000;
     
-    // Copy code
     uint8_t *code_section = elf + sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
     for (size_t i = 0; i < code_size; i++) {
         code_section[i] = code[i];
     }
     
-    // Build full path
     char fullpath[256];
     if (output_path[0] == '/') {
         strcpy_local(fullpath, output_path);
@@ -177,7 +170,6 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         fullpath[i] = '\0';
     }
     
-    // Write to file
     int fd = vfs_open(fullpath, FILE_WRITE);
     if (fd < 0) {
         vfs_create(fullpath, FILE_READ | FILE_WRITE);
@@ -853,9 +845,6 @@ void process_command(char* cmd) {
         PRINT(YELLOW, BLACK, "Pick: Rock, Paper, or Scissors? (you're going to lose btw)\n");
         play_rps();
 }
-//else if (strncmp(cmd, subcmd25_1,5)) {return;}
-//else if (strncmp(cmd, subcmd25_2,6)) {return;}
-//else if (strncmp(cmd, subcmd25_3,9)) {return;}
 
    else if (STRNCMP(cmd, "elfinfo ", 9) == 0) {
        shell_command_elfinfo(cmd + 8);
@@ -878,12 +867,10 @@ void process_command(char* cmd) {
    else if (STRNCMP(cmd, "elftest", 8) == 0) {
        shell_command_elftest();
    } 
-// Command: asm - assemble from command line
 else if (strncmp(cmd, "ASM ", 4) == 0) {
     char *rest = cmd + 4;
     char filename[256];
     
-    // Parse filename
     int i = 0;
     while (rest[i] && rest[i] != ' ' && i < 255) {
         filename[i] = rest[i];
@@ -891,17 +878,14 @@ else if (strncmp(cmd, "ASM ", 4) == 0) {
     }
     filename[i] = '\0';
     
-    // Skip spaces
     while (rest[i] == ' ') i++;
     
-    // Rest is assembly code
     char *asm_code = &rest[i];
     
     if (filename[0] == '\0' || asm_code[0] == '\0') {
         PRINT(YELLOW, BLACK, "Usage: asm <file> <assembly code>\n");
         PRINT(WHITE, BLACK, "Example: asm test.elf mov rax, 42; ret\n");
     } else {
-        // Replace semicolons with newlines
         char code_buf[512];
         int j = 0;
         for (int k = 0; asm_code[k] && j < 511; k++) {
@@ -917,13 +901,11 @@ else if (strncmp(cmd, "ASM ", 4) == 0) {
     }
 }
 
-// Command: asmfile - assemble from a file
 else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
     char *rest = cmd + 8;
     char source[256];
     char output[256];
     
-    // Parse source file
     int i = 0;
     while (rest[i] && rest[i] != ' ' && i < 255) {
         source[i] = rest[i];
@@ -931,10 +913,8 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
     }
     source[i] = '\0';
     
-    // Skip spaces
     while (rest[i] == ' ') i++;
     
-    // Parse output file
     int j = 0;
     while (rest[i] && j < 255) {
         output[j++] = rest[i++];
@@ -946,7 +926,6 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
         return;
     }
     
-    // Read source file
     char fullpath[256];
     if (source[0] == '/') {
         strcpy_local(fullpath, source);
@@ -1202,7 +1181,6 @@ void shell_command_elfcheck(const char *args) {
         return;
     }
     
-    // Build full path
     char fullpath[256];
     if (args[0] == '/') {
         int i = 0;
@@ -1228,7 +1206,6 @@ void shell_command_elfcheck(const char *args) {
         fullpath[i] = '\0';
     }
     
-    // Read first 64 bytes (ELF header)
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
         PRINT(YELLOW, BLACK, "Cannot open: %s\n", fullpath);
@@ -1244,7 +1221,6 @@ void shell_command_elfcheck(const char *args) {
         return;
     }
     
-    // Check magic
     if (header[0] != 0x7F || header[1] != 'E' || 
         header[2] != 'L' || header[3] != 'F') {
         PRINT(YELLOW, BLACK, "✗ Not an ELF file\n");
@@ -1253,21 +1229,18 @@ void shell_command_elfcheck(const char *args) {
     
     PRINT(MAGENTA, BLACK, "✓ Valid ELF file\n");
     
-    // Check class
     if (header[4] == 1) {
         PRINT(WHITE, BLACK, "  Class: ELF32 (32-bit)\n");
     } else if (header[4] == 2) {
         PRINT(WHITE, BLACK, "  Class: ELF64 (64-bit)\n");
     }
     
-    // Check endianness
     if (header[5] == 1) {
         PRINT(WHITE, BLACK, "  Data: Little-endian\n");
     } else if (header[5] == 2) {
         PRINT(WHITE, BLACK, "  Data: Big-endian\n");
     }
     
-    // Check type
     uint16_t type = *(uint16_t *)&header[16];
     PRINT(WHITE, BLACK, "  Type: ");
     switch (type) {
@@ -1279,7 +1252,6 @@ void shell_command_elfcheck(const char *args) {
         default: PRINT(WHITE, BLACK, "Unknown\n"); break;
     }
     
-    // Check machine
     uint16_t machine = *(uint16_t *)&header[18];
     PRINT(WHITE, BLACK, "  Machine: ");
     switch (machine) {
@@ -1298,7 +1270,6 @@ void shell_command_elfload(const char *args) {
         return;
     }
     
-    // Build full path
     char fullpath[256];
     if (args[0] == '/') {
         int i = 0;
@@ -1326,7 +1297,6 @@ void shell_command_elfload(const char *args) {
     
     PRINT(WHITE, BLACK, "[ELFLOAD] Loading: %s\n", fullpath);
     
-    // Open file
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
         PRINT(YELLOW, BLACK, "Failed to open: %s\n", fullpath);
@@ -1341,7 +1311,6 @@ void shell_command_elfload(const char *args) {
     
     size_t file_size = node->size;
     
-    // Allocate buffer
     void *elf_buffer = kmalloc(file_size);
     if (!elf_buffer) {
         PRINT(YELLOW, BLACK, "Out of memory\n");
@@ -1349,7 +1318,6 @@ void shell_command_elfload(const char *args) {
         return;
     }
     
-    // Read file
     int bytes = vfs_read(fd, (uint8_t *)elf_buffer, file_size);
     vfs_close(fd);
     
@@ -1359,7 +1327,6 @@ void shell_command_elfload(const char *args) {
         return;
     }
     
-    // Load ELF
     elf_load_info_t load_info;
     int result = elf_load(elf_buffer, file_size, &load_info);
     
@@ -1379,7 +1346,6 @@ void shell_command_elfload(const char *args) {
         PRINT(WHITE, BLACK, "  TLS size: %llu bytes\n", load_info.tls_size);
     }
     
-    // Extract program name from path
     const char *name = fullpath;
     for (int i = 0; fullpath[i]; i++) {
         if (fullpath[i] == '/') {
@@ -1387,7 +1353,6 @@ void shell_command_elfload(const char *args) {
         }
     }
     
-    // Create process
     int pid = process_create(name, load_info.base_addr);
     if (pid < 0) {
         PRINT(YELLOW, BLACK, "Failed to create process\n");
@@ -1395,7 +1360,6 @@ void shell_command_elfload(const char *args) {
         return;
     }
     
-    // Create main thread
     void (*entry)(void) = (void (*)(void))load_info.entry_point;
     int tid = thread_create(pid, entry, 131072, 50000000, 1000000000, 1000000000);
     
@@ -1405,7 +1369,6 @@ void shell_command_elfload(const char *args) {
         return;
     }
     
-    // Add to job control
     extern int add_fg_job(const char *command, uint32_t pid, uint32_t tid);
     int job_id = add_fg_job(fullpath, pid, tid);
     
@@ -1413,11 +1376,9 @@ void shell_command_elfload(const char *args) {
           pid, tid, job_id);
     PRINT(MAGENTA, BLACK, "[ELFLOAD] Program is now running\n");
     
-    // Note: Don't free elf_buffer as the code is still in use
 }
 
 void shell_command_elfinfo(const char *args) {
-    // Skip leading spaces
     while (*args == ' ') args++;
     
     if (*args == '\0') {
@@ -1426,7 +1387,6 @@ void shell_command_elfinfo(const char *args) {
         return;
     }
     
-    // Build full path
     char fullpath[256];
     if (args[0] == '/') {
         int i = 0;
@@ -1452,7 +1412,6 @@ void shell_command_elfinfo(const char *args) {
         fullpath[i] = '\0';
     }
     
-    // Open file
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
         PRINT(YELLOW, BLACK, "Failed to open: %s\n", fullpath);
@@ -1467,7 +1426,6 @@ void shell_command_elfinfo(const char *args) {
     
     size_t file_size = node->size;
     
-    // Allocate buffer
     void *elf_buffer = kmalloc(file_size);
     if (!elf_buffer) {
         PRINT(YELLOW, BLACK, "Out of memory\n");
@@ -1475,7 +1433,6 @@ void shell_command_elfinfo(const char *args) {
         return;
     }
     
-    // Read file
     int bytes = vfs_read(fd, (uint8_t *)elf_buffer, file_size);
     vfs_close(fd);
     
@@ -1485,14 +1442,12 @@ void shell_command_elfinfo(const char *args) {
         return;
     }
     
-    // Validate ELF
     if (elf_validate(elf_buffer, file_size) != ELF_SUCCESS) {
         PRINT(YELLOW, BLACK, "Not a valid ELF file\n");
         kfree(elf_buffer);
         return;
     }
     
-    // Create context
     elf_context_t *ctx = elf_create_context(elf_buffer, file_size);
     if (!ctx) {
         PRINT(YELLOW, BLACK, "Failed to parse ELF\n");
@@ -1504,15 +1459,12 @@ void shell_command_elfinfo(const char *args) {
     PRINT(CYAN, BLACK, "  ELF File Information: %s\n", fullpath);
     PRINT(CYAN, BLACK, "========================================\n");
     
-    // Print all information
     elf_print_header(ctx->ehdr);
     elf_print_program_headers(ctx);
     elf_print_section_headers(ctx);
     
-    // Resolve and display symbols
     elf_resolve_symbols(ctx);
     
-    // Count symbols
     int func_count = 0, obj_count = 0, total_count = 0;
     for (int i = 0; i < 256; i++) {
         elf_symbol_t *sym = ctx->symbol_hash[i];
@@ -1535,12 +1487,10 @@ void shell_command_elfinfo(const char *args) {
         PRINT(WHITE, BLACK, "(Too many symbols to display, use 'elfsyms' for full list)\n");
     }
     
-    // Print dynamic info if present
     if (ctx->dynamic) {
         elf_print_dynamic(ctx);
     }
     
-    // Cleanup
     elf_destroy_context(ctx);
     kfree(elf_buffer);
 }

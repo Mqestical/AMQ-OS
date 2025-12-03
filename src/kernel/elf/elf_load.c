@@ -3,9 +3,6 @@
 #include "print.h"
 #include "string_helpers.h"
 
-// ============================================================================
-// MEMORY MAPPING AND PROTECTION
-// ============================================================================
 
 static uint64_t align_down(uint64_t addr, uint64_t align) {
     return addr & ~(align - 1);
@@ -15,13 +12,10 @@ static uint64_t align_up(uint64_t addr, uint64_t align) {
     return (addr + align - 1) & ~(align - 1);
 }
 
-// Map memory with appropriate protections
 static void *elf_map_memory(uint64_t vaddr, size_t size, uint32_t prot_flags) {
-    // Align to page boundaries
     uint64_t aligned_addr = align_down(vaddr, 4096);
     size_t aligned_size = align_up(size + (vaddr - aligned_addr), 4096);
     
-    // Allocate physical pages
     size_t num_pages = aligned_size / 4096;
     void *phys = pmm_alloc_pages(num_pages);
     
@@ -29,21 +23,15 @@ static void *elf_map_memory(uint64_t vaddr, size_t size, uint32_t prot_flags) {
         return NULL;
     }
     
-    // Zero the allocated memory
     uint8_t *ptr = (uint8_t *)phys;
     for (size_t i = 0; i < aligned_size; i++) {
         ptr[i] = 0;
     }
     
-    // In a real implementation, you'd set up page tables here
-    // with appropriate protection flags (RWX based on prot_flags)
     
     return phys;
 }
 
-// ============================================================================
-// ELF VALIDATION
-// ============================================================================
 
 int elf_validate(void *elf_data, size_t size) {
     if (!elf_data || size < sizeof(Elf64_Ehdr)) {
@@ -52,7 +40,6 @@ int elf_validate(void *elf_data, size_t size) {
     
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)elf_data;
     
-    // Check magic number
     if (ehdr->e_ident[EI_MAG0] != ELFMAG0 ||
         ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
         ehdr->e_ident[EI_MAG2] != ELFMAG2 ||
@@ -61,37 +48,31 @@ int elf_validate(void *elf_data, size_t size) {
         return ELF_ERROR_INVALID;
     }
     
-    // Check class (32/64-bit)
     if (ehdr->e_ident[EI_CLASS] != ELFCLASS64) {
         PRINT(YELLOW, BLACK, "[ELF] Only 64-bit ELF supported\n");
         return ELF_ERROR_UNSUPPORTED;
     }
     
-    // Check endianness
     if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) {
         PRINT(YELLOW, BLACK, "[ELF] Only little-endian supported\n");
         return ELF_ERROR_UNSUPPORTED;
     }
     
-    // Check version
     if (ehdr->e_ident[EI_VERSION] != EV_CURRENT) {
         PRINT(YELLOW, BLACK, "[ELF] Invalid version\n");
         return ELF_ERROR_INVALID;
     }
     
-    // Check machine type
     if (ehdr->e_machine != EM_X86_64) {
         PRINT(YELLOW, BLACK, "[ELF] Unsupported machine type: %u\n", ehdr->e_machine);
         return ELF_ERROR_UNSUPPORTED;
     }
     
-    // Check type
     if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN && ehdr->e_type != ET_REL) {
         PRINT(YELLOW, BLACK, "[ELF] Unsupported ELF type: %u\n", ehdr->e_type);
         return ELF_ERROR_UNSUPPORTED;
     }
     
-    // Validate header sizes
     if (ehdr->e_ehsize != sizeof(Elf64_Ehdr)) {
         PRINT(YELLOW, BLACK, "[ELF] Invalid header size\n");
         return ELF_ERROR_INVALID;
@@ -110,9 +91,6 @@ int elf_validate(void *elf_data, size_t size) {
     return ELF_SUCCESS;
 }
 
-// ============================================================================
-// CONTEXT MANAGEMENT
-// ============================================================================
 
 elf_context_t *elf_create_context(void *elf_data, size_t size) {
     if (elf_validate(elf_data, size) != ELF_SUCCESS) {
@@ -124,7 +102,6 @@ elf_context_t *elf_create_context(void *elf_data, size_t size) {
         return NULL;
     }
     
-    // Zero initialize
     for (size_t i = 0; i < sizeof(elf_context_t); i++) {
         ((uint8_t *)ctx)[i] = 0;
     }
@@ -133,23 +110,19 @@ elf_context_t *elf_create_context(void *elf_data, size_t size) {
     ctx->elf_size = size;
     ctx->ehdr = (Elf64_Ehdr *)elf_data;
     
-    // Set up program headers
     if (ctx->ehdr->e_phnum > 0) {
         ctx->phdrs = (Elf64_Phdr *)((uint8_t *)elf_data + ctx->ehdr->e_phoff);
     }
     
-    // Set up section headers
     if (ctx->ehdr->e_shnum > 0) {
         ctx->shdrs = (Elf64_Shdr *)((uint8_t *)elf_data + ctx->ehdr->e_shoff);
         
-        // Get section header string table
         if (ctx->ehdr->e_shstrndx != SHN_UNDEF && ctx->ehdr->e_shstrndx < ctx->ehdr->e_shnum) {
             Elf64_Shdr *shstrtab_hdr = &ctx->shdrs[ctx->ehdr->e_shstrndx];
             ctx->shstrtab = (char *)((uint8_t *)elf_data + shstrtab_hdr->sh_offset);
         }
     }
     
-    // Find important sections
     for (int i = 0; i < ctx->ehdr->e_shnum; i++) {
         Elf64_Shdr *shdr = &ctx->shdrs[i];
         
@@ -181,7 +154,6 @@ elf_context_t *elf_create_context(void *elf_data, size_t size) {
 void elf_destroy_context(elf_context_t *ctx) {
     if (!ctx) return;
     
-    // Free symbol hash table
     for (int i = 0; i < 256; i++) {
         elf_symbol_t *sym = ctx->symbol_hash[i];
         while (sym) {
@@ -195,9 +167,6 @@ void elf_destroy_context(elf_context_t *ctx) {
     kfree(ctx);
 }
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
 
 const char *elf_get_section_name(elf_context_t *ctx, Elf64_Shdr *shdr) {
     if (!ctx->shstrtab || shdr->sh_name == 0) {
@@ -245,16 +214,12 @@ Elf64_Shdr *elf_find_section_by_type(elf_context_t *ctx, uint32_t type) {
     return NULL;
 }
 
-// ============================================================================
-// SEGMENT LOADING
-// ============================================================================
 
 int elf_load_segments(elf_context_t *ctx, elf_load_info_t *info) {
     if (!ctx || !info) {
         return ELF_ERROR_INVALID;
     }
     
-    // Determine load bias for PIE/shared objects
     uint64_t min_vaddr = (uint64_t)-1;
     uint64_t max_vaddr = 0;
     
@@ -272,7 +237,6 @@ int elf_load_segments(elf_context_t *ctx, elf_load_info_t *info) {
         }
     }
     
-    // For ET_DYN (PIE/shared), allocate a base address
     if (ctx->ehdr->e_type == ET_DYN) {
         size_t total_size = max_vaddr - min_vaddr;
         void *base = elf_map_memory(0x400000, total_size, PF_R | PF_W | PF_X);
@@ -286,7 +250,6 @@ int elf_load_segments(elf_context_t *ctx, elf_load_info_t *info) {
         info->base_addr = min_vaddr;
     }
     
-    // Load segments
     for (int i = 0; i < ctx->ehdr->e_phnum; i++) {
         Elf64_Phdr *phdr = &ctx->phdrs[i];
         
@@ -296,14 +259,12 @@ int elf_load_segments(elf_context_t *ctx, elf_load_info_t *info) {
             PRINT(WHITE, BLACK, "[ELF] Loading segment: vaddr=0x%llx, filesz=%llu, memsz=%llu\n",
                   vaddr, phdr->p_filesz, phdr->p_memsz);
             
-            // Map memory for segment
             void *mem = elf_map_memory(vaddr, phdr->p_memsz, phdr->p_flags);
             if (!mem) {
                 PRINT(YELLOW, BLACK, "[ELF] Failed to map segment\n");
                 return ELF_ERROR_NOMEM;
             }
             
-            // Copy file contents
             if (phdr->p_filesz > 0) {
                 uint8_t *src = (uint8_t *)ctx->elf_data + phdr->p_offset;
                 uint8_t *dst = (uint8_t *)mem + (vaddr - align_down(vaddr, 4096));
@@ -313,7 +274,6 @@ int elf_load_segments(elf_context_t *ctx, elf_load_info_t *info) {
                 }
             }
             
-            // Zero BSS portion (memsz > filesz)
             if (phdr->p_memsz > phdr->p_filesz) {
                 uint8_t *bss_start = (uint8_t *)mem + (vaddr - align_down(vaddr, 4096)) + phdr->p_filesz;
                 size_t bss_size = phdr->p_memsz - phdr->p_filesz;
@@ -341,7 +301,6 @@ int elf_load_segments(elf_context_t *ctx, elf_load_info_t *info) {
         }
     }
     
-    // Set entry point
     info->entry_point = ctx->ehdr->e_entry + ctx->load_bias;
     info->phdr_count = ctx->ehdr->e_phnum;
     info->phdr_entsize = ctx->ehdr->e_phentsize;
@@ -351,9 +310,6 @@ int elf_load_segments(elf_context_t *ctx, elf_load_info_t *info) {
     return ELF_SUCCESS;
 }
 
-// ============================================================================
-// SYMBOL RESOLUTION
-// ============================================================================
 
 static uint32_t elf_hash(const char *name) {
     uint32_t h = 0;
@@ -373,7 +329,6 @@ int elf_resolve_symbols(elf_context_t *ctx) {
         return ELF_ERROR_INVALID;
     }
     
-    // Build symbol hash table from symtab
     if (ctx->symtab && ctx->strtab) {
         for (size_t i = 0; i < ctx->symtab_count; i++) {
             Elf64_Sym *sym = &ctx->symtab[i];
@@ -389,7 +344,6 @@ int elf_resolve_symbols(elf_context_t *ctx) {
                 continue;
             }
             
-            // Copy name
             size_t name_len = 0;
             while (name[name_len]) name_len++;
             
@@ -409,14 +363,12 @@ int elf_resolve_symbols(elf_context_t *ctx) {
             entry->binding = ELF64_ST_BIND(sym->st_info);
             entry->section = sym->st_shndx;
             
-            // Add to hash table
             uint32_t hash = elf_hash(name) % 256;
             entry->next = ctx->symbol_hash[hash];
             ctx->symbol_hash[hash] = entry;
         }
     }
     
-    // Also add dynsym
     if (ctx->dynsym && ctx->dynstr) {
         for (size_t i = 0; i < ctx->dynsym_count; i++) {
             Elf64_Sym *sym = &ctx->dynsym[i];
@@ -427,7 +379,6 @@ int elf_resolve_symbols(elf_context_t *ctx) {
             
             const char *name = ctx->dynstr + sym->st_name;
             
-            // Check if already in hash table
             uint32_t hash = elf_hash(name) % 256;
             elf_symbol_t *existing = ctx->symbol_hash[hash];
             int found = 0;
@@ -511,9 +462,6 @@ uint64_t elf_get_symbol_value(elf_context_t *ctx, const char *name) {
     return sym ? sym->value : 0;
 }
 
-// ============================================================================
-// RELOCATIONS
-// ============================================================================
 
 static int elf_apply_rela_relocations(elf_context_t *ctx, Elf64_Rela *rela, size_t count,
                                        Elf64_Sym *symtab, char *strtab) {
@@ -525,12 +473,10 @@ static int elf_apply_rela_relocations(elf_context_t *ctx, Elf64_Rela *rela, size
         uint64_t *ref = (uint64_t *)(rel->r_offset + ctx->load_bias);
         uint64_t symval = 0;
         
-        // Get symbol value
         if (r_sym != 0 && symtab) {
             Elf64_Sym *sym = &symtab[r_sym];
             
             if (sym->st_shndx == SHN_UNDEF) {
-                // External symbol - need to resolve
                 if (strtab && sym->st_name != 0) {
                     const char *sym_name = strtab + sym->st_name;
                     elf_symbol_t *resolved = elf_find_symbol(ctx, sym_name);
@@ -551,7 +497,6 @@ static int elf_apply_rela_relocations(elf_context_t *ctx, Elf64_Rela *rela, size
             }
         }
         
-        // Apply relocation based on type
         switch (r_type) {
             case R_X86_64_NONE:
                 break;
@@ -583,22 +528,18 @@ static int elf_apply_rela_relocations(elf_context_t *ctx, Elf64_Rela *rela, size
                 break;
                 
             case R_X86_64_GOTPCREL:
-                // For now, treat like PC32
                 *(uint32_t *)ref = (uint32_t)(symval + rel->r_addend - (uint64_t)ref);
                 break;
                 
             case R_X86_64_TPOFF64:
-                // TLS offset from thread pointer
                 *ref = symval + rel->r_addend;
                 break;
                 
             case R_X86_64_DTPMOD64:
-                // TLS module ID
-                *ref = 1; // Single module for now
+                *ref = 1;
                 break;
                 
             case R_X86_64_DTPOFF64:
-                // TLS offset within module
                 *ref = symval + rel->r_addend;
                 break;
                 
@@ -616,7 +557,6 @@ int elf_apply_relocations(elf_context_t *ctx) {
         return ELF_ERROR_INVALID;
     }
     
-    // Process RELA relocations from sections
     for (int i = 0; i < ctx->ehdr->e_shnum; i++) {
         Elf64_Shdr *shdr = &ctx->shdrs[i];
         
@@ -624,7 +564,6 @@ int elf_apply_relocations(elf_context_t *ctx) {
             Elf64_Rela *rela = (Elf64_Rela *)((uint8_t *)ctx->elf_data + shdr->sh_offset);
             size_t count = shdr->sh_size / sizeof(Elf64_Rela);
             
-            // Get associated symbol table
             Elf64_Shdr *symtab_shdr = NULL;
             char *strtab = NULL;
             
@@ -645,7 +584,6 @@ int elf_apply_relocations(elf_context_t *ctx) {
         }
     }
     
-    // Process dynamic relocations
     if (ctx->dynamic) {
         Elf64_Rela *rela = NULL;
         size_t rela_size = 0;
@@ -684,16 +622,12 @@ int elf_apply_relocations(elf_context_t *ctx) {
     return ELF_SUCCESS;
 }
 
-// ============================================================================
-// TLS SETUP
-// ============================================================================
 
 int elf_setup_tls(elf_context_t *ctx, elf_load_info_t *info) {
     if (!info->has_tls) {
         return ELF_SUCCESS;
     }
     
-    // Allocate TLS block
     size_t tls_size = align_up(info->tls_size, info->tls_align);
     void *tls_block = kmalloc(tls_size);
     
@@ -701,7 +635,6 @@ int elf_setup_tls(elf_context_t *ctx, elf_load_info_t *info) {
         return ELF_ERROR_NOMEM;
     }
     
-    // Copy TLS template
     uint8_t *src = (uint8_t *)info->tls_base;
     uint8_t *dst = (uint8_t *)tls_block;
     
@@ -709,42 +642,33 @@ int elf_setup_tls(elf_context_t *ctx, elf_load_info_t *info) {
         dst[i] = src[i];
     }
     
-    // Zero remainder
     for (size_t i = info->tls_size; i < tls_size; i++) {
         dst[i] = 0;
     }
     
-    // Set up FS register to point to TLS (x86-64 convention)
-    // This would require MSR writes in a real implementation
     PRINT(MAGENTA, BLACK, "[ELF] TLS block allocated at 0x%p\n", tls_block);
     
     return ELF_SUCCESS;
 }
 
-// ============================================================================
-// MAIN LOAD FUNCTION
-// ============================================================================
 
 int elf_load(void *elf_data, size_t size, elf_load_info_t *info) {
     if (!elf_data || !info) {
         return ELF_ERROR_INVALID;
     }
     
-    // Zero initialize info
     for (size_t i = 0; i < sizeof(elf_load_info_t); i++) {
         ((uint8_t *)info)[i] = 0;
     }
     
     PRINT(WHITE, BLACK, "[ELF] Loading ELF binary...\n");
     
-    // Create context
     elf_context_t *ctx = elf_create_context(elf_data, size);
     if (!ctx) {
         PRINT(YELLOW, BLACK, "[ELF] Failed to create context\n");
         return ELF_ERROR_INVALID;
     }
     
-    // Load segments
     int result = elf_load_segments(ctx, info);
     if (result != ELF_SUCCESS) {
         PRINT(YELLOW, BLACK, "[ELF] Failed to load segments\n");
@@ -752,7 +676,6 @@ int elf_load(void *elf_data, size_t size, elf_load_info_t *info) {
         return result;
     }
     
-    // Resolve symbols
     result = elf_resolve_symbols(ctx);
     if (result != ELF_SUCCESS) {
         PRINT(YELLOW, BLACK, "[ELF] Failed to resolve symbols\n");
@@ -760,7 +683,6 @@ int elf_load(void *elf_data, size_t size, elf_load_info_t *info) {
         return result;
     }
     
-    // Apply relocations
     result = elf_apply_relocations(ctx);
     if (result != ELF_SUCCESS) {
         PRINT(YELLOW, BLACK, "[ELF] Failed to apply relocations\n");
@@ -768,7 +690,6 @@ int elf_load(void *elf_data, size_t size, elf_load_info_t *info) {
         return result;
     }
     
-    // Setup TLS
     result = elf_setup_tls(ctx, info);
     if (result != ELF_SUCCESS) {
         PRINT(YELLOW, BLACK, "[ELF] Failed to setup TLS\n");
@@ -778,15 +699,10 @@ int elf_load(void *elf_data, size_t size, elf_load_info_t *info) {
     
     PRINT(MAGENTA, BLACK, "[ELF] Successfully loaded ELF binary\n");
     
-    // Don't destroy context yet - caller might need it
-    // In a real implementation, you'd store this somewhere
     
     return ELF_SUCCESS;
 }
 
-// ============================================================================
-// DEBUG FUNCTIONS
-// ============================================================================
 
 void elf_print_header(Elf64_Ehdr *ehdr) {
     PRINT(WHITE, BLACK, "\n=== ELF Header ===\n");
