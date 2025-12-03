@@ -41,7 +41,6 @@ void draw_cursor(int visible) {
     }
 }
 
-// String helpers
 int strcmp(const char* s1, const char* s2) {
     while (*s1 && (*s1 == *s2)) {
         s1++;
@@ -91,7 +90,6 @@ void bg_command_thread(void) {
     
     PRINT(MAGENTA, BLACK, "\n[BG %d] Starting: %s\n", data->job_id, data->command);
     
-    // Parse command
     char cmd_name[64];
     int i = 0;
     while (data->command[i] && data->command[i] != ' ' && i < 63) {
@@ -114,7 +112,6 @@ void bg_command_thread(void) {
         if (seconds > 0) {
             PRINT(WHITE, BLACK, "[BG %d] Sleeping %u seconds\n", data->job_id, seconds);
             
-            // Busy-wait with yields
             for (uint32_t s = 0; s < seconds; s++) {
                 for (volatile uint64_t j = 0; j < 50000000; j++) {
                     if (j % 5000000 == 0) {
@@ -135,16 +132,12 @@ void bg_command_thread(void) {
         PRINT(YELLOW, BLACK, "[BG %d] Unknown command: %s\n", data->job_id, cmd_name);
     }
     
-    // Clean up
     data->job_id = 0;
     data->command[0] = '\0';
     
     thread_exit();
 }
 
-// ============================================================================
-// FIXED: bring_to_foreground - Works without scheduler
-// ============================================================================
 
 void bring_to_foreground(int job_id) {
     job_t *job = get_job(job_id);
@@ -167,7 +160,6 @@ void bring_to_foreground(int job_id) {
     PRINT(MAGENTA, BLACK, "fg: job %d (%s) - thread state = %d\n", 
           job_id, job->command, thread->state);
     
-    // If blocked/sleeping, wake it up
     if (thread->state == THREAD_STATE_BLOCKED) {
         PRINT(WHITE, BLACK, "fg: Unblocking thread %u...\n", thread->tid);
         thread_unblock(job->tid);
@@ -175,12 +167,10 @@ void bring_to_foreground(int job_id) {
         job->sleep_until = 0;
     }
     
-    // If it's ready but not running, it will be scheduled automatically
     if (thread->state == THREAD_STATE_READY) {
         PRINT(MAGENTA, BLACK, "fg: Thread %u is ready, will be scheduled\n", thread->tid);
     }
     
-    // move to fg
     job->is_background = 0;
     
     PRINT(MAGENTA, BLACK, "fg: job %d (%s) moved to foreground\n", job_id, job->command);
@@ -205,12 +195,8 @@ void send_to_background(int job_id) {
 }
 
 void process_command(char* cmd) {
-    // don't do anything if input is empty.
     if (cmd[0] == '\0') return;
 
-    // ========================================================================
-    // CHECK FOR BACKGROUND EXECUTION (command ends with &)
-    // ========================================================================
     int len = strlen_local(cmd);
     int is_background = 0;
     if (len > 0 && cmd[len-1] == '&') {
@@ -228,14 +214,12 @@ void process_command(char* cmd) {
 
         PRINT(WHITE, BLACK, "[SHELL] Running in background: %s\n", cmd);
 
-        // get init process (PID=1)
         process_t *proc = get_process(1);
         if (!proc) {
             PRINT(YELLOW, BLACK, "[ERROR] Init process not found\n");
             return;
         }
 
-        // find free bg_thread_data slot
         extern cmd_thread_data_t bg_thread_data[MAX_JOBS];
         int data_idx = -1;
         for (int i = 0; i < MAX_JOBS; i++) {
@@ -249,15 +233,13 @@ void process_command(char* cmd) {
             return;
         }
 
-        // copy command to thread data
         strcpy_safe_local(bg_thread_data[data_idx].command, cmd, 256);
-        bg_thread_data[data_idx].job_id = -1; // temp value
+        bg_thread_data[data_idx].job_id = -1;
 
-        // Create thread
         int tid = thread_create(
             proc->pid,
             bg_command_thread,
-            65536,  // 64kb stack
+            65536,
             50000000,
             500000000,
             500000000
@@ -269,13 +251,11 @@ void process_command(char* cmd) {
             return;
         }
 
-        // Set thread private data
         thread_t *thread = get_thread(tid);
         if (thread) {
             thread->private_data = &bg_thread_data[data_idx];
         }
 
-        // Add to background job table
         int job_id = add_bg_job(cmd, proc->pid, tid);
         if (job_id > 0) {
             bg_thread_data[data_idx].job_id = job_id;
@@ -289,9 +269,6 @@ void process_command(char* cmd) {
         return; 
     }
 
-    // ========================================================================
-    // FOREGROUND COMMAND PROCESSING
-    // ========================================================================
     char cmd1[] = "hello";
     char cmd2[] = "help";
     char cmd3[] = "clear";
@@ -322,7 +299,6 @@ void process_command(char* cmd) {
     char subcmd25_1[] = "rock";
     char subcmd25_2[] = "paper";
     char subcmd25_3[] = "scissors";
-    // --- Basic commands ---
     if (strcmp(cmd, cmd1) == 0) {
         PRINT(MAGENTA, BLACK, "hello :D\n");
     }
@@ -364,7 +340,6 @@ void process_command(char* cmd) {
     else if (strcmp(cmd, cmd12) == 0) {
         memory_stats();
     }
-    // --- Process/Thread commands ---
     else if (strcmp(cmd, cmd16) == 0) {
         print_process_table();
     }
@@ -377,7 +352,6 @@ void process_command(char* cmd) {
             PRINT(WHITE, BLACK, "No thread currently running\n");
         }
 
-        // count threads by state
         int ready = 0, running = 0, blocked = 0;
         for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
             if (thread_table[i].used) {
@@ -392,7 +366,6 @@ void process_command(char* cmd) {
         PRINT(WHITE, BLACK, "  Ready: %d\n", ready);
         PRINT(YELLOW, BLACK, "  Blocked: %d\n", blocked);
     }
-    // --- job control commands ---
     else if (strcmp(cmd, cmd18) == 0) {
         list_jobs();
     }
@@ -437,7 +410,6 @@ void process_command(char* cmd) {
             PRINT(YELLOW, BLACK, "error: sleep count can not be under 0!\n");
         }
     }
-    // --- VFS commands ---
     else if (strcmp(cmd, cmd55) == 0) {
         vfs_list_directory(vfs_get_cwd_path());
     }
@@ -720,7 +692,6 @@ void process_command(char* cmd) {
             }
         }
     } else if (strncmp(cmd, cmd24, 9) == 0) {
-        // TODO: implement this later, return for now.
         return;
     } else if (strncmp(cmd, cmd25, 4) == 0) {
         PRINT(YELLOW, BLACK, "Pick: Rock, Paper, or Scissors? (you're going to lose btw)\n");
@@ -752,21 +723,18 @@ void run_text_demo(void) {
         
         process_keyboard_buffer();
         mouse();
-        // check if user pressed Enter
         if (input_available()) {
             char* input = get_input_and_reset();
             process_command(input);
             PRINT(MAGENTA, BLACK, "%s> ", vfs_get_cwd_path());
         }
         
-        // Blink cursor
         if (cursor_timer >= CURSOR_BLINK_RATE) {
             cursor_timer = 0;
             cursor_visible = !cursor_visible;
             draw_cursor(cursor_visible);
         }
         
-        // Small delay
         for (volatile int i = 0; i < 4000; i++);
     }
 }
@@ -810,7 +778,6 @@ void test_syscall_interface(void) {
         PRINT(MAGENTA, BLACK, "[TEST] Wrote %lld bytes\n", written);
         sys_close(fd);
         
-        // read it back
         char t3[] = "/test_syscall";
         fd = sys_open(t3, FILE_READ, 0);
         if (fd >= 0) {
@@ -827,44 +794,36 @@ void test_syscall_interface(void) {
     PRINT(MAGENTA, BLACK, "=== Syscall Tests Complete ===\n\n");
 }
 
-// ============================================================================
-// SWITCHING TO USER MODE (for real syscall testing)
-// ============================================================================
 
-// switch to ring 3 (usermode, kernel ring=0)
 void switch_to_user_mode(void (*user_func)(void)) {
     PRINT(WHITE, BLACK, "[SWITCH] Entering user mode...\n");
     
-    // Set up user stack (allocate from heap)
     extern void* kmalloc(size_t size);
-    uint8_t *user_stack = (uint8_t*)kmalloc(16384);  // 16KB user stack
+    uint8_t *user_stack = (uint8_t*)kmalloc(16384);
     uint64_t user_stack_top = (uint64_t)user_stack + 16384;
     
-    // Align stack
     user_stack_top &= ~0xF;
     
     PRINT(WHITE, BLACK, "[SWITCH] User stack at 0x%llx\n", user_stack_top);
     PRINT(WHITE, BLACK, "[SWITCH] User function at 0x%llx\n", (uint64_t)user_func);
     
-    // Switch to user mode using IRET
     __asm__ volatile(
-        "cli\n"                          // Disable interrupts
-        "mov %0, %%rsp\n"                // Load user stack
-        "pushq $0x20 | 3\n"              // SS (user data segment, RPL=3)
-        "pushq %0\n"                     // RSP (user stack pointer)
-        "pushfq\n"                       // RFLAGS
+        "cli\n"
+        "mov %0, %%rsp\n"
+        "pushq $0x20 | 3\n"
+        "pushq %0\n"
+        "pushfq\n"
         "pop %%rax\n"
-        "or $0x200, %%rax\n"             // Set IF (enable interrupts in user mode)
+        "or $0x200, %%rax\n"
         "push %%rax\n"
-        "pushq $0x18 | 3\n"              // CS (user code segment, RPL=3)
-        "pushq %1\n"                     // RIP (user function)
-        "iretq\n"                        // Jump to user mode!
+        "pushq $0x18 | 3\n"
+        "pushq %1\n"
+        "iretq\n"
         :
         : "r"(user_stack_top), "r"((uint64_t)user_func)
         : "memory", "rax"
     );
     
-    // Should never reach here
     PRINT(YELLOW, BLACK, "[ERROR] Failed to switch to user mode\n");
 }
 
@@ -876,7 +835,7 @@ int fibonacci_rng() {
     a = b;
     b = next;
 
-    return next % 3; // Map to 0, 1, 2
+    return next % 3;
 }
 
 void play_rps() {
@@ -886,26 +845,23 @@ void play_rps() {
     char o[] = "paper";
     char t[] = "scissors";
 
-    // Wait for user input
     while (!userpick) {
         process_keyboard_buffer();
 
         if (input_available()) {
             userpick = get_input_and_reset();
-            if (userpick[0] == '\0') {  // Ignore empty input
+            if (userpick[0] == '\0') {
                 userpick = NULL;
             }
         }
     }
 
-    int computerpick = fibonacci_rng(); // 0=Rock,1=Paper,2=Scissors
+    int computerpick = fibonacci_rng();
 
-    // Map computer pick to string
     char* computer_str = (computerpick == 0) ? z :
                          (computerpick == 1) ? o :
                          t;
 
-    // Map user pick to string safely
     char* user_str = (strncmp(userpick, z, 4) == 0) ? z :
                      (strncmp(userpick, o, 5) == 0) ? o :
                      (strncmp(userpick, t, 8) == 0) ? t :
@@ -914,13 +870,11 @@ void play_rps() {
     if (!user_str) {
         PRINT(YELLOW,BLACK, "Invalid input!\n");
         return; 
-        // Exit function if input invalid
     }
 
     PRINT(YELLOW, BLACK, "You picked: %s\n", user_str);
     PRINT(YELLOW, BLACK, "Computer picked: %s\n", computer_str);
 
-    // Compute result using nested ternary operators
     compute_result(user_str, computer_str, z,o,t);
 
 }
@@ -928,7 +882,6 @@ void play_rps() {
 void compute_result(const char *user_str, const char *computer_str,
                     const char *z, const char *o, const char *t)
 {
-    // Draw
     if ((strncmp(user_str, z, 4) == 0 && strncmp(computer_str, z, 4) == 0) ||
         (strncmp(user_str, o, 5) == 0 && strncmp(computer_str, o, 5) == 0) ||
         (strncmp(user_str, t, 8) == 0 && strncmp(computer_str, t, 8) == 0))
@@ -937,15 +890,13 @@ void compute_result(const char *user_str, const char *computer_str,
         return;
     }
 
-    // User wins
-    if ((strncmp(user_str, z, 4) == 0 && strncmp(computer_str, t, 8) == 0) ||  // rock beats scissors
-        (strncmp(user_str, o, 5) == 0 && strncmp(computer_str, z, 4) == 0) ||  // paper beats rock
-        (strncmp(user_str, t, 8) == 0 && strncmp(computer_str, o, 5) == 0))    // scissors beats paper
+    if ((strncmp(user_str, z, 4) == 0 && strncmp(computer_str, t, 8) == 0) ||
+        (strncmp(user_str, o, 5) == 0 && strncmp(computer_str, z, 4) == 0) ||
+        (strncmp(user_str, t, 8) == 0 && strncmp(computer_str, o, 5) == 0))
     {
         PRINT(YELLOW, BLACK, "you win (unfortunately, fuck!)\n");
         return;
     }
 
-    // Otherwise user loses
     PRINT(YELLOW, BLACK, "easy win, you're horrible lmfao\n");
 }

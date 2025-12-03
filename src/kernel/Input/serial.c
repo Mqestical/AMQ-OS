@@ -7,53 +7,42 @@ static volatile int shift_pressed = 0;
 volatile int serial_initialized;
 
 
-// More robust serial initialization
 void serial_init(uint16_t port) {
     serial_initialized = 0;
     
-    // Disable interrupts
     outb(port + 1, 0x00);
     
-    // Longer delay between operations
     for (volatile int i = 0; i < 1000; i++);
     
-    // Enable DLAB (set baud rate divisor)
     outb(port + 3, 0x80);
     for (volatile int i = 0; i < 1000; i++);
     
-    // Set divisor to 1 (115200 baud) - more reliable than 38400
     outb(port + 0, 0x01);
     for (volatile int i = 0; i < 1000; i++);
     
     outb(port + 1, 0x00);
     for (volatile int i = 0; i < 1000; i++);
     
-    // Disable DLAB, set 8N1
     outb(port + 3, 0x03);
     for (volatile int i = 0; i < 1000; i++);
     
-    // Enable FIFO with 14-byte threshold
     outb(port + 2, 0xC7);
     for (volatile int i = 0; i < 1000; i++);
     
-    // Enable RTS/DSR
     outb(port + 4, 0x0B);
     for (volatile int i = 0; i < 1000; i++);
     
-    // Test the serial port with loopback
-    outb(port + 4, 0x1E);  // Enable loopback mode
+    outb(port + 4, 0x1E);
     for (volatile int i = 0; i < 1000; i++);
     
-    outb(port + 0, 0xAE);  // Send test byte
+    outb(port + 0, 0xAE);
     for (volatile int i = 0; i < 1000; i++);
     
     uint8_t test = inb(port + 0);
     
-    // Disable loopback
     outb(port + 4, 0x0F);
     for (volatile int i = 0; i < 1000; i++);
     
-    // If loopback test passed, mark as initialized
     if (test == 0xAE) {
         serial_initialized = 1;
     }
@@ -68,7 +57,6 @@ int serial_can_write(uint16_t port) {
 void serial_write_byte(uint16_t port, uint8_t data) {
     if (!serial_initialized) return;
     
-    // Wait for transmit buffer with longer timeout
     int timeout = 100000;
     while (!serial_can_write(port) && timeout > 0) {
         timeout--;
@@ -77,7 +65,6 @@ void serial_write_byte(uint16_t port, uint8_t data) {
     
     if (timeout > 0) {
         outb(port + SERIAL_DATA, data);
-        // Small delay after write
         for (volatile int i = 0; i < 100; i++);
     }
 }
@@ -110,7 +97,6 @@ void serial_write_string(uint16_t port, const char* str) {
     }
 }
 
-// [Rest of your scancode conversion functions remain the same]
 static char scancode_to_char(uint8_t scancode, int shifted) {
     if (!shifted) {
         switch(scancode) {
@@ -168,7 +154,6 @@ static char scancode_to_char(uint8_t scancode, int shifted) {
             default: return 0;
         }
     } else {
-        // Shifted characters
         switch(scancode) {
             case 0x02: return '!';
             case 0x03: return '@';

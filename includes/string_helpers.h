@@ -2,9 +2,6 @@
 #ifndef STRING_HELPERS_H
 #define STRING_HELPERS_H
 
-// ============================================================================
-// SAFE STRING COPY MACRO
-// ============================================================================
 
 #define SAFE_STR(dest, literal) do { \
     char _tmp[] = literal; \
@@ -16,10 +13,6 @@
     dest[_i] = '\0'; \
 } while(0)
 
-// ============================================================================
-// SAFE PRINTK MACRO
-// ============================================================================
-// Use this for printing with string literals
 
 #define PRINT(fg, bg, literal, ...) do { \
     char _msg[128]; \

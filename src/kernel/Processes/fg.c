@@ -6,7 +6,7 @@
 static job_t fg_table[MAX_JOBS];
 static int next_job_id = 1;
 static uint64_t system_time_ms = 0;
-static int jobs_active = 0;  // NEW: Flag to enable/disable job tracking
+static int jobs_active = 0;
 
 void jobs_init(void) {
     for (int i = 0; i < MAX_JOBS; i++) {
@@ -20,12 +20,11 @@ void jobs_init(void) {
         fg_table[i].command[0] = '\0';
     }
     
-    jobs_active = 0;  // Start disabled
+    jobs_active = 0;
     
     PRINT(MAGENTA, BLACK, "[FG] Job control initialized (INACTIVE)\n");
 }
 
-// NEW: Enable/disable job tracking
 void jobs_set_active(int active) {
     jobs_active = active;
     if (active) {
@@ -151,25 +150,20 @@ job_t* get_job(int job_id) {
 }
 
 void update_jobs_safe(void) {
-    // Don't run if not active (during early boot)
     if (!jobs_active) {
         return;
     }
     
-    // Extra safety: Check if we're initialized
     extern thread_t thread_table[MAX_THREADS_GLOBAL];
     if (!thread_table) {
         return;
     }
     
-    // Now call the actual update function
     update_jobs();
 }
 
 
-// CRITICAL: This is called from IRQ handler, must be SAFE
 void update_jobs(void) {
-    // Don't run if not active (during early boot)
     if (!jobs_active) {
         return;
     }
@@ -181,10 +175,8 @@ void update_jobs(void) {
         
         job_t *job = &fg_table[i];
         
-        // Check if thread still exists
         thread_t *thread = get_thread(job->tid);
         
-        // If thread is gone or terminated, remove the job
         if (!thread || thread->state == THREAD_STATE_TERMINATED) {
             if (job->is_background && job->state != JOB_DONE) {
                 PRINT(MAGENTA, BLACK, "\n[%d]+ Done                    %s\n",
@@ -196,7 +188,6 @@ void update_jobs(void) {
             continue;
         }
         
-        // Wake up sleeping jobs
         if (job->state == JOB_SLEEPING) {
             if (system_time_ms >= job->sleep_until) {
                 PRINT(WHITE, BLACK, "\n[JOB %d] Waking up at %llu ms (target was %llu)\n",

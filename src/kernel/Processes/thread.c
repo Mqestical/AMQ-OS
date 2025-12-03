@@ -1,4 +1,3 @@
-// thread.c - WORKING VERSION
 
 #include "process.h"
 #include "memory.h"
@@ -7,23 +6,17 @@
 
 extern void switch_to_thread(cpu_context_t *old_ctx, cpu_context_t *new_ctx);
 
-// Global thread table
 thread_t thread_table[MAX_THREADS_GLOBAL];
 
-// Ready queue for round-robin scheduling
 static thread_t *ready_queue_head = NULL;
 static thread_t *current_thread = NULL;
 
-// Counter for TID generation
 static uint32_t next_tid = 1;
 
-// Current time (in nanoseconds, incremented by timer)
 static uint64_t current_time_ns = 0;
 
-// Flag to enable/disable scheduling
 static volatile int scheduler_enabled = 0;
 
-// Initialize scheduler
 void scheduler_init(void) {
     for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
         thread_table[i].used = 0;
@@ -230,11 +223,9 @@ void schedule(void) {
         
         PRINT(MAGENTA, BLACK, "[SCHED] Starting TID=%u at 0x%llx\n", next->tid, next->context.rip);
         
-        // Directly call the wrapper function - don't use assembly
         void (*wrapper)(void) = (void (*)(void))next->context.rip;
         wrapper();
         
-        // Should never return
         PRINT(YELLOW, BLACK, "[FATAL] First thread returned!\n");
         while(1) __asm__ volatile("hlt");
     }
@@ -253,14 +244,11 @@ void schedule(void) {
 void scheduler_tick(void) {
     if (!scheduler_enabled) return;
     current_time_ns += 10000000;
-    // Don't auto-schedule from timer for now
-    // schedule();
 }
 
 void thread_yield(void) {
     if (!scheduler_enabled) return;
     
-    // Count ready threads
     int ready_count = 0;
     thread_t *t = ready_queue_head;
     while (t) {
@@ -268,7 +256,6 @@ void thread_yield(void) {
         t = t->next;
     }
     
-    // Don't yield if no other threads
     if (ready_count == 0) {
         return;
     }

@@ -19,7 +19,6 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     CHAR16 debug1[] = L"[1] Searching for filesystems...\n";
     uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug1);
     
-    // Find all handles that support SimpleFileSystem
     EFI_HANDLE *Handles = NULL;
     UINTN HandleCount = 0;
     
@@ -63,7 +62,6 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     CHAR16 debug3[] = L"[3] Listing root directory...\n";
     uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, debug3);
     
-    // List files in root and save kernel.efi filename
     EFI_FILE_INFO *ListFileInfo;
     UINTN ListFileInfoSize = sizeof(EFI_FILE_INFO) + 200;
     Status = uefi_call_wrapper(BS->AllocatePool, 3, EfiLoaderData, ListFileInfoSize, (VOID**)&ListFileInfo);
@@ -82,18 +80,15 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         CHAR16 newline[] = L"\n";
         uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, newline);
         
-        // Check if this is kernel.efi - just save the first .efi file we find
-        // Simple check: does filename contain "kernel"?
         CHAR16 *fn = ListFileInfo->FileName;
         BOOLEAN isKernel = FALSE;
         
-        // Check if it starts with 'k' or 'K'
         if (fn[0] == L'k' || fn[0] == L'K') {
             isKernel = TRUE;
             KernelFileName = ListFileInfo->FileName;
             CHAR16 found[] = L"  ^^ Using this as kernel!\n";
             uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, found);
-            break; // Stop after finding first match
+            break;
         }
     }
     
@@ -103,7 +98,6 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         while(1);
     }
     
-    // Reset directory position
     uefi_call_wrapper(Root->SetPosition, 2, Root, 0);
     
     CHAR16 debug3b[] = L"[3b] Opening kernel with exact filename...\n";
@@ -171,13 +165,11 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
 
     CHAR16 msg5[] = L"\n[10] Kernel returned\n";
-    //uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, msg5);
 
     uefi_call_wrapper(BS->FreePool, 1, FileInfo);
     uefi_call_wrapper(BS->FreePool, 1, KernelBuffer);
 
     CHAR16 done[] = L"\nBootloader done. Press any key...\n";
-    //uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, done);
 
     for (;;){}
     return EFI_SUCCESS;
