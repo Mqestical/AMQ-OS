@@ -3,45 +3,132 @@
 #include "IO.h"
 #include "sleep.h"
 
+typedef unsigned long long ULL_t;
+
 #define MOUSE_CHECK 0x64
 #define MOUSE_AUXILIARY_PORT 0x60
 #define USED 0xACE
 #define ON 0x1
 #define OFF 0x0
 
+// Screen bounds (adjust to your actual resolution)
+#define SCREEN_WIDTH 1024
+#define SCREEN_HEIGHT 768
+
 short status;
+static int cursor_x = SCREEN_WIDTH / 2;   // Current screen position
+static int cursor_y = SCREEN_HEIGHT / 2;
+
+void mcursor(int x, int y, int prev_x, int prev_y, short signal);
+void overwrite_cursor(int prev_x, int prev_y);
 
 /* NOTE: MOUSE USES THE SAME PORT AS KEYBOARD, 0x64 PORT IS USED TO DIFFERENTIATE! */
 
 void mouse(void) {
     uint8_t b1, b2, b3;
-
-    // Enable mouse only once
+    
     if (!status) {
-        // Wait for input buffer empty
-        while (inb(MOUSE_CHECK) & 2);
-        outb(0x64, 0xD4);          // Tell mouse next byte is a command
-        outb(MOUSE_AUXILIARY_PORT, 0xF4); // Enable data reporting
-        // Wait for ACK
-        while (!(inb(MOUSE_CHECK) & 1));
-        inb(MOUSE_AUXILIARY_PORT); // read 0xFA
+        while (inb(MOUSE_CHECK) & 2);             // wait for input buffer empty
+        outb(0x64, 0xD4);                          // tell controller: next is mouse command
+        outb(MOUSE_AUXILIARY_PORT, 0xF4);         // enable reporting
+        
+        while (!(inb(MOUSE_CHECK) & 1));          // wait for ACK
+        inb(MOUSE_AUXILIARY_PORT);                // read ACK
+
         status = USED;
     }
 
-    // Wait for 3 bytes from mouse
+    // Read 3-byte PS/2 packet
     while (!(inb(MOUSE_CHECK) & 1)); b1 = inb(MOUSE_AUXILIARY_PORT);
     while (!(inb(MOUSE_CHECK) & 1)); b2 = inb(MOUSE_AUXILIARY_PORT);
     while (!(inb(MOUSE_CHECK) & 1)); b3 = inb(MOUSE_AUXILIARY_PORT);
 
-    // Print the packet
-    print_unsigned((unsigned long long)b1, 16); PRINT(0xFFFFFF,0x000000," ");
-    print_unsigned((unsigned long long)b2, 16); PRINT(0xFFFFFF,0x000000," ");
-    print_unsigned((unsigned long long)b3, 16); PRINT(0xFFFFFF,0x000000," ");
+    // Extract movement deltas with sign extension
+    int delta_x = b2;
+    int delta_y = b3;
+    
+    // Check sign bits and extend to signed integers
+    if (b1 & 0x10) delta_x |= 0xFFFFFF00;  // X is negative
+    if (b1 & 0x20) delta_y |= 0xFFFFFF00;  // Y is negative
+    
+    // PS/2 Y axis is inverted
+    delta_y = -delta_y;
+    
+    // Store previous position
+    int prev_x = cursor_x;
+    int prev_y = cursor_y;
+    
+    // Update cursor position with bounds checking
+    cursor_x += delta_x;
+    cursor_y += delta_y;
+    
+    // Clamp to screen boundaries
+    if (cursor_x < 0) cursor_x = 0;
+    if (cursor_y < 0) cursor_y = 0;
+    if (cursor_x >= SCREEN_WIDTH - 16) cursor_x = SCREEN_WIDTH - 16;
+    if (cursor_y >= SCREEN_HEIGHT - 16) cursor_y = SCREEN_HEIGHT - 16;
+    
+    // Only redraw if position changed
+    if (cursor_x != prev_x || cursor_y != prev_y) {
+        overwrite_cursor(prev_x, prev_y);
+        mcursor(cursor_x, cursor_y, 0, 0, OFF);
+    }
 }
 
 
-/*
+void mcursor(int x, int y, int prev_x, int prev_y, short signal) {
+    (void)prev_x;  // Unused in this version
+    (void)prev_y;
+    (void)signal;
+    
+    int height = 16;
+    unsigned int RED = 0xFF0000;
 
-TODO: INTERPRET BYTES.
+    // LS (vertical)
+    for (int i = 0; i < height; i++) {
+        put_pixel(x, y + i, RED);
+    }
 
-*/
+    // RS (diagonal)
+    for (int i = 0; i < height; i++) {
+        put_pixel(x + i, y + i, RED);
+    }
+
+    // BS (horizontal)
+    for (int i = 0; i < height; i++) {
+        put_pixel(x + i, y + height - 1, RED);
+    }
+
+    // Fill interior
+    for (int yy = 1; yy < height; yy++) {
+        for (int xx = 1; xx < yy; xx++) {
+            put_pixel(x + xx, y + yy, RED);
+        }
+    }
+}
+
+void overwrite_cursor(int prev_x, int prev_y) {
+    int overwrite_height = 16;
+
+    // overwrite LS
+    for (int i = 0; i < overwrite_height; i++) {
+        put_pixel(prev_x, prev_y + i, 0x000000);
+    }
+    
+    // overwrite RS
+    for (int i = 0; i < overwrite_height; i++) {
+        put_pixel(prev_x + i, prev_y + i, 0x000000);
+    }
+    
+    // overwrite BS 
+    for (int i = 0; i < overwrite_height; i++) {
+        put_pixel(prev_x + i, prev_y + overwrite_height - 1, 0x000000);
+    }
+    
+    // overwrite filling
+    for (int yy = 1; yy < overwrite_height; yy++) {
+        for (int xx = 1; xx < yy; xx++) {
+            put_pixel(prev_x + xx, prev_y + yy, 0x000000);
+        }
+    }
+}
