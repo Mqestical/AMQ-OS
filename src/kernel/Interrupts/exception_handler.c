@@ -19,9 +19,9 @@ void isr30(registers_t* r); void isr31(registers_t* r);
 
 void isr0(registers_t* r) {
     if (r->int_no == 0) {
-        PRINT(0xFF0000, 0x000000, "Divide-by-zero exception!\n");
-        PRINT(0xFF0000, 0x000000, "Faulting instruction at RIP = %p\n", r->rip);
-        PRINT(0xFF0000, 0x000000, "RAX = %llx, RBX = %llx, RCX = %llx, RDX = %llx\n",
+        PRINT(RED, BLACK, "Divide-by-zero exception!\n");
+        PRINT(RED, BLACK, "Faulting instruction at RIP = %p\n", r->rip);
+        PRINT(RED, BLACK, "RAX = %llx, RBX = %llx, RCX = %llx, RDX = %llx\n",
               r->rax, r->rbx, r->rcx, r->rdx);
     } else {
         fatal_error(r);
@@ -31,8 +31,8 @@ void isr0(registers_t* r) {
 
 void isr1(registers_t* r) {
     if (r->int_no == 1) {
-        PRINT(0xFF0000, 0x000000, "Debug exception!\n");
-        PRINT(0xFF0000, 0x000000, "RIP = %p, RFLAGS = %llx\n", r->rip, r->rflags);
+        PRINT(RED, BLACK, "Debug exception!\n");
+        PRINT(RED, BLACK, "RIP = %p, RFLAGS = %llx\n", r->rip, r->rflags);
     } else {
         fatal_error(r);
     }
@@ -41,8 +41,8 @@ void isr1(registers_t* r) {
 
 void isr2(registers_t* r) {
     if (r->int_no == 2) {
-        PRINT(0xFF0000, 0x000000, "Non-Maskable Interrupt (NMI)!\n");
-        PRINT(0xFF0000, 0x000000, "RIP = %p, RFLAGS = %llx\n", r->rip, r->rflags);
+        PRINT(RED, BLACK, "Non-Maskable Interrupt (NMI)!\n");
+        PRINT(RED, BLACK, "RIP = %p, RFLAGS = %llx\n", r->rip, r->rflags);
     } else {
         fatal_error(r);
     }
@@ -51,8 +51,8 @@ void isr2(registers_t* r) {
 
 void isr3(registers_t* r) {
     if (r->int_no == 3) {
-        PRINT(0xFF0000, 0x000000, "Breakpoint Exception (INT3)!\n");
-        PRINT(0xFF0000, 0x000000, "RIP = %p, RFLAGS = %llx\n", r->rip, r->rflags);
+        PRINT(RED, BLACK, "Breakpoint Exception (INT3)!\n");
+        PRINT(RED, BLACK, "RIP = %p, RFLAGS = %llx\n", r->rip, r->rflags);
     } else {
         fatal_error(r);
     }
@@ -61,8 +61,8 @@ void isr3(registers_t* r) {
 
 void isr4(registers_t* r) {
     if (r->int_no == 4) {
-        PRINT(0xFF0000, 0x000000, "Overflow Exception (INTO)!\n");
-        PRINT(0xFF0000, 0x000000, "RIP = %p, RFLAGS = %llx\n", r->rip, r->rflags);
+        PRINT(RED, BLACK, "Overflow Exception (INTO)!\n");
+        PRINT(RED, BLACK, "RIP = %p, RFLAGS = %llx\n", r->rip, r->rflags);
     } else {
         fatal_error(r);
     }
@@ -71,8 +71,8 @@ void isr4(registers_t* r) {
 
 void isr5(registers_t* r) {
     if (r->int_no == 5) {
-        PRINT(0xFF0000, 0x000000, "BOUND Range Exceeded Exception!\n");
-        PRINT(0xFF0000, 0x000000, "RIP = %p\n", r->rip);
+        PRINT(RED, BLACK, "BOUND Range Exceeded Exception!\n");
+        PRINT(RED, BLACK, "RIP = %p\n", r->rip);
     } else {
         fatal_error(r);
     }
@@ -81,8 +81,8 @@ void isr5(registers_t* r) {
 
 void isr6(registers_t* r) {
     if (r->int_no == 6) {
-        PRINT(0xFF0000, 0x000000, "Invalid Opcode Exception!\n");
-        PRINT(0xFF0000, 0x000000, "RIP = %p\n", r->rip);
+        PRINT(RED, BLACK, "Invalid Opcode Exception!\n");
+        PRINT(RED, BLACK, "RIP = %p\n", r->rip);
     } else {
         fatal_error(r);
     }
@@ -91,8 +91,8 @@ void isr6(registers_t* r) {
 
 void isr7(registers_t* r) {
     if (r->int_no == 7) {
-        PRINT(0xFF0000, 0x000000, "Device Not Available Exception (FPU)!\n");
-        PRINT(0xFF0000, 0x000000, "RIP = %p\n", r->rip);
+        PRINT(RED, BLACK, "Device Not Available Exception (FPU)!\n");
+        PRINT(RED, BLACK, "RIP = %p\n", r->rip);
     } else {
         fatal_error(r);
     }
@@ -101,8 +101,8 @@ void isr7(registers_t* r) {
 
 void isr8(registers_t* r) {
     if (r->int_no == 8) {
-        PRINT(0xFF0000, 0x000000, "Double Fault!\n");
-        PRINT(0xFF0000, 0x000000, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
+        PRINT(RED, BLACK, "Double Fault!\n");
+        PRINT(RED, BLACK, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
     } else {
         fatal_error(r);
     }
@@ -111,8 +111,8 @@ void isr8(registers_t* r) {
 
 void isr9(registers_t* r) {
     if (r->int_no == 9) {
-        PRINT(0xFF0000, 0x000000, "Coprocessor Segment Overrun Exception!\n");
-        PRINT(0xFF0000, 0x000000, "RIP = %p\n", r->rip);
+        PRINT(RED, BLACK, "Coprocessor Segment Overrun Exception!\n");
+        PRINT(RED, BLACK, "RIP = %p\n", r->rip);
     } else {
         fatal_error(r);
     }
@@ -121,8 +121,8 @@ void isr9(registers_t* r) {
 
 void isr10(registers_t* r) {
     if (r->int_no == 10) {
-        PRINT(0xFF0000, 0x000000, "Invalid TSS Exception!\n");
-        PRINT(0xFF0000, 0x000000, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
+        PRINT(RED, BLACK, "Invalid TSS Exception!\n");
+        PRINT(RED, BLACK, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
     } else {
         fatal_error(r);
     }
@@ -131,8 +131,8 @@ void isr10(registers_t* r) {
 
 void isr11(registers_t* r) {
     if (r->int_no == 11) {
-        PRINT(0xFF0000, 0x000000, "Segment Not Present Exception!\n");
-        PRINT(0xFF0000, 0x000000, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
+        PRINT(RED, BLACK, "Segment Not Present Exception!\n");
+        PRINT(RED, BLACK, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
     } else {
         fatal_error(r);
     }
@@ -141,8 +141,8 @@ void isr11(registers_t* r) {
 
 void isr12(registers_t* r) {
     if (r->int_no == 12) {
-        PRINT(0xFF0000, 0x000000, "Stack Segment Fault Exception!\n");
-        PRINT(0xFF0000, 0x000000, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
+        PRINT(RED, BLACK, "Stack Segment Fault Exception!\n");
+        PRINT(RED, BLACK, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
     } else {
         fatal_error(r);
     }
@@ -151,8 +151,8 @@ void isr12(registers_t* r) {
 
 void isr13(registers_t* r) {
     if (r->int_no == 13) {
-        PRINT(0xFF0000, 0x000000, "General Protection Fault!\n");
-        PRINT(0xFF0000, 0x000000, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
+        PRINT(RED, BLACK, "General Protection Fault!\n");
+        PRINT(RED, BLACK, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
     } else {
         fatal_error(r);
     }
@@ -163,9 +163,9 @@ void isr14(registers_t* r) {
     if (r->int_no == 14) {
         uint64_t cr2;
         asm volatile("mov %%cr2, %0" : "=r"(cr2));
-        PRINT(0xFF0000, 0x000000, "Page Fault!\n");
-        PRINT(0xFF0000, 0x000000, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
-        PRINT(0xFF0000, 0x000000, "Faulting address = %p\n", cr2);
+        PRINT(RED, BLACK, "Page Fault!\n");
+        PRINT(RED, BLACK, "Error code = %llx, RIP = %p\n", r->err_code, r->rip);
+        PRINT(RED, BLACK, "Faulting address = %p\n", cr2);
     } else {
         fatal_error(r);
     }
@@ -178,8 +178,8 @@ void isr14(registers_t* r) {
 #define DEFINE_RESERVED_ISR(n) \
 void isr##n(registers_t* r) { \
     if (r->int_no == n) { \
-        PRINT(0xFF0000, 0x000000, "Reserved Exception (" #n ")!\n"); \
-        PRINT(0xFF0000, 0x000000, "RIP = %p\n", r->rip); \
+        PRINT(RED, BLACK, "Reserved Exception (" #n ")!\n"); \
+        PRINT(RED, BLACK, "RIP = %p\n", r->rip); \
     } else { \
         fatal_error(r); \
     } \
@@ -205,6 +205,6 @@ DEFINE_RESERVED_ISR(30)
 DEFINE_RESERVED_ISR(31)
 
 void fatal_error(registers_t* r) {
-    PRINT(0xFF0000, 0x000000, "FATAL ERROR: UNKNOWN VECTOR!\n");
+    PRINT(RED, BLACK, "FATAL ERROR: UNKNOWN VECTOR!\n");
     for(;;) asm volatile("hlt");
 }

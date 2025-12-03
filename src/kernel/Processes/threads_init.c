@@ -9,14 +9,14 @@ static volatile uint64_t thread_tick_counter = 0;
 // IDLE THREAD - Runs when no other threads are ready
 // ============================================================================
 void idle_thread_entry(void) {
-    PRINT(0xFF00FF00, 0x000000, "[IDLE] Started directly (no wrapper)\n");
+    PRINT(MAGENTA, BLACK, "[IDLE] Started directly (no wrapper)\n");
     
     volatile uint64_t counter = 0;
     while (1) {
         counter++;
         
         if (counter % 100000000 == 0) {
-            PRINT(0xFFFFFF00, 0x000000, "[IDLE] %llu\n", counter / 100000000);
+            PRINT(WHITE, BLACK, "[IDLE] %llu\n", counter / 100000000);
         }
         
         if (counter % 10000000 == 0) {
@@ -25,19 +25,19 @@ void idle_thread_entry(void) {
     }
     
     // Should never exit, but just in case
-    PRINT(0xFFFF0000, 0x000000, "[IDLE] Exited!\n");
+    PRINT(YELLOW, BLACK, "[IDLE] Exited!\n");
     while(1) __asm__ volatile("hlt");
 }
 
 void test_thread_entry(void) {
-    PRINT(0xFFFF00FF, 0x000000, "[TEST] Thread started!\n");
+    PRINT(YELLOW, BLACK, "[TEST] Thread started!\n");
     
     volatile uint64_t counter = 0;
     while (1) {
         counter++;
         
         if (counter % 100000000 == 0) {
-            PRINT(0xFF00FFFF, 0x000000, "[TEST] %llu\n", counter / 100000000);
+            PRINT(MAGENTA, BLACK, "[TEST] %llu\n", counter / 100000000);
         }
         
         if (counter % 10000000 == 0) {
@@ -119,11 +119,11 @@ void monitor_thread_entry(void) {
 // INITIALIZE ALL THREADS
 // ============================================================================
 void init_kernel_threads(void) {
-    PRINT(0xFF00FFFF, 0x000000, "\n=== Initializing Threads ===\n");
+    PRINT(MAGENTA, BLACK, "\n=== Initializing Threads ===\n");
     
-    int init_pid = process_create("init", 0xFFFF000000000000);
+    int init_pid = process_create("init", YELLOW);
     if (init_pid < 0) {
-        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create init process\n");
+        PRINT(YELLOW, BLACK, "[ERROR] Failed to create init process\n");
         return;
     }
     
@@ -131,11 +131,11 @@ void init_kernel_threads(void) {
     
     int idle_tid = thread_create(init_pid, idle_thread_entry, 
                                   THREAD_STACK_SIZE, 10000000, 1000000000, 1000000000);
-    PRINT(0xFF00FF00, 0x000000, "[OK] Idle thread TID=%d\n", idle_tid);
+    PRINT(MAGENTA, BLACK, "[OK] Idle thread TID=%d\n", idle_tid);
     
     int test_tid = thread_create(init_pid, test_thread_entry,
                                   THREAD_STACK_SIZE, 10000000, 1000000000, 1000000000);
-    PRINT(0xFF00FF00, 0x000000, "[OK] Test thread TID=%d\n", test_tid);
+    PRINT(MAGENTA, BLACK, "[OK] Test thread TID=%d\n", test_tid);
     
-    PRINT(0xFF00FFFF, 0x000000, "[INFO] 2 threads created\n");
+    PRINT(MAGENTA, BLACK, "[INFO] 2 threads created\n");
 }

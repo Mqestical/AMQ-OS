@@ -5,7 +5,7 @@
 typedef int64_t (*syscall_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 static int64_t syscall_not_implemented(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t f) {
-    PRINT(0xFFFF0000, 0x000000, "[SYSCALL] Not implemented\n");
+    PRINT(YELLOW, BLACK, "[SYSCALL] Not implemented\n");
     return -ENOSYS;
 }
 
@@ -22,7 +22,7 @@ uint64_t syscall_handler(uint64_t syscall_num,
                          uint64_t arg3, uint64_t arg4,
                          uint64_t arg5, uint64_t arg6) {
     if (syscall_num >= MAX_SYSCALLS) {
-        PRINT(0xFFFF0000, 0x000000, "[SYSCALL] Invalid syscall number: %llu\n", syscall_num);
+        PRINT(YELLOW, BLACK, "[SYSCALL] Invalid syscall number: %llu\n", syscall_num);
         return -ENOSYS;
     }
 
@@ -57,5 +57,5 @@ void syscall_register_all(void) {
     register_syscall(SYS_GETTIME, (syscall_fn_t)sys_gettime);
     register_syscall(SYS_DEBUG_PRINT, (syscall_fn_t)sys_debug_print);
 
-    PRINT(0xFF00FF00, 0x000000, "[SYSCALL] Registered %d syscalls\n", 20);
+    PRINT(MAGENTA, BLACK, "[SYSCALL] Registered %d syscalls\n", 20);
 }

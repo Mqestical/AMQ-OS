@@ -4,7 +4,7 @@
 #include <stdarg.h>
 // Globals
 Framebuffer fb;
-Cursor cursor = {0, 0, 0xFFFFFFFF, 0xFF000000};
+Cursor cursor = {0, 0, WHITE, RED};
 EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
 
 Buffer stdin_buf;
@@ -35,8 +35,8 @@ void init_graphics(EFI_SYSTEM_TABLE *ST) {
     
     cursor.x = 0;
     cursor.y = 0;
-    cursor.fg_color = 0xFFFFFFFF;
-    cursor.bg_color = 0xFF000000;
+    cursor.fg_color = WHITE;
+    cursor.bg_color = RED;
 }
 
 void put_pixel(uint32_t x, uint32_t y, uint32_t color) {
@@ -374,18 +374,18 @@ void buf_write(Buffer *buf, const char *str) {
 }
 
 void test_PRINT(void) {
-    ClearScreen(0x000000);
+    ClearScreen(BLACK);
     SetCursorPos(0, 0);
     
     int num = 42;
     char* ptr = (char*)0xDEADBEEF;
     char* str = "Hello";
     
-    PRINT(0xFFFFFFFF, 0x000000, "Testing PRINT:\n");
-    PRINT(0xFFFFFFFF, 0x000000, "Integer: %d\n", num);
-    PRINT(0xFFFFFFFF, 0x000000, "Hex: 0x%x\n", num);
-    PRINT(0xFFFFFFFF, 0x000000, "Pointer: %p\n", ptr);
-    PRINT(0xFFFFFFFF, 0x000000, "String: %s\n", str);
-    PRINT(0xFFFFFFFF, 0x000000, "Char: %c\n", 'A');
-    PRINT(0xFFFFFFFF, 0x000000, "Multiple: %d %s %p\n", 123, "test", (void*)0x1234);
+    PRINT(WHITE, BLACK, "Testing PRINT:\n");
+    PRINT(WHITE, BLACK, "Integer: %d\n", num);
+    PRINT(WHITE, BLACK, "Hex: 0x%x\n", num);
+    PRINT(WHITE, BLACK, "Pointer: %p\n", ptr);
+    PRINT(WHITE, BLACK, "String: %s\n", str);
+    PRINT(WHITE, BLACK, "Char: %c\n", 'A');
+    PRINT(WHITE, BLACK, "Multiple: %d %s %p\n", 123, "test", (void*)0x1234);
 }

@@ -356,32 +356,32 @@ void memory_stats(void) {
     cursor.x = 20;   // some margin
     cursor.y = 20;   // start a bit down from top
 
-    cursor.fg_color = 0xFFFFFFFF;
-    cursor.bg_color = 0xFF0000FF;
-PRINT(0xFFFFFFFF, 0xFF0000FF, "=== Memory Statistics ===\n");
+    cursor.fg_color = WHITE;
+    cursor.bg_color = RED;
+PRINT(WHITE, RED, "=== Memory Statistics ===\n");
 
-PRINT(0xFFFFFFFF, 0xFF0000FF, "Physical Memory:\n");
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Total pages: %llu\n", total_pages);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Used pages: %llu\n", used_pages);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Free pages: %llu\n", total_pages - used_pages);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Total size: %llu KB\n", (total_pages * 4) / 1);
+PRINT(WHITE, RED, "Physical Memory:\n");
+PRINT(WHITE, RED, "  Total pages: %llu\n", total_pages);
+PRINT(WHITE, RED, "  Used pages: %llu\n", used_pages);
+PRINT(WHITE, RED, "  Free pages: %llu\n", total_pages - used_pages);
+PRINT(WHITE, RED, "  Total size: %llu KB\n", (total_pages * 4) / 1);
 
-PRINT(0xFFFFFFFF, 0xFF0000FF, "\nHeap Memory:\n");
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Base: 0x%llx\n", kernel_heap_base);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", kernel_heap_size / 1024);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Used: %llu KB\n", kernel_heap_used / 1024);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Free: %llu KB\n", (kernel_heap_size - kernel_heap_used) / 1024);
+PRINT(WHITE, RED, "\nHeap Memory:\n");
+PRINT(WHITE, RED, "  Base: 0x%llx\n", kernel_heap_base);
+PRINT(WHITE, RED, "  Size: %llu KB\n", kernel_heap_size / 1024);
+PRINT(WHITE, RED, "  Used: %llu KB\n", kernel_heap_used / 1024);
+PRINT(WHITE, RED, "  Free: %llu KB\n", (kernel_heap_size - kernel_heap_used) / 1024);
 
-PRINT(0xFFFFFFFF, 0xFF0000FF, "\nHeap Operations:\n");
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Allocations: %llu\n", alloc_count);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Frees: %llu\n", free_count);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Splits: %llu\n", split_count);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Coalesces: %llu\n", coalesce_count);
+PRINT(WHITE, RED, "\nHeap Operations:\n");
+PRINT(WHITE, RED, "  Allocations: %llu\n", alloc_count);
+PRINT(WHITE, RED, "  Frees: %llu\n", free_count);
+PRINT(WHITE, RED, "  Splits: %llu\n", split_count);
+PRINT(WHITE, RED, "  Coalesces: %llu\n", coalesce_count);
 
-PRINT(0xFFFFFFFF, 0xFF0000FF, "\nStack:\n");
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Base: 0x%llx\n", kernel_stack_base);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Top: 0x%llx\n", kernel_stack_top);
-PRINT(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", (kernel_stack_top - kernel_stack_base) / 1024);
+PRINT(WHITE, RED, "\nStack:\n");
+PRINT(WHITE, RED, "  Base: 0x%llx\n", kernel_stack_base);
+PRINT(WHITE, RED, "  Top: 0x%llx\n", kernel_stack_top);
+PRINT(WHITE, RED, "  Size: %llu KB\n", (kernel_stack_top - kernel_stack_base) / 1024);
 }
 
 
@@ -389,80 +389,80 @@ PRINT(0xFFFFFFFF, 0xFF0000FF, "  Size: %llu KB\n", (kernel_stack_top - kernel_st
 
 int memory_test(void) {
     // Clear screen to blue
-    ClearScreen(0xFF0000FF);
+    ClearScreen(RED);
     
     // Reset cursor to top-left
     cursor.x = 0;
     cursor.y = 0;
     
     // Set colors
-    cursor.fg_color = 0xFFFFFFFF; // White text
-    cursor.bg_color = 0xFF0000FF;  // Blue background
+    cursor.fg_color = WHITE; // White text
+    cursor.bg_color = RED;  // Blue background
     
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "=== Memory Allocator Tests ===\n");
+    PRINT(WHITE, RED, "=== Memory Allocator Tests ===\n");
     
     // Test 1: Basic allocation and free
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 1: Basic allocation... ");
+    PRINT(WHITE, RED, "Test 1: Basic allocation... ");
     void* p1 = kmalloc(100);
     if (!p1) {
-        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(WHITE, RED, "FAILED\n");
         return 0;
     }
     kfree(p1);
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(WHITE, RED, "PASSED\n");
 
     // Test 2: Multiple allocations
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 2: Multiple allocations... ");
+    PRINT(WHITE, RED, "Test 2: Multiple allocations... ");
     void* p2 = kmalloc(50);
     void* p3 = kmalloc(200);
     void* p4 = kmalloc(1000);
     if (!p2 || !p3 || !p4) {
-        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(WHITE, RED, "FAILED\n");
         return 0;
     }
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(WHITE, RED, "PASSED\n");
 
     // Test 3: Free in different order
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 3: Non-sequential free... ");
+    PRINT(WHITE, RED, "Test 3: Non-sequential free... ");
     kfree(p3);
     kfree(p2);
     kfree(p4);
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(WHITE, RED, "PASSED\n");
 
     // Test 4: Coalescing
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 4: Block coalescing... ");
+    PRINT(WHITE, RED, "Test 4: Block coalescing... ");
     void* p5 = kmalloc(100);
     void* p6 = kmalloc(100);
     void* p7 = kmalloc(100);
     kfree(p5);
     kfree(p7);
     kfree(p6); // Should coalesce all three
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(WHITE, RED, "PASSED\n");
 
     // Test 5: Large allocation
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 5: Large allocation... ");
+    PRINT(WHITE, RED, "Test 5: Large allocation... ");
     void* p8 = kmalloc(10000);
     if (!p8) {
-        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(WHITE, RED, "FAILED\n");
         return 0;
     }
     kfree(p8);
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(WHITE, RED, "PASSED\n");
 
     // Test 6: Zero allocation
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 6: Zero size allocation... ");
+    PRINT(WHITE, RED, "Test 6: Zero size allocation... ");
     void* p9 = kmalloc(0);
     if (p9 != NULL) {
-        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(WHITE, RED, "FAILED\n");
         return 0;
     }
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(WHITE, RED, "PASSED\n");
 
     // Test 7: kcalloc
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 7: kcalloc... ");
+    PRINT(WHITE, RED, "Test 7: kcalloc... ");
     uint8_t* p10 = (uint8_t*)kcalloc(100, sizeof(uint8_t));
     if (!p10) {
-        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(WHITE, RED, "FAILED\n");
         return 0;
     }
     int all_zero = 1;
@@ -474,23 +474,23 @@ int memory_test(void) {
     }
     kfree(p10);
     if (!all_zero) {
-        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(WHITE, RED, "FAILED\n");
         return 0;
     }
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(WHITE, RED, "PASSED\n");
 
     // Test 8: krealloc
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "Test 8: krealloc... ");
+    PRINT(WHITE, RED, "Test 8: krealloc... ");
     void* p11 = kmalloc(50);
     void* p12 = krealloc(p11, 200);
     if (!p12) {
-        PRINT(0xFFFFFFFF, 0xFF0000FF, "FAILED\n");
+        PRINT(WHITE, RED, "FAILED\n");
         return 0;
     }
     kfree(p12);
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "PASSED\n");
+    PRINT(WHITE, RED, "PASSED\n");
 
-    PRINT(0xFFFFFFFF, 0xFF0000FF, "\nAll tests PASSED!\n");
+    PRINT(WHITE, RED, "\nAll tests PASSED!\n");
     return 1;
 }
 

@@ -28,7 +28,7 @@ void process_init(void) {
         }
     }
     
-    PRINT(0xFF00FF00, 0x000000, "[PROCESS] Process management initialized\n");
+    PRINT(MAGENTA, BLACK, "[PROCESS] Process management initialized\n");
 }
 
 // Find free process slot
@@ -45,7 +45,7 @@ static int find_free_process(void) {
 int process_create(const char *name, uint64_t memory_space) {
     int idx = find_free_process();
     if (idx < 0) {
-        PRINT(0xFFFF0000, 0x000000, "[PROCESS] No free process slots\n");
+        PRINT(YELLOW, BLACK, "[PROCESS] No free process slots\n");
         return -1;
     }
     
@@ -64,7 +64,7 @@ int process_create(const char *name, uint64_t memory_space) {
     }
     proc->name[i] = '\0';
     
-    PRINT(0xFF00FF00, 0x000000, "[PROCESS] Created process '%s' (PID=%u, Memory=0x%llX)\n",
+    PRINT(MAGENTA, BLACK, "[PROCESS] Created process '%s' (PID=%u, Memory=0x%llX)\n",
           proc->name, proc->pid, memory_space);
     
     return proc->pid;
@@ -82,7 +82,7 @@ process_t* get_process(uint32_t pid) {
 
 // Print process table
 void print_process_table(void) {
-    PRINT(0xFFFFFFFF, 0x000000, "\n=== Process Table ===\n");
+    PRINT(WHITE, BLACK, "\n=== Process Table ===\n");
     
     int count = 0;
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -95,7 +95,7 @@ void print_process_table(void) {
             else if (p->state == PROCESS_STATE_BLOCKED) state_str = "BLOCKED";
             else state_str = "TERMINATED";
             
-            PRINT(0xFF00FFFF, 0x000000, "PID=%u | '%s' | Memory=0x%llX | State=%s | Threads=%u\n",
+            PRINT(MAGENTA, BLACK, "PID=%u | '%s' | Memory=0x%llX | State=%s | Threads=%u\n",
                   p->pid, p->name, p->memory_space, state_str, p->thread_count);
             
             // Print threads
@@ -108,7 +108,7 @@ void print_process_table(void) {
                     else if (t->state == THREAD_STATE_BLOCKED) tstate_str = "BLOCKED";
                     else tstate_str = "TERMINATED";
                     
-                    PRINT(0xFFFFFF00, 0x000000, "  â””â”€ TID=%u | %s | Deadline=%llu ns\n",
+                    PRINT(WHITE, BLACK, "  â””â”€ TID=%u | %s | Deadline=%llu ns\n",
                           t->tid, tstate_str, t->sched.absolute_deadline);
                 }
             }
@@ -117,6 +117,6 @@ void print_process_table(void) {
     }
     
     if (count == 0) {
-        PRINT(0xFFFFFF00, 0x000000, "(No processes)\n");
+        PRINT(WHITE, BLACK, "(No processes)\n");
     }
 }

@@ -15,7 +15,7 @@ void ramdisk_init(void) {
     ramdisk_data = (uint8_t*)kmalloc(RAMDISK_SIZE);
     
     if (!ramdisk_data) {
-        PRINT(0xFFFF0000, 0x000000, "Failed to allocate RAM disk\n");
+        PRINT(YELLOW, BLACK, "Failed to allocate RAM disk\n");
         return;
     }
     
@@ -26,7 +26,7 @@ void ramdisk_init(void) {
     
     ramdisk_initialized = 1;
     
-    PRINT(0xFF00FF00, 0x000000, "RAM disk initialized (512 KB)\n");
+    PRINT(MAGENTA, BLACK, "RAM disk initialized (512 KB)\n");
 }
 
 int ramdisk_read_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
@@ -37,7 +37,7 @@ int ramdisk_read_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     
     // Bounds check
     if (offset + size > RAMDISK_SIZE) {
-        PRINT(0xFFFF0000, 0x000000, "RAM disk read out of bounds\n");
+        PRINT(YELLOW, BLACK, "RAM disk read out of bounds\n");
         return -1;
     }
     
@@ -57,7 +57,7 @@ int ramdisk_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
     
     // Bounds check
     if (offset + size > RAMDISK_SIZE) {
-        PRINT(0xFFFF0000, 0x000000, "RAM disk write out of bounds\n");
+        PRINT(YELLOW, BLACK, "RAM disk write out of bounds\n");
         return -1;
     }
     

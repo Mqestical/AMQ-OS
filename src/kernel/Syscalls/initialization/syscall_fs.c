@@ -10,7 +10,7 @@ static int validate_user_pointer(const void *ptr, size_t size) {
 
 int64_t sys_open(const char *path, int flags, int mode) {
     if (!validate_user_pointer(path, 1)) return -EINVAL;
-    PRINT(0xFFFFFF00, 0x000000, "[SYSCALL] open('%s', %d, %d)\n", path, flags, mode);
+    PRINT(WHITE, BLACK, "[SYSCALL] open('%s', %d, %d)\n", path, flags, mode);
     return vfs_open(path, flags);
 }
 
@@ -36,7 +36,7 @@ int64_t sys_lseek(int fd, int64_t offset, int whence) {
 
 int64_t sys_stat(const char *path, sys_stat_t *statbuf) {
     if (!validate_user_pointer(path, 1) || !validate_user_pointer(statbuf, sizeof(sys_stat_t))) return -EINVAL;
-    PRINT(0xFFFFFF00, 0x000000, "[SYSCALL] stat('%s') - not fully implemented\n", path);
+    PRINT(WHITE, BLACK, "[SYSCALL] stat('%s') - not fully implemented\n", path);
     return -ENOSYS;
 }
 
@@ -47,7 +47,7 @@ int64_t sys_unlink(const char *path) {
 
 int64_t sys_mkdir(const char *path, uint32_t mode) {
     if (!validate_user_pointer(path, 1)) return -EINVAL;
-    PRINT(0xFFFFFF00, 0x000000, "[SYSCALL] mkdir('%s', %u)\n", path, mode);
+    PRINT(WHITE, BLACK, "[SYSCALL] mkdir('%s', %u)\n", path, mode);
     return vfs_mkdir(path, mode);
 }
 
@@ -82,6 +82,6 @@ int64_t sys_gettime(void) {
 
 int64_t sys_debug_print(const char *str) {
     if (!validate_user_pointer(str, 1)) return -EINVAL;
-    PRINT(0xFF00FFFF, 0x000000, "[USER] %s", str);
+    PRINT(MAGENTA, BLACK, "[USER] %s", str);
     return 0;
 }

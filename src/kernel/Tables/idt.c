@@ -4,6 +4,7 @@
 #include "serial.h"
 #include "print.h"
 #include "handler.h"
+#include "string_helpers.h"
 
 #define IDT_ENTRIES 256
 #define GDT_ENTRIES 5
@@ -168,15 +169,10 @@ void idt_install() {
 
     // Load the IDT
     __asm__ volatile("lidt %0" : : "m"(idtp));
-    
-    char msg[] = "[IDT] IDT installed (256 entries)\n";
-    printk(0xFF00FF00, 0x000000, msg);
-    
-    char msg2[] = "[IDT] Timer handler set at vector 32\n";
-    printk(0xFF00FF00, 0x000000, msg2);
-    
-    char msg3[] = "[IDT] Keyboard handler set at vector 33\n";
-    printk(0xFF00FF00, 0x000000, msg3);
+
+    PRINT(MAGENTA, BLACK, "[IDT] IDT installed (256 entries)\n");
+    PRINT(MAGENTA, BLACK, "[IDT] Timer handler set at vector 32\n");
+    PRINT(MAGENTA, BLACK, "[IDT] Keyboard handler set at vector 33\n");
 }
 
 #include "keyboard.h"
@@ -405,6 +401,8 @@ void process_keyboard_buffer(void) {
                 // Regular character
                 if (input_pos < INPUT_BUFFER_SIZE - 1) {
                     input_buffer[input_pos++] = ascii;
+                    cursor.fg_color = WHITE;
+                    cursor.bg_color = BLACK;
                     printc(ascii);
                     serial_write_byte(COM1, ascii);
                 }
