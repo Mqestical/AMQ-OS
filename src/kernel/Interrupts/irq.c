@@ -208,7 +208,7 @@ void pit_init(uint32_t frequency) {
 // ============================================================================
 
 void irq_init(void) {
-    PRINT(0xFFFFFF00, 0x000000, "[IRQ] Initializing IRQ system...\n");
+    PRINT(WHITE, BLACK, "[IRQ] Initializing IRQ system...\n");
     
     for (int i = 0; i < 16; i++) {
         irq_handlers[i] = NULL;
@@ -219,23 +219,23 @@ void irq_init(void) {
     
     pit_init(TIMER_FREQ);
     
-    PRINT(0xFFFFFF00, 0x000000, "[IRQ] Unmasking IRQ0 (timer)...\n");
+    PRINT(WHITE, BLACK, "[IRQ] Unmasking IRQ0 (timer)...\n");
     pic_clear_mask(0);
     for (volatile int i = 0; i < 10000; i++);
     
     uint8_t mask = inb(0x21);
-    PRINT(0xFFFFFF00, 0x000000, "[IRQ] PIC1 mask after unmask: 0x%x\n", mask);
+    PRINT(WHITE, BLACK, "[IRQ] PIC1 mask after unmask: 0x%x\n", mask);
     
     if (mask & 0x01) {
-        PRINT(0xFFFF0000, 0x000000, "[WARNING] IRQ0 still masked!\n");
+        PRINT(YELLOW, BLACK, "[WARNING] IRQ0 still masked!\n");
     } else {
-        PRINT(0xFF00FF00, 0x000000, "[OK] IRQ0 is unmasked\n");
+        PRINT(MAGENTA, BLACK, "[OK] IRQ0 is unmasked\n");
     }
     
-    PRINT(0xFFFFFF00, 0x000000, "[IRQ] Enabling interrupts...\n");
+    PRINT(WHITE, BLACK, "[IRQ] Enabling interrupts...\n");
     __asm__ volatile("sti");
     
-    PRINT(0xFF00FF00, 0x000000, "[IRQ] IRQ system ready\n");
+    PRINT(MAGENTA, BLACK, "[IRQ] IRQ system ready\n");
 }
 
 // ============================================================================
@@ -251,9 +251,9 @@ uint64_t get_uptime_seconds(void) {
 }
 
 void show_timer_info(void) {
-    PRINT(0xFFFFFFFF, 0x000000, "\n=== Timer Information ===\n");
-    PRINT(0xFFFFFFFF, 0x000000, "Ticks: %llu\n", timer_ticks);
-    PRINT(0xFFFFFFFF, 0x000000, "Uptime: %llu seconds\n", timer_seconds);
-    PRINT(0xFFFFFFFF, 0x000000, "Milliseconds: %llu\n", (timer_ticks * 1000) / TIMER_FREQ);
-    PRINT(0xFFFFFFFF, 0x000000, "PIC1 mask: 0x%x\n", pic_get_mask());
+    PRINT(WHITE, BLACK, "\n=== Timer Information ===\n");
+    PRINT(WHITE, BLACK, "Ticks: %llu\n", timer_ticks);
+    PRINT(WHITE, BLACK, "Uptime: %llu seconds\n", timer_seconds);
+    PRINT(WHITE, BLACK, "Milliseconds: %llu\n", (timer_ticks * 1000) / TIMER_FREQ);
+    PRINT(WHITE, BLACK, "PIC1 mask: 0x%x\n", pic_get_mask());
 }

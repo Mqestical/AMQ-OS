@@ -10,7 +10,7 @@ static percpu_t boot_cpu_data __attribute__((aligned(64)));
 #define MSR_GS_BASE     0xC0000101
 
 static inline void wrmsr(uint32_t msr, uint64_t value) {
-    uint32_t low = value & 0xFFFFFFFF;
+    uint32_t low = value & WHITE;
     uint32_t high = value >> 32;
     __asm__ volatile("wrmsr" : : "c"(msr), "a"(low), "d"(high));
 }
@@ -27,7 +27,7 @@ void percpu_init(void) {
     int i = 0;
     while (s1[i] && i < 63) { msg[i] = s1[i]; i++; }
     msg[i] = '\0';
-    printk(0xFFFFFF00, 0x000000, msg);
+    printk(WHITE, BLACK, msg);
     
     // Zero out the structure
     for (int j = 0; j < sizeof(percpu_t); j++) {
@@ -49,13 +49,13 @@ void percpu_init(void) {
     i = 0;
     while (s2[i] && i < 63) { msg[i] = s2[i]; i++; }
     msg[i] = '\0';
-    printk(0xFF00FF00, 0x000000, msg, percpu_addr);
+    printk(MAGENTA, BLACK, msg, percpu_addr);
     
     char s3[] = "[PERCPU] Kernel stack at 0x%llx\n";
     i = 0;
     while (s3[i] && i < 63) { msg[i] = s3[i]; i++; }
     msg[i] = '\0';
-    printk(0xFF00FF00, 0x000000, msg, boot_cpu_data.kernel_stack);
+    printk(MAGENTA, BLACK, msg, boot_cpu_data.kernel_stack);
     
     // Verify it worked
     uint64_t gs_test;
@@ -66,13 +66,13 @@ void percpu_init(void) {
         i = 0;
         while (s4[i] && i < 63) { msg[i] = s4[i]; i++; }
         msg[i] = '\0';
-        printk(0xFF00FF00, 0x000000, msg);
+        printk(MAGENTA, BLACK, msg);
     } else {
         char s5[] = "[PERCPU] GS base verification FAILED!\n";
         i = 0;
         while (s5[i] && i < 63) { msg[i] = s5[i]; i++; }
         msg[i] = '\0';
-        printk(0xFFFF0000, 0x000000, msg);
+        printk(YELLOW, BLACK, msg);
     }
 }
 
@@ -88,5 +88,5 @@ void set_kernel_stack(uint64_t stack) {
     int i = 0;
     while (s[i] && i < 63) { msg[i] = s[i]; i++; }
     msg[i] = '\0';
-    printk(0xFFFFFF00, 0x000000, msg, stack);
+    printk(WHITE, BLACK, msg, stack);
 }

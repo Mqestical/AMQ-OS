@@ -79,58 +79,58 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         }
     }
     
-    ClearScreen(0x000000);
+    ClearScreen(BLACK);
     SetCursorPos(0, 0);
 
-    PRINT(0xFFFFFFFF, 0x000000, "AMQ OS Kernel v0.2\n");
-    PRINT(0xFFFFFFFF, 0x000000, "==================\n\n");
+    PRINT(WHITE, BLACK, "AMQ OS Kernel v0.2\n");
+    PRINT(WHITE, BLACK, "==================\n\n");
 
     enable_io_privilege();
-    PRINT(0xFF00FF00, 0x000000, "[OK] I/O privileges enabled\n");
+    PRINT(MAGENTA, BLACK, "[OK] I/O privileges enabled\n");
 
-    PRINT(0xFF00FF00, 0x000000, "[OK] Stack: base=0x%llx, top=0x%llx\n", 
+    PRINT(MAGENTA, BLACK, "[OK] Stack: base=0x%llx, top=0x%llx\n", 
           kernel_stack_base, kernel_stack_top);
 
     tss_init();
-    PRINT(0xFF00FF00, 0x000000, "[OK] TSS initialized\n");
+    PRINT(MAGENTA, BLACK, "[OK] TSS initialized\n");
 
     gdt_install();
-    PRINT(0xFF00FF00, 0x000000, "[OK] GDT installed\n");
+    PRINT(MAGENTA, BLACK, "[OK] GDT installed\n");
 
     pic_remap();
-    PRINT(0xFF00FF00, 0x000000, "[OK] PIC remapped\n");
+    PRINT(MAGENTA, BLACK, "[OK] PIC remapped\n");
 
     idt_install();
-    PRINT(0xFF00FF00, 0x000000, "[OK] IDT installed\n");
+    PRINT(MAGENTA, BLACK, "[OK] IDT installed\n");
 
-    PRINT(0xFFFFFF00, 0x000000, "\n[INIT] Initializing syscall interface...\n");
+    PRINT(WHITE, BLACK, "\n[INIT] Initializing syscall interface...\n");
 
     syscall_init();
     syscall_register_all();
 
-    PRINT(0xFF00FF00, 0x000000, "[OK] Syscalls ready\n");
+    PRINT(MAGENTA, BLACK, "[OK] Syscalls ready\n");
 
     serial_init(COM1);
-    PRINT(0xFF00FF00, 0x000000, "[OK] Serial initialized\n");
+    PRINT(MAGENTA, BLACK, "[OK] Serial initialized\n");
 
     // ========================================================================
     // Initialize job system before enabling interrupts
     // ========================================================================
 
-    PRINT(0xFFFFFF00, 0x000000, "\n[INIT] Initializing job system...\n");
+    PRINT(WHITE, BLACK, "\n[INIT] Initializing job system...\n");
     jobs_init();
     jobs_set_active(0);
-    PRINT(0xFF00FF00, 0x000000, "[OK] Job system initialized (INACTIVE)\n");
+    PRINT(MAGENTA, BLACK, "[OK] Job system initialized (INACTIVE)\n");
 
-    PRINT(0xFFFFFF00, 0x000000, "\n[INIT] Enabling IRQ system...\n");
+    PRINT(WHITE, BLACK, "\n[INIT] Enabling IRQ system...\n");
     irq_init();
-    PRINT(0xFF00FF00, 0x000000, "[OK] IRQ system enabled\n");
+    PRINT(MAGENTA, BLACK, "[OK] IRQ system enabled\n");
 
     // ========================================================================
     // Test timer for a few seconds
     // ========================================================================
 
-    PRINT(0xFFFFFF00, 0x000000, "\n[TEST] Testing timer for 3 seconds...\n");
+    PRINT(WHITE, BLACK, "\n[TEST] Testing timer for 3 seconds...\n");
 
     extern volatile uint64_t timer_ticks;
     uint64_t start_ticks = timer_ticks;
@@ -141,11 +141,11 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
             __asm__ volatile("hlt");
         }
 
-        PRINT(0xFF00FF00, 0x000000, "[TEST] Second %d: timer_ticks=%llu\n", 
+        PRINT(MAGENTA, BLACK, "[TEST] Second %d: timer_ticks=%llu\n", 
               sec, timer_ticks);
     }
 
-    PRINT(0xFF00FF00, 0x000000, "[OK] Timer is working correctly!\n");
+    PRINT(MAGENTA, BLACK, "[OK] Timer is working correctly!\n");
 
     // ========================================================================
     // Enable keyboard
@@ -154,60 +154,60 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     uint8_t mask = inb(0x21);
     mask &= ~0x02;
     outb(0x21, mask);
-    PRINT(0xFF00FF00, 0x000000, "[OK] Keyboard enabled\n");
+    PRINT(MAGENTA, BLACK, "[OK] Keyboard enabled\n");
 
     // ========================================================================
     // Storage & Filesystem
     // ========================================================================
 
-    PRINT(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing storage...\n");
+    PRINT(WHITE, BLACK, "\n[INIT] Initializing storage...\n");
     ata_init();
-    PRINT(0xFF00FF00, 0x000000, "[OK] ATA initialized\n");
+    PRINT(MAGENTA, BLACK, "[OK] ATA initialized\n");
 
-    PRINT(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing filesystem...\n");
+    PRINT(WHITE, BLACK, "\n[INIT] Initializing filesystem...\n");
     vfs_init();
 
     filesystem_t *tinyfs = tinyfs_create();
     if (!tinyfs) {
-        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to create TinyFS\n");
+        PRINT(YELLOW, BLACK, "[ERROR] Failed to create TinyFS\n");
         goto boot_failed;
     }
 
     if (vfs_register_filesystem(tinyfs) != 0) {
-        PRINT(0xFFFF0000, 0x000000, "[ERROR] Failed to register TinyFS\n");
+        PRINT(YELLOW, BLACK, "[ERROR] Failed to register TinyFS\n");
         goto boot_failed;
     }
 
-    PRINT(0xFFFFFF00, 0x000000, "[INIT] Formatting disk...\n");
+    PRINT(WHITE, BLACK, "[INIT] Formatting disk...\n");
     
     char device_name[] = "ata0";
     if (tinyfs_format(device_name) != 0) {
-        PRINT(0xFFFF0000, 0x000000, "[ERROR] Format failed\n");
+        PRINT(YELLOW, BLACK, "[ERROR] Format failed\n");
         goto boot_failed;
     }
 
-    PRINT(0xFF00FF00, 0x000000, "[OK] Disk formatted\n");
+    PRINT(MAGENTA, BLACK, "[OK] Disk formatted\n");
 
     for (volatile int i = 0; i < 10000000; i++);
 
-    PRINT(0xFFFFFF00, 0x000000, "[INIT] Mounting filesystem...\n");
+    PRINT(WHITE, BLACK, "[INIT] Mounting filesystem...\n");
 
     char fs_type[] = "tinyfs";
     char device[] = "ata0";
     char mountpoint[] = "/";
 
     if (vfs_mount(fs_type, device, mountpoint) != 0) {
-        PRINT(0xFFFF0000, 0x000000, "[ERROR] Mount failed\n");
+        PRINT(YELLOW, BLACK, "[ERROR] Mount failed\n");
         goto boot_failed;
     }
 
-    PRINT(0xFF00FF00, 0x000000, "[OK] Filesystem mounted\n");
+    PRINT(MAGENTA, BLACK, "[OK] Filesystem mounted\n");
 
     // ========================================================================
     // Process/Thread System
     // ========================================================================
 
-    PRINT(0xFFFFFFFF, 0x000000, "\n[INIT] Initializing processes...\n");
+    PRINT(WHITE, BLACK, "\n[INIT] Initializing processes...\n");
     process_init();
     scheduler_init();
 
@@ -219,22 +219,17 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     }
 
     init_kernel_threads();
-    PRINT(0xFF00FF00, 0x000000, "[OK] Threads initialized (scheduler DISABLED)\n");
+    PRINT(MAGENTA, BLACK, "[OK] Threads initialized (scheduler DISABLED)\n");
 
     // ========================================================================
     // Enable job tracking and start shell
     // ========================================================================
 
-    PRINT(0xFF00FFFF, 0x000000, "\n=== Boot Complete ===\n");
+    PRINT(MAGENTA, BLACK, "\n=== Boot Complete ===\n");
 
     jobs_set_active(1);
-    PRINT(0xFF00FF00, 0x000000, "[OK] Job tracking ENABLED\n");
-    for(;;) {
-        ClearScreen(0x000000);
-        while (1) {
-        mouse();
-    }}
-    PRINT(0xFF00FFFF, 0x000000, "\nStarting shell...\n\n");
+    PRINT(MAGENTA, BLACK, "[OK] Job tracking ENABLED\n");
+    PRINT(MAGENTA, BLACK, "\nStarting shell...\n\n");
     
     for (volatile int i = 0; i < 5000000; i++);
 
@@ -243,7 +238,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     while(1) __asm__ volatile("hlt");
 
 boot_failed:
-    PRINT(0xFFFF0000, 0x000000, "\n=== BOOT FAILED ===\n");
+    PRINT(YELLOW, BLACK, "\n=== BOOT FAILED ===\n");
     while(1) __asm__ volatile("hlt");
 
     return EFI_SUCCESS;

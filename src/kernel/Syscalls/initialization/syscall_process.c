@@ -5,13 +5,13 @@
 #include "string_helpers.h"
 
 int64_t sys_exit(int status) {
-    PRINT(0xFFFFFF00, 0x000000, "[SYSCALL] exit(%d)\n", status);
+    PRINT(WHITE, BLACK, "[SYSCALL] exit(%d)\n", status);
     thread_exit();
     return 0;
 }
 
 int64_t sys_fork(void) {
-    PRINT(0xFFFF0000, 0x000000, "[SYSCALL] fork() - not implemented yet\n");
+    PRINT(YELLOW, BLACK, "[SYSCALL] fork() - not implemented yet\n");
     return -ENOSYS;
 }
 
@@ -26,7 +26,7 @@ int64_t sys_getppid(void) {
 }
 
 int64_t sys_exec(const char *path) {
-    PRINT(0xFFFF0000, 0x000000, "[SYSCALL] exec('%s') - not implemented yet\n", path);
+    PRINT(YELLOW, BLACK, "[SYSCALL] exec('%s') - not implemented yet\n", path);
     return -ENOSYS;
 }
 
@@ -46,12 +46,12 @@ int64_t sys_thread_create(void (*entry)(void), uint32_t stack_size) {
 
     if (tid < 0) return -ENOMEM;
 
-    PRINT(0xFF00FF00, 0x000000, "[SYSCALL] Created thread TID=%d\n", tid);
+    PRINT(MAGENTA, BLACK, "[SYSCALL] Created thread TID=%d\n", tid);
     return tid;
 }
 
 int64_t sys_thread_exit(void) {
-    PRINT(0xFFFFFF00, 0x000000, "[SYSCALL] thread_exit()\n");
+    PRINT(WHITE, BLACK, "[SYSCALL] thread_exit()\n");
     thread_exit();
     return 0;
 }

@@ -43,25 +43,25 @@ void syscall_entry(void) {
 }
 
 void syscall_init(void) {
-    PRINT(0xFFFFFF00, 0x000000, "[SYSCALL] Initializing syscall interface...\n");
+    PRINT(WHITE, BLACK, "[SYSCALL] Initializing syscall interface...\n");
     uint64_t efer = rdmsr(MSR_EFER);
     efer |= EFER_SCE;
     wrmsr(MSR_EFER, efer);
-    PRINT(0xFF00FF00, 0x000000, "[SYSCALL] Enabled SCE bit in EFER\n");
+    PRINT(MAGENTA, BLACK, "[SYSCALL] Enabled SCE bit in EFER\n");
 
     uint64_t star = 0;
     star |= ((uint64_t)0x08 << 32);
     star |= ((uint64_t)0x18 << 48);
     wrmsr(MSR_STAR, star);
-    PRINT(0xFF00FF00, 0x000000, "[SYSCALL] Configured STAR (CS selectors)\n");
+    PRINT(MAGENTA, BLACK, "[SYSCALL] Configured STAR (CS selectors)\n");
 
     uint64_t entry_addr = (uint64_t)syscall_entry;
     wrmsr(MSR_LSTAR, entry_addr);
-    PRINT(0xFF00FF00, 0x000000, "[SYSCALL] Set LSTAR to 0x%llx\n", entry_addr);
+    PRINT(MAGENTA, BLACK, "[SYSCALL] Set LSTAR to 0x%llx\n", entry_addr);
 
     uint64_t sfmask = RFLAGS_IF | RFLAGS_TF | RFLAGS_DF;
     wrmsr(MSR_SFMASK, sfmask);
-    PRINT(0xFF00FF00, 0x000000, "[SYSCALL] Configured SFMASK\n");
+    PRINT(MAGENTA, BLACK, "[SYSCALL] Configured SFMASK\n");
 
-    PRINT(0xFF00FF00, 0x000000, "[SYSCALL] Syscall interface ready\n");
+    PRINT(MAGENTA, BLACK, "[SYSCALL] Syscall interface ready\n");
 }

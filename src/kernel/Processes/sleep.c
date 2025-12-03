@@ -45,14 +45,14 @@ void sleep_ticks(uint64_t ticks) {
             fg_table[i].sleep_until = wake_time_ms;
             job_found = 1;
             
-            PRINT(0xFFFFFF00, 0x000000, "[SLEEP TID=%u JOB=%d] Sleeping until %llu ms\n",
+            PRINT(WHITE, BLACK, "[SLEEP TID=%u JOB=%d] Sleeping until %llu ms\n",
                   current->tid, fg_table[i].job_id, wake_time_ms);
             break;
         }
     }
     
     if (!job_found) {
-        PRINT(0xFFFFFF00, 0x000000, "[SLEEP TID=%u] WARNING: No job found for this thread\n",
+        PRINT(WHITE, BLACK, "[SLEEP TID=%u] WARNING: No job found for this thread\n",
               current->tid);
     }
     
@@ -64,7 +64,7 @@ void sleep_ticks(uint64_t ticks) {
         __asm__ volatile("hlt");
     }
     
-    PRINT(0xFF00FF00, 0x000000, "[SLEEP TID=%u] Woke up at %llu ticks\n",
+    PRINT(MAGENTA, BLACK, "[SLEEP TID=%u] Woke up at %llu ticks\n",
           current->tid, get_timer_ticks());
 }
 
@@ -86,7 +86,7 @@ void sleep_seconds(uint32_t seconds) {
     uint64_t target_ticks = start_ticks + (seconds * TIMER_FREQ);
     
     if (current) {
-        PRINT(0xFFFFFF00, 0x000000, "[SLEEP TID=%u] Sleeping for %u seconds (%llu ticks)\n",
+        PRINT(WHITE, BLACK, "[SLEEP TID=%u] Sleeping for %u seconds (%llu ticks)\n",
               current->tid, seconds, target_ticks - start_ticks);
     }
     
@@ -96,7 +96,7 @@ void sleep_seconds(uint32_t seconds) {
     uint64_t elapsed = end_ticks - start_ticks;
     
     if (current) {
-        PRINT(0xFF00FF00, 0x000000, "[SLEEP TID=%u] Awake! Slept for %llu ticks (%llu ms)\n",
+        PRINT(MAGENTA, BLACK, "[SLEEP TID=%u] Awake! Slept for %llu ticks (%llu ms)\n",
               current->tid, elapsed, (elapsed * 1000) / TIMER_FREQ);
     }
 }
@@ -189,19 +189,19 @@ uint64_t timeout_remaining_ms(timeout_t *timeout) {
 // ============================================================================
 
 void sleep_test(void) {
-    PRINT(0xFFFFFFFF, 0x000000, "\n=== Sleep Function Tests ===\n");
+    PRINT(WHITE, BLACK, "\n=== Sleep Function Tests ===\n");
     
-    PRINT(0xFFFFFF00, 0x000000, "Test 1: sleep_seconds(1)...\n");
+    PRINT(WHITE, BLACK, "Test 1: sleep_seconds(1)...\n");
     uint64_t start1 = get_timer_ticks();
     sleep_seconds(1);
     uint64_t end1 = get_timer_ticks();
-    PRINT(0xFF00FF00, 0x000000, "  Result: %llu ticks elapsed\n", end1 - start1);
+    PRINT(MAGENTA, BLACK, "  Result: %llu ticks elapsed\n", end1 - start1);
     
-    PRINT(0xFFFFFF00, 0x000000, "Test 2: sleep_ms(500)...\n");
+    PRINT(WHITE, BLACK, "Test 2: sleep_ms(500)...\n");
     uint64_t start2 = get_timer_ticks();
     sleep_ms(500);
     uint64_t end2 = get_timer_ticks();
-    PRINT(0xFF00FF00, 0x000000, "  Result: %llu ticks elapsed\n", end2 - start2);
+    PRINT(MAGENTA, BLACK, "  Result: %llu ticks elapsed\n", end2 - start2);
     
-    PRINT(0xFF00FF00, 0x000000, "\nSleep tests completed!\n");
+    PRINT(MAGENTA, BLACK, "\nSleep tests completed!\n");
 }

@@ -38,9 +38,9 @@ static void str_cpy(char *dest, const char *src, int max_len) {
 }
 
 void vfs_init(void) {
-    PRINT(0xFFFFFF00, 0x000000,"[VFS] vfs_init called\n");
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] Initial root_node value: %p\n", root_node);
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] Initial num_filesystems value: %d\n", num_filesystems);
+    PRINT(WHITE, BLACK,"[VFS] vfs_init called\n");
+    PRINT(WHITE, BLACK, "[VFS] Initial root_node value: %p\n", root_node);
+    PRINT(WHITE, BLACK, "[VFS] Initial num_filesystems value: %d\n", num_filesystems);
     
     root_node = NULL;
     num_filesystems = 0;
@@ -56,7 +56,7 @@ void vfs_init(void) {
         registered_filesystems[i] = NULL;
     }
 
-    PRINT(0xFF00FF00, 0x000000, "[VFS] Initialized\n");
+    PRINT(MAGENTA, BLACK, "[VFS] Initialized\n");
 }
 
 int vfs_register_filesystem(filesystem_t *fs) {
@@ -65,7 +65,7 @@ int vfs_register_filesystem(filesystem_t *fs) {
     
     registered_filesystems[num_filesystems++] = fs;
     
-    PRINT(0xFF00FF00, 0x000000, "[VFS] Registered filesystem: %s\n", fs->name);
+    PRINT(MAGENTA, BLACK, "[VFS] Registered filesystem: %s\n", fs->name);
     
     return 0;
 }
@@ -76,40 +76,40 @@ vfs_node_t* vfs_get_root(void) {
 
 void vfs_debug_root(void) {
     if (!root_node) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS DEBUG] root_node is NULL\n");
+        PRINT(YELLOW, BLACK, "[VFS DEBUG] root_node is NULL\n");
     } else {
-        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG] root_node at %p\n", root_node);
-        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   name: '%s'\n", root_node->name);
-        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   type: %d\n", root_node->type);
-        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   fs: %p\n", root_node->fs);
-        PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   ops: %p\n", root_node->ops);
+        PRINT(MAGENTA, BLACK, "[VFS DEBUG] root_node at %p\n", root_node);
+        PRINT(MAGENTA, BLACK, "[VFS DEBUG]   name: '%s'\n", root_node->name);
+        PRINT(MAGENTA, BLACK, "[VFS DEBUG]   type: %d\n", root_node->type);
+        PRINT(MAGENTA, BLACK, "[VFS DEBUG]   fs: %p\n", root_node->fs);
+        PRINT(MAGENTA, BLACK, "[VFS DEBUG]   ops: %p\n", root_node->ops);
         
         if (root_node->fs) {
-            PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   fs->name: '%s'\n", root_node->fs->name);
-            PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   fs->ops: %p\n", root_node->fs->ops);
-            PRINT(0xFF00FF00, 0x000000, "[VFS DEBUG]   fs->private_data: %p\n", root_node->fs->private_data);
+            PRINT(MAGENTA, BLACK, "[VFS DEBUG]   fs->name: '%s'\n", root_node->fs->name);
+            PRINT(MAGENTA, BLACK, "[VFS DEBUG]   fs->ops: %p\n", root_node->fs->ops);
+            PRINT(MAGENTA, BLACK, "[VFS DEBUG]   fs->private_data: %p\n", root_node->fs->private_data);
         }
     }
 }
 
 int vfs_mount(const char *fs_type, const char *device, const char *mountpoint) {
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] === vfs_mount START ===\n");
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] fs_type='%s', device='%s', mountpoint='%s'\n", fs_type, device, mountpoint);
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] root_node BEFORE mount: %p\n", root_node);
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] DEBUG: num_filesystems = %d\n", num_filesystems);
+    PRINT(WHITE, BLACK, "[VFS] === vfs_mount START ===\n");
+    PRINT(WHITE, BLACK, "[VFS] fs_type='%s', device='%s', mountpoint='%s'\n", fs_type, device, mountpoint);
+    PRINT(WHITE, BLACK, "[VFS] root_node BEFORE mount: %p\n", root_node);
+    PRINT(WHITE, BLACK, "[VFS] DEBUG: num_filesystems = %d\n", num_filesystems);
     
-    PRINT(0xFFFFFF00, 0x000000, "[VFS MOUNT START] Verifying registered filesystems:\n");
+    PRINT(WHITE, BLACK, "[VFS MOUNT START] Verifying registered filesystems:\n");
     for (int i = 0; i < num_filesystems; i++) {
-        PRINT(0xFFFFFF00, 0x000000, "[VFSX_DEBUG]   fs[%d] at %p, name at %p: '%s'\n", i, 
+        PRINT(WHITE, BLACK, "[VFSX_DEBUG]   fs[%d] at %p, name at %p: '%s'\n", i, 
                registered_filesystems[i],
                registered_filesystems[i]->name,
                registered_filesystems[i]->name);
     }
 
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] Registered filesystems:\n");
+    PRINT(WHITE, BLACK, "[VFS] Registered filesystems:\n");
     for (int i = 0; i < num_filesystems; i++) {
         if (registered_filesystems[i]) {
-            PRINT(0xFFFFFF00, 0x000000, "[VFS]  [%d] '%s' at %p\n", i, 
+            PRINT(WHITE, BLACK, "[VFS]  [%d] '%s' at %p\n", i, 
                    registered_filesystems[i]->name, 
                    registered_filesystems[i]);
         }
@@ -117,59 +117,59 @@ int vfs_mount(const char *fs_type, const char *device, const char *mountpoint) {
     
     filesystem_t *fs = NULL;
     for (int i = 0; i < num_filesystems; i++) {
-        PRINT(0xFFFFFF00, 0x000000, "[VFS] Checking index %d: %p\n", i, registered_filesystems[i]);
-        PRINT(0xFFFFFF00, 0x000000, "[VFS-DEBUG] fs_type[0]='%c' fs_type addr=%p\n", fs_type[0], fs_type);
+        PRINT(WHITE, BLACK, "[VFS] Checking index %d: %p\n", i, registered_filesystems[i]);
+        PRINT(WHITE, BLACK, "[VFS-DEBUG] fs_type[0]='%c' fs_type addr=%p\n", fs_type[0], fs_type);
 
-        PRINT(0xFFFFFF00, 0x000000, "[VFS-DEBUG] name[0]='%c' name addr=%p\n", registered_filesystems[i]->name[0], 
+        PRINT(WHITE, BLACK, "[VFS-DEBUG] name[0]='%c' name addr=%p\n", registered_filesystems[i]->name[0], 
            registered_filesystems[i]->name);
 
         if (registered_filesystems[i] != NULL && registered_filesystems[i]->name != NULL) {
-            PRINT(0xFFFFFF00, 0x000000, "[VFS] Comparing '%s' with '%s'\n", fs_type, registered_filesystems[i]->name);
+            PRINT(WHITE, BLACK, "[VFS] Comparing '%s' with '%s'\n", fs_type, registered_filesystems[i]->name);
             
             if (str_cmp(fs_type, registered_filesystems[i]->name) == 0) {
                 fs = registered_filesystems[i];
-                PRINT(0xFF00FF00, 0x000000, "[VFS] Found filesystem type: %s\n", fs_type);
+                PRINT(MAGENTA, BLACK, "[VFS] Found filesystem type: %s\n", fs_type);
                 break;
             }
         }
     }
     
     if (!fs) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] Filesystem type not found: %s\n", fs_type);
+        PRINT(YELLOW, BLACK, "[VFS] Filesystem type not found: %s\n", fs_type);
         return -1;
     }
     
-    PRINT(0xFFFFFF00, 0x000000,"[VFS] Calling fs->ops->mount()...\n");
+    PRINT(WHITE, BLACK,"[VFS] Calling fs->ops->mount()...\n");
     
     if (fs->ops->mount(fs, device) != 0) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] Failed to mount %s on device %s\n", fs_type, device);
+        PRINT(YELLOW, BLACK, "[VFS] Failed to mount %s on device %s\n", fs_type, device);
         return -1;
     }
     
-    PRINT(0xFF00FF00, 0x000000, "[VFS] Mount operation successful\n");
+    PRINT(MAGENTA, BLACK, "[VFS] Mount operation successful\n");
     
     // Check if mounting to root
     if (mountpoint[0] == '/' && mountpoint[1] == '\0') {
-        PRINT(0xFFFFFF00, 0x000000, "[VFS] Getting root node from filesystem...\n");
+        PRINT(WHITE, BLACK, "[VFS] Getting root node from filesystem...\n");
         root_node = fs->ops->get_root(fs);
-        PRINT(0xFFFFFF00, 0x000000, "[VFS] root_node AFTER get_root: %p\n", root_node);
+        PRINT(WHITE, BLACK, "[VFS] root_node AFTER get_root: %p\n", root_node);
         
         if (!root_node) {
-            PRINT(0xFFFF0000, 0x000000, "[VFS] CRITICAL: get_root returned NULL!\n");
+            PRINT(YELLOW, BLACK, "[VFS] CRITICAL: get_root returned NULL!\n");
             return -1;
         }
         
         root_node->fs = fs;
         current_dir = root_node;
-        PRINT(0xFF00FF00, 0x000000, "[VFS] Root node set successfully:\n");
-        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node = %p\n", root_node);
-        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node->fs = %p\n", root_node->fs);
-        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node->ops = %p\n", root_node->ops);
-        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node->name = '%s'\n", root_node->name);
-        PRINT(0xFF00FF00, 0x000000, "[VFS]   root_node->type = %d\n", root_node->type);
+        PRINT(MAGENTA, BLACK, "[VFS] Root node set successfully:\n");
+        PRINT(MAGENTA, BLACK, "[VFS]   root_node = %p\n", root_node);
+        PRINT(MAGENTA, BLACK, "[VFS]   root_node->fs = %p\n", root_node->fs);
+        PRINT(MAGENTA, BLACK, "[VFS]   root_node->ops = %p\n", root_node->ops);
+        PRINT(MAGENTA, BLACK, "[VFS]   root_node->name = '%s'\n", root_node->name);
+        PRINT(MAGENTA, BLACK, "[VFS]   root_node->type = %d\n", root_node->type);
     }
     
-    PRINT(0xFF00FF00, 0x000000, "[VFS] Mounted %s at %s\n", fs_type, mountpoint);
+    PRINT(MAGENTA, BLACK, "[VFS] Mounted %s at %s\n", fs_type, mountpoint);
     
     return 0;
 }
@@ -214,27 +214,27 @@ static void tokenize_path(const char *path, char tokens[][MAX_FILENAME], int *to
 }
 
 vfs_node_t* vfs_resolve_path(const char *path) {
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] resolve_path: '%s'\n", path);
+    PRINT(WHITE, BLACK, "[VFS] resolve_path: '%s'\n", path);
     
     if (!root_node) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: root_node is NULL!\n");
+        PRINT(YELLOW, BLACK, "[VFS] resolve_path: root_node is NULL!\n");
         return NULL;
     }
     
-    PRINT(0xFF00FF00, 0x000000, "[VFS] resolve_path: root_node = %p\n", root_node);
+    PRINT(MAGENTA, BLACK, "[VFS] resolve_path: root_node = %p\n", root_node);
     
     if (!path) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: path is NULL\n");
+        PRINT(YELLOW, BLACK, "[VFS] resolve_path: path is NULL\n");
         return NULL;
     }
     
     if (path[0] == '/' && path[1] == '\0') {
-        PRINT(0xFF00FF00, 0x000000, "[VFS] resolve_path: returning root\n");
+        PRINT(MAGENTA, BLACK, "[VFS] resolve_path: returning root\n");
         return root_node;
     }
     
     if (path[0] != '/') {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: path must be absolute: %s\n", path);
+        PRINT(YELLOW, BLACK, "[VFS] resolve_path: path must be absolute: %s\n", path);
         return NULL;
     }
     
@@ -242,32 +242,32 @@ vfs_node_t* vfs_resolve_path(const char *path) {
     int token_count = 0;
     tokenize_path(path, tokens, &token_count);
     
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] resolve_path: %d path components\n", token_count);
+    PRINT(WHITE, BLACK, "[VFS] resolve_path: %d path components\n", token_count);
     
     vfs_node_t *current = root_node;
     
     for (int i = 0; i < token_count; i++) {
-        PRINT(0xFFFFFF00, 0x000000, "[VFS] resolve_path: looking for '%s'\n", tokens[i]);
+        PRINT(WHITE, BLACK, "[VFS] resolve_path: looking for '%s'\n", tokens[i]);
         
         if (!current) {
-            PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: current node is NULL at component '%s'\n", tokens[i]);
+            PRINT(YELLOW, BLACK, "[VFS] resolve_path: current node is NULL at component '%s'\n", tokens[i]);
             return NULL;
         }
         
         if (current->type != FILE_TYPE_DIRECTORY) {
-            PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: '%s' is not a directory\n", tokens[i]);
+            PRINT(YELLOW, BLACK, "[VFS] resolve_path: '%s' is not a directory\n", tokens[i]);
             return NULL;
         }
         
         current = vfs_finddir(current, tokens[i]);
         if (!current) {
-            PRINT(0xFFFF0000, 0x000000, "[VFS] resolve_path: component not found: '%s'\n", tokens[i]);
+            PRINT(YELLOW, BLACK, "[VFS] resolve_path: component not found: '%s'\n", tokens[i]);
             return NULL;
         }
-        PRINT(0xFF00FF00, 0x000000, "[VFS] resolve_path: found '%s'\n", tokens[i]);
+        PRINT(MAGENTA, BLACK, "[VFS] resolve_path: found '%s'\n", tokens[i]);
     }
     
-    PRINT(0xFF00FF00, 0x000000, "[VFS] resolve_path: success, returning %p\n", current);
+    PRINT(MAGENTA, BLACK, "[VFS] resolve_path: success, returning %p\n", current);
     return current;
 }
 
@@ -385,10 +385,10 @@ vfs_node_t* vfs_finddir(vfs_node_t *node, const char *name) {
 }
 
 int vfs_create(const char *path, uint32_t permissions) {
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_create: '%s'\n", path);
+    PRINT(WHITE, BLACK, "[VFS] vfs_create: '%s'\n", path);
     
     if (!path || path[0] != '/') {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: Invalid path\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_create: Invalid path\n");
         return -1;
     }
     
@@ -401,7 +401,7 @@ int vfs_create(const char *path, uint32_t permissions) {
     }
     
     if (last_slash < 0) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: No slash in path\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_create: No slash in path\n");
         return -1;
     }
     
@@ -421,44 +421,44 @@ int vfs_create(const char *path, uint32_t permissions) {
     }
     filename[j] = '\0';
     
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_create: parent='%s', filename='%s'\n", parent_path, filename);
+    PRINT(WHITE, BLACK, "[VFS] vfs_create: parent='%s', filename='%s'\n", parent_path, filename);
     
     vfs_node_t *parent = vfs_resolve_path(parent_path);
     if (!parent) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: Parent directory not found: %s\n", parent_path);
+        PRINT(YELLOW, BLACK, "[VFS] vfs_create: Parent directory not found: %s\n", parent_path);
         return -1;
     }
     
-    PRINT(0xFF00FF00, 0x000000, "[VFS] vfs_create: parent found at %p\n", parent);
+    PRINT(MAGENTA, BLACK, "[VFS] vfs_create: parent found at %p\n", parent);
     
     if (parent->type != FILE_TYPE_DIRECTORY) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: Parent is not a directory\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_create: Parent is not a directory\n");
         return -1;
     }
     
     if (!parent->ops || !parent->ops->create) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: Parent has no create operation\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_create: Parent has no create operation\n");
         return -1;
     }
 
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_create: Calling parent->ops->create()...\n");
+    PRINT(WHITE, BLACK, "[VFS] vfs_create: Calling parent->ops->create()...\n");
     
     int result = parent->ops->create(parent, filename, FILE_TYPE_REGULAR, permissions);
     
     if (result == 0) {
-        PRINT(0xFF00FF00, 0x000000, "[VFS] vfs_create: SUCCESS\n");
+        PRINT(MAGENTA, BLACK, "[VFS] vfs_create: SUCCESS\n");
     } else {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_create: FAILED\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_create: FAILED\n");
     }
     
     return result;
 }
 
 int vfs_mkdir(const char *path, uint32_t permissions) {
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_mkdir: '%s'\n", path);
+    PRINT(WHITE, BLACK, "[VFS] vfs_mkdir: '%s'\n", path);
     
     if (!path || path[0] != '/') {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: Invalid path\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_mkdir: Invalid path\n");
         return -1;
     }
     
@@ -471,7 +471,7 @@ int vfs_mkdir(const char *path, uint32_t permissions) {
     }
     
     if (last_slash < 0) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: No slash in path\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_mkdir: No slash in path\n");
         return -1;
     }
     
@@ -491,34 +491,34 @@ int vfs_mkdir(const char *path, uint32_t permissions) {
     }
     dirname[j] = '\0';
 
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_mkdir: parent='%s', dirname='%s'\n", parent_path, dirname);
+    PRINT(WHITE, BLACK, "[VFS] vfs_mkdir: parent='%s', dirname='%s'\n", parent_path, dirname);
     
     vfs_node_t *parent = vfs_resolve_path(parent_path);
     if (!parent) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: Parent directory not found: %s\n", parent_path);
+        PRINT(YELLOW, BLACK, "[VFS] vfs_mkdir: Parent directory not found: %s\n", parent_path);
         return -1;
     }
 
-    PRINT(0xFF00FF00, 0x000000, "[VFS] vfs_mkdir: parent found at %p\n", parent);
+    PRINT(MAGENTA, BLACK, "[VFS] vfs_mkdir: parent found at %p\n", parent);
     
     if (parent->type != FILE_TYPE_DIRECTORY) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: Parent is not a directory\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_mkdir: Parent is not a directory\n");
         return -1;
     }
     
     if (!parent->ops || !parent->ops->create) {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: Parent has no create operation\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_mkdir: Parent has no create operation\n");
         return -1;
     }
 
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] vfs_mkdir: Calling parent->ops->create()...\n");
+    PRINT(WHITE, BLACK, "[VFS] vfs_mkdir: Calling parent->ops->create()...\n");
     
     int result = parent->ops->create(parent, dirname, FILE_TYPE_DIRECTORY, permissions);
     
     if (result == 0) {
-        PRINT(0xFF00FF00, 0x000000, "[VFS] vfs_mkdir: SUCCESS\n");
+        PRINT(MAGENTA, BLACK, "[VFS] vfs_mkdir: SUCCESS\n");
     } else {
-        PRINT(0xFFFF0000, 0x000000, "[VFS] vfs_mkdir: FAILED\n");
+        PRINT(YELLOW, BLACK, "[VFS] vfs_mkdir: FAILED\n");
     }
     
     return result;
@@ -562,20 +562,20 @@ int vfs_unlink(const char *path) {
 }
 
 void vfs_list_directory(const char *path) {
-    PRINT(0xFFFFFF00, 0x000000, "[VFS] list_directory: '%s'\n", path);
+    PRINT(WHITE, BLACK, "[VFS] list_directory: '%s'\n", path);
     
     vfs_node_t *dir = vfs_resolve_path(path);
     if (!dir) {
-        PRINT(0xFFFF0000, 0x000000, "Directory not found: %s\n", path);
+        PRINT(YELLOW, BLACK, "Directory not found: %s\n", path);
         return;
     }
     
     if (dir->type != FILE_TYPE_DIRECTORY) {
-        PRINT(0xFFFF0000, 0x000000, "Not a directory: %s\n", path);
+        PRINT(YELLOW, BLACK, "Not a directory: %s\n", path);
         return;
     }
 
-    PRINT(0xFFFFFFFF, 0x000000, "Contents of %s:\n", path);
+    PRINT(WHITE, BLACK, "Contents of %s:\n", path);
     
     uint32_t i = 0;
     vfs_node_t *entry;
@@ -583,14 +583,14 @@ void vfs_list_directory(const char *path) {
     
     while ((entry = vfs_readdir(dir, i++)) != NULL) {
         char type = (entry->type == FILE_TYPE_DIRECTORY) ? 'd' : 'f';
-        PRINT(0xFFFFFFFF, 0x000000, "  [%c] %s %d bytes\n", type, entry->name, entry->size);
+        PRINT(WHITE, BLACK, "  [%c] %s %d bytes\n", type, entry->name, entry->size);
         count++;
         
         kfree(entry);
     }
     
     if (count == 0) {
-        PRINT(0xFFFFFF00, 0x000000, "  (empty)\n");
+        PRINT(WHITE, BLACK, "  (empty)\n");
     }
 }
 
@@ -643,12 +643,12 @@ int vfs_chdir(const char *path) {
     }
     
     if (!target) {
-        PRINT(0xFFFF0000, 0x000000, "cd: directory not found: %s\n", path);
+        PRINT(YELLOW, BLACK, "cd: directory not found: %s\n", path);
         return -1;
     }
     
     if (target->type != FILE_TYPE_DIRECTORY) {
-        PRINT(0xFFFF0000, 0x000000, "cd: not a directory: %s\n", path);
+        PRINT(YELLOW, BLACK, "cd: not a directory: %s\n", path);
         return -1;
     }
     
