@@ -151,6 +151,7 @@ static char scancode_to_char(uint8_t scancode, int shifted) {
             case 0x34: return '.';
             case 0x35: return '/';
             case 0x39: return ' ';
+            
             default: return 0;
         }
     } else {
