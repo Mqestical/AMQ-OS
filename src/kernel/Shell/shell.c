@@ -26,6 +26,10 @@ extern volatile int serial_initialized;
 extern void process_keyboard_buffer(void);
 extern char* get_input_and_reset(void);
 extern int input_available(void);
+int fibonacci_rng();
+void play_rps();
+void compute_result(const char *user_str, const char *computer_str,
+                    const char *z, const char *o, const char *t);
 void test_syscall_interface(void);
 
 void draw_cursor(int visible) {
@@ -314,6 +318,10 @@ void process_command(char* cmd) {
     char cmd22[] = "syscalltest";
     char cmd23[] = "testbg";
     char cmd24[] = "stum -r3";
+    char cmd25[] = "rps";
+    char subcmd25_1[] = "rock";
+    char subcmd25_2[] = "paper";
+    char subcmd25_3[] = "scissors";
     // --- Basic commands ---
     if (strcmp(cmd, cmd1) == 0) {
         PRINT(MAGENTA, BLACK, "hello :D\n");
@@ -343,7 +351,8 @@ void process_command(char* cmd) {
         PRINT(WHITE, BLACK, "  command & - Run in background\n");
         PRINT(MAGENTA, BLACK, "  syscalltest - Test syscall interface\n");
         PRINT(MAGENTA, BLACK, "  testbg - Test background jobs\n");
-        PRINT(YELLOW, BLACK, "  Switching to usermode...\n");
+        PRINT(YELLOW, BLACK, "  stum -r3 - switch to usermode (UnAvailable!)\n");
+        PRINT(BROWN, BLACK, "RPS - Play Rock Paper Scissors with a Computer!\n");
     }
     else if (strcmp(cmd, cmd3) == 0) {
         ClearScreen(BLACK);
@@ -713,7 +722,14 @@ void process_command(char* cmd) {
     } else if (strncmp(cmd, cmd24, 9) == 0) {
         // TODO: implement this later, return for now.
         return;
-    }
+    } else if (strncmp(cmd, cmd25, 4) == 0) {
+        PRINT(YELLOW, BLACK, "Pick: Rock, Paper, or Scissors? (you're going to lose btw)\n");
+        play_rps();
+}
+else if (strncmp(cmd, subcmd25_1,5)) {return;}
+else if (strncmp(cmd, subcmd25_2,6)) {return;}
+else if (strncmp(cmd, subcmd25_3,9)) {return;}
+
     else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");
@@ -723,7 +739,7 @@ void process_command(char* cmd) {
 void run_text_demo(void) {
     scheduler_enable();
     PRINT(CYAN, BLACK, "==========================================\n");
-    PRINT(CYAN, BLACK, "    AMQ Operating System v0.7\n");
+    PRINT(CYAN, BLACK, "    AMQ Operating System v0.8\n");
     PRINT(CYAN, BLACK, "==========================================\n");
     PRINT(WHITE, BLACK, "Welcome! Type 'help' for commands.\n\n");
     PRINT(MAGENTA, BLACK, "%s> ", vfs_get_cwd_path());
@@ -850,4 +866,86 @@ void switch_to_user_mode(void (*user_func)(void)) {
     
     // Should never reach here
     PRINT(YELLOW, BLACK, "[ERROR] Failed to switch to user mode\n");
+}
+
+int fibonacci_rng() {
+    static int a = 0;
+    static int b = 1;
+    
+    int next = a + b;
+    a = b;
+    b = next;
+
+    return next % 3; // Map to 0, 1, 2
+}
+
+void play_rps() {
+    char* userpick = NULL;
+
+    char z[] = "rock";
+    char o[] = "paper";
+    char t[] = "scissors";
+
+    // Wait for user input
+    while (!userpick) {
+        process_keyboard_buffer();
+
+        if (input_available()) {
+            userpick = get_input_and_reset();
+            if (userpick[0] == '\0') {  // Ignore empty input
+                userpick = NULL;
+            }
+        }
+    }
+
+    int computerpick = fibonacci_rng(); // 0=Rock,1=Paper,2=Scissors
+
+    // Map computer pick to string
+    char* computer_str = (computerpick == 0) ? z :
+                         (computerpick == 1) ? o :
+                         t;
+
+    // Map user pick to string safely
+    char* user_str = (strncmp(userpick, z, 4) == 0) ? z :
+                     (strncmp(userpick, o, 5) == 0) ? o :
+                     (strncmp(userpick, t, 8) == 0) ? t :
+                     NULL;
+
+    if (!user_str) {
+        PRINT(YELLOW,BLACK, "Invalid input!\n");
+        return; 
+        // Exit function if input invalid
+    }
+
+    PRINT(YELLOW, BLACK, "You picked: %s\n", user_str);
+    PRINT(YELLOW, BLACK, "Computer picked: %s\n", computer_str);
+
+    // Compute result using nested ternary operators
+    compute_result(user_str, computer_str, z,o,t);
+
+}
+
+void compute_result(const char *user_str, const char *computer_str,
+                    const char *z, const char *o, const char *t)
+{
+    // Draw
+    if ((strncmp(user_str, z, 4) == 0 && strncmp(computer_str, z, 4) == 0) ||
+        (strncmp(user_str, o, 5) == 0 && strncmp(computer_str, o, 5) == 0) ||
+        (strncmp(user_str, t, 8) == 0 && strncmp(computer_str, t, 8) == 0))
+    {
+        PRINT(YELLOW, BLACK, "Draw!\n");
+        return;
+    }
+
+    // User wins
+    if ((strncmp(user_str, z, 4) == 0 && strncmp(computer_str, t, 8) == 0) ||  // rock beats scissors
+        (strncmp(user_str, o, 5) == 0 && strncmp(computer_str, z, 4) == 0) ||  // paper beats rock
+        (strncmp(user_str, t, 8) == 0 && strncmp(computer_str, o, 5) == 0))    // scissors beats paper
+    {
+        PRINT(YELLOW, BLACK, "you win (unfortunately, fuck!)\n");
+        return;
+    }
+
+    // Otherwise user loses
+    PRINT(YELLOW, BLACK, "easy win, you're horrible lmfao\n");
 }
