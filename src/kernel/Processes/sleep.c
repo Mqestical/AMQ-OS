@@ -1,6 +1,3 @@
-// ============================================================================
-// sleep.c - FIXED Sleep Functions for AMQ OS
-// ============================================================================
 
 #include <efi.h>
 #include <efilib.h>
@@ -12,16 +9,12 @@
 #include "string_helpers.h"
 #define TIMER_FREQ 1000
 
-// ============================================================================
-// FIXED: Sleep for specified number of ticks
-// ============================================================================
 void sleep_ticks(uint64_t ticks) {
     if (ticks == 0) return;
     
     thread_t *current = get_current_thread();
     
     if (!current) {
-        // No threading, fall back to busy wait
         uint64_t start = get_timer_ticks();
         uint64_t target = start + ticks;
         
@@ -31,12 +24,10 @@ void sleep_ticks(uint64_t ticks) {
         return;
     }
     
-    // CRITICAL: Set up sleep tracking BEFORE blocking
     uint64_t start = get_timer_ticks();
     uint64_t target = start + ticks;
     uint64_t wake_time_ms = (target * 1000) / TIMER_FREQ;
     
-    // Find and mark job as sleeping
     int job_found = 0;
     for (int i = 0; i < MAX_JOBS; i++) {
         extern job_t fg_table[MAX_JOBS];
@@ -56,10 +47,8 @@ void sleep_ticks(uint64_t ticks) {
               current->tid);
     }
     
-    // Block this thread - update_jobs() will unblock us
     thread_block(current->tid);
     
-    // When we wake up, we're here - wait for actual target time
     while (get_timer_ticks() < target) {
         __asm__ volatile("hlt");
     }
@@ -68,7 +57,6 @@ void sleep_ticks(uint64_t ticks) {
           current->tid, get_timer_ticks());
 }
 
-// Sleep for milliseconds
 void sleep_ms(uint64_t milliseconds) {
     if (milliseconds == 0) return;
     uint64_t ticks = (milliseconds * TIMER_FREQ) / 1000;
@@ -76,7 +64,6 @@ void sleep_ms(uint64_t milliseconds) {
     sleep_ticks(ticks);
 }
 
-// Sleep for seconds
 void sleep_seconds(uint32_t seconds) {
     if (seconds == 0) return;
     
@@ -101,7 +88,6 @@ void sleep_seconds(uint32_t seconds) {
     }
 }
 
-// Sleep for microseconds
 void sleep_us(uint64_t microseconds) {
     if (microseconds == 0) return;
     uint64_t milliseconds = (microseconds + 999) / 1000;
@@ -109,9 +95,6 @@ void sleep_us(uint64_t microseconds) {
     sleep_ms(milliseconds);
 }
 
-// ============================================================================
-// BUSY-WAIT DELAYS
-// ============================================================================
 
 void delay_busy_cycles(uint64_t cycles) {
     volatile uint64_t count = cycles;
@@ -127,9 +110,6 @@ void delay_busy(uint64_t microseconds) {
     }
 }
 
-// ============================================================================
-// TIMING UTILITIES
-// ============================================================================
 
 uint64_t get_uptime_ms(void) {
     return (get_timer_ticks() * 1000) / TIMER_FREQ;
@@ -159,9 +139,6 @@ void sleep_with_callback(uint32_t seconds, void (*callback)(void), uint32_t call
     }
 }
 
-// ============================================================================
-// TIMEOUT UTILITIES
-// ============================================================================
 
 void timeout_init(timeout_t *timeout, uint64_t milliseconds) {
     timeout->start_ticks = get_timer_ticks();
@@ -184,9 +161,6 @@ uint64_t timeout_remaining_ms(timeout_t *timeout) {
     return (remaining_ticks * 1000) / TIMER_FREQ;
 }
 
-// ============================================================================
-// SLEEP TEST
-// ============================================================================
 
 void sleep_test(void) {
     PRINT(WHITE, BLACK, "\n=== Sleep Function Tests ===\n");

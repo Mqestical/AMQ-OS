@@ -3,10 +3,8 @@
 #include "print.h"
 #include "memory.h"
 
-// Per-CPU data (for now, just one CPU)
 static percpu_t boot_cpu_data __attribute__((aligned(64)));
 
-// MSR for GS base
 #define MSR_GS_BASE     0xC0000101
 
 static inline void wrmsr(uint32_t msr, uint64_t value) {
@@ -29,7 +27,6 @@ void percpu_init(void) {
     msg[i] = '\0';
     printk(WHITE, BLACK, msg);
     
-    // Zero out the structure
     for (int j = 0; j < sizeof(percpu_t); j++) {
         ((uint8_t*)&boot_cpu_data)[j] = 0;
     }
@@ -37,11 +34,9 @@ void percpu_init(void) {
     boot_cpu_data.cpu_id = 0;
     boot_cpu_data.current_tid = 0;
     
-    // Allocate kernel stack for syscalls
     extern uint64_t kernel_stack_top;
     boot_cpu_data.kernel_stack = kernel_stack_top;
     
-    // Set GS base to point to per-CPU data
     uint64_t percpu_addr = (uint64_t)&boot_cpu_data;
     wrmsr(MSR_GS_BASE, percpu_addr);
     
@@ -57,7 +52,6 @@ void percpu_init(void) {
     msg[i] = '\0';
     printk(MAGENTA, BLACK, msg, boot_cpu_data.kernel_stack);
     
-    // Verify it worked
     uint64_t gs_test;
     __asm__ volatile("mov %%gs:0, %0" : "=r"(gs_test));
     

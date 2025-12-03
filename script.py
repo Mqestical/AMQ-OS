@@ -1,97 +1,112 @@
 #!/usr/bin/env python3
 import os
+import sys
 import re
 
-# Color mapping dictionary (RGB part only)
-COLOR_MAP = {
-    '000000': 'BLACK',
-    'ffffff': 'WHITE',
-    'ff0000': 'RED',
-    '00ff00': 'GREEN',
-    '0000ff': 'BLUE',
-    'ffff00': 'YELLOW',
-    '00ffff': 'CYAN',
-    'ff00ff': 'MAGENTA',
-    '808080': 'GRAY',
-    'ffa500': 'ORANGE',
-    '800080': 'PURPLE',
-    'a52a2a': 'BROWN',
-    'ffc0cb': 'PINK',
-}
-
-def replace_colors_in_file(filepath):
-    """Replace hex color codes (6 or 8 digit) with color names."""
+def remove_comments(file_path):
+    """Remove // comments from a file, including inline comments."""
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
 
-        original_content = content
-        replacements_made = 0
+        filtered_lines = []
+        removed_count = 0
 
-        # Match 0x followed by either 6 or 8 hex digits
-        # Capture the RGB part (first 6 digits)
-        pattern = re.compile(r'0x([0-9A-Fa-f]{6})(?:[0-9A-Fa-f]{2})?', re.IGNORECASE)
+        for line in lines:
+            original = line
 
-        def replacer(match):
-            rgb = match.group(1).lower()
-            if rgb in COLOR_MAP:
-                return COLOR_MAP[rgb]
-            else:
-                # Not a known color, keep original
-                return match.group(0)
+            # Remove inline // comments (preserve code before //)
+            # This handles: "code here  // comment"
+            if '//' in line:
+                # Find the position of //
+                comment_pos = line.find('//')
 
-        content = pattern.sub(replacer, content)
+                # Check if it's actually a comment (not in a string literal)
+                # Simple approach: check if // is outside quotes
+                in_string = False
+                quote_char = None
+                escaped = False
 
-        # Count how many were actually replaced
-        if content != original_content:
-            replacements_made = len(pattern.findall(original_content))
-            # Write the file
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(content)
+                for i, char in enumerate(line[:comment_pos]):
+                    if escaped:
+                        escaped = False
+                        continue
+                    if char == '\\':
+                        escaped = True
+                        continue
+                    if char in ['"', "'"]:
+                        if not in_string:
+                            in_string = True
+                            quote_char = char
+                        elif char == quote_char:
+                            in_string = False
+                            quote_char = None
 
-        return replacements_made
+                # If // is not inside a string, remove the comment
+                if not in_string:
+                    line_before_comment = line[:comment_pos].rstrip()
 
+                    # If line only had a comment (nothing before //), skip it entirely
+                    if not line_before_comment:
+                        removed_count += 1
+                        continue
+                    else:
+                        # Keep the code, add back newline
+                        line = line_before_comment + '\n'
+
+            filtered_lines.append(line)
+            if original != line:
+                removed_count += 1
+
+        # Only write if changes were made
+        if removed_count > 0:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.writelines(filtered_lines)
+            print(f"✓ {file_path}: Modified {removed_count} line(s)")
+            return removed_count
+        return 0
     except Exception as e:
-        print(f"Error processing {filepath}: {e}")
+        print(f"✗ Error processing {file_path}: {e}", file=sys.stderr)
         return 0
 
-def process_directory(base_path):
-    """Recursively process all .c files in directory."""
-    total_files = 0
-    total_replacements = 0
+def process_directory(root_dir, extensions=None):
+    """Recursively process all files in directory."""
+    if extensions is None:
+        extensions = {'.c', '.h', '.cpp', '.hpp', '.cc', '.cxx'}
 
-    for root, dirs, files in os.walk(base_path):
-        for file in files:
-            if file.endswith('.c'):
-                filepath = os.path.join(root, file)
-                replacements = replace_colors_in_file(filepath)
+    total_removed = 0
+    files_processed = 0
 
-                if replacements > 0:
-                    total_files += 1
-                    total_replacements += replacements
-                    print(f"✓ {filepath}: {replacements} replacement(s)")
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        for filename in filenames:
+            # Check if file has a relevant extension
+            if any(filename.endswith(ext) for ext in extensions):
+                file_path = os.path.join(dirpath, filename)
+                removed = remove_comments(file_path)
+                if removed > 0:
+                    files_processed += 1
+                total_removed += removed
 
-    return total_files, total_replacements
+    print(f"\n{'='*50}")
+    print(f"Summary: Processed {files_processed} file(s)")
+    print(f"Total lines modified: {total_removed}")
+    print(f"{'='*50}")
 
 if __name__ == "__main__":
-    # Set the base directory to search
-    base_dir = "src/kernel"
+    # Use current directory if no argument provided
+    target_dir = sys.argv[1] if len(sys.argv) > 1 else '.'
 
-    if not os.path.exists(base_dir):
-        print(f"Error: Directory '{base_dir}' not found!")
-        print("Make sure you're running this script from the AMQ-OS directory.")
-        exit(1)
+    if not os.path.isdir(target_dir):
+        print(f"Error: '{target_dir}' is not a valid directory", file=sys.stderr)
+        sys.exit(1)
 
-    print(f"Scanning {base_dir} for .c files...")
-    print("Replacing hex color codes with color names...")
-    print("-" * 50)
+    print(f"Processing files in: {os.path.abspath(target_dir)}")
+    print(f"{'='*50}")
 
-    files_modified, total_replacements = process_directory(base_dir)
+    # Ask for confirmation
+    response = input("This will modify files. Continue? (y/n): ")
+    if response.lower() != 'y':
+        print("Aborted.")
+        sys.exit(0)
 
-    print("-" * 50)
-    print(f"\nSummary:")
-    print(f"  Files modified: {files_modified}")
-    print(f"  Total replacements: {total_replacements}")
-
-    if total_replacements == 0:
-        print("\nNo color codes found to replace.")
+    process_directory(target_dir)

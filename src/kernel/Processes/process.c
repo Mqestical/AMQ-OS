@@ -3,15 +3,11 @@
 #include "print.h"
 #include "string_helpers.h"
 
-// Global process table
 process_t process_table[MAX_PROCESSES];
 
-// Counter for PID generation
 static uint32_t next_pid = 1;
 
-// Initialize process management
 void process_init(void) {
-    // Clear process table
     for (int i = 0; i < MAX_PROCESSES; i++) {
         process_table[i].used = 0;
         process_table[i].pid = 0;
@@ -31,7 +27,6 @@ void process_init(void) {
     PRINT(MAGENTA, BLACK, "[PROCESS] Process management initialized\n");
 }
 
-// Find free process slot
 static int find_free_process(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (!process_table[i].used) {
@@ -41,7 +36,6 @@ static int find_free_process(void) {
     return -1;
 }
 
-// Create a new process
 int process_create(const char *name, uint64_t memory_space) {
     int idx = find_free_process();
     if (idx < 0) {
@@ -56,7 +50,6 @@ int process_create(const char *name, uint64_t memory_space) {
     proc->thread_count = 0;
     proc->used = 1;
     
-    // Copy name
     int i = 0;
     while (name[i] && i < 63) {
         proc->name[i] = name[i];
@@ -70,7 +63,6 @@ int process_create(const char *name, uint64_t memory_space) {
     return proc->pid;
 }
 
-// Get process by PID
 process_t* get_process(uint32_t pid) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (process_table[i].used && process_table[i].pid == pid) {
@@ -80,7 +72,6 @@ process_t* get_process(uint32_t pid) {
     return NULL;
 }
 
-// Print process table
 void print_process_table(void) {
     PRINT(WHITE, BLACK, "\n=== Process Table ===\n");
     
@@ -98,7 +89,6 @@ void print_process_table(void) {
             PRINT(MAGENTA, BLACK, "PID=%u | '%s' | Memory=0x%llX | State=%s | Threads=%u\n",
                   p->pid, p->name, p->memory_space, state_str, p->thread_count);
             
-            // Print threads
             for (uint32_t j = 0; j < p->thread_count; j++) {
                 thread_t *t = p->threads[j];
                 if (t) {

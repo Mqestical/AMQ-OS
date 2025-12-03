@@ -1,6 +1,3 @@
-// ============================================================================
-// IRQ.c - MINIMAL SAFE VERSION
-// ============================================================================
 
 #include <efi.h>
 #include <efilib.h>
@@ -11,32 +8,24 @@
 #include "fg.h"
 #include "string_helpers.h"
 
-// PIC ports
 #define PIC1_COMMAND 0x20
 #define PIC1_DATA    0x21
 #define PIC2_COMMAND 0xA0
 #define PIC2_DATA    0xA1
 #define PIC_EOI      0x20
 
-// PIT (Programmable Interval Timer) ports
 #define PIT_CHANNEL0 0x40
 #define PIT_CHANNEL1 0x41
 #define PIT_CHANNEL2 0x42
 #define PIT_COMMAND  0x43
 
-// Timer frequency (ticks per second)
-#define TIMER_FREQ 1000  // 1000 Hz = 1ms per tick
+#define TIMER_FREQ 1000
 
-// Global timer tick counter (incremented by IRQ0)
 volatile uint64_t timer_ticks = 0;
 volatile uint64_t timer_seconds = 0;
 
-// IRQ handler table (16 IRQs total)
 static irq_handler_t irq_handlers[16] = {NULL};
 
-// ============================================================================
-// PIC FUNCTIONS
-// ============================================================================
 
 void pic_send_eoi(int irq) {
     if (irq >= 8) {
@@ -58,7 +47,6 @@ void pic_clear_mask(uint8_t irq) {
         port = PIC2_DATA;
         bit = irq - 8;
         
-        // Ensure IRQ2 (cascade) is unmasked on master
         uint8_t master_mask = inb(PIC1_DATA);
         if (master_mask & 0x04) {
             master_mask &= ~0x04;
@@ -67,12 +55,10 @@ void pic_clear_mask(uint8_t irq) {
         }
     }
     
-    // Read, modify, write
     uint8_t mask = inb(port);
     mask &= ~(1 << bit);
     outb(port, mask);
     
-    // I/O delay
     for (volatile int i = 0; i < 1000; i++);
 }
 
@@ -95,9 +81,6 @@ uint8_t pic_get_mask(void) {
     return inb(PIC1_DATA);
 }
 
-// ============================================================================
-// IRQ HANDLER REGISTRATION
-// ============================================================================
 
 void irq_install_handler(int irq, irq_handler_t handler) {
     if (irq >= 0 && irq < 16) {
@@ -111,9 +94,6 @@ void irq_uninstall_handler(int irq) {
     }
 }
 
-// ============================================================================
-// COMMON IRQ HANDLER (called from assembly stubs)
-// ============================================================================
 
 void irq_common_handler(int irq_num) {
     if (irq_handlers[irq_num] != NULL) {
@@ -124,27 +104,18 @@ void irq_common_handler(int irq_num) {
     pic_send_eoi(irq_num);
 }
 
-// ============================================================================
-// TIMER IRQ HANDLER (IRQ0) - ULTRA MINIMAL VERSION
-// ============================================================================
 
 void timer_irq_handler(void) {
     timer_ticks++;
     
-    // Update job states (wake sleeping jobs, clean up finished jobs)
     update_jobs_safe(); 
     
-    // If scheduler is enabled, tick it
     extern void scheduler_tick(void);
     scheduler_tick();
     
-    // Send EOI
     outb(0x20, 0x20);
 }
 
-// ============================================================================
-// TIMER HANDLER ASSEMBLY WRAPPER
-// ============================================================================
 
 __attribute__((naked))
 void timer_handler_asm(void) {
@@ -188,9 +159,6 @@ void timer_handler_asm(void) {
     );
 }
 
-// ============================================================================
-// PIT INITIALIZATION
-// ============================================================================
 
 void pit_init(uint32_t frequency) {
     uint32_t divisor = 1193182 / frequency;
@@ -203,9 +171,6 @@ void pit_init(uint32_t frequency) {
     for (volatile int i = 0; i < 1000; i++);
 }
 
-// ============================================================================
-// IRQ SYSTEM INITIALIZATION
-// ============================================================================
 
 void irq_init(void) {
     PRINT(WHITE, BLACK, "[IRQ] Initializing IRQ system...\n");
@@ -238,9 +203,6 @@ void irq_init(void) {
     PRINT(MAGENTA, BLACK, "[IRQ] IRQ system ready\n");
 }
 
-// ============================================================================
-// TIMER INFO
-// ============================================================================
 
 uint64_t get_timer_ticks(void) {
     return timer_ticks;

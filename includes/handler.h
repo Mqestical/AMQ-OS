@@ -1,10 +1,7 @@
-// registers.h
 #pragma once
 #include <stdint.h>
 
-// Pushed by the ISR stub (order must match your assembly stub)
 typedef struct registers {
-    // General-purpose registers
     uint64_t r15;
     uint64_t r14;
     uint64_t r13;
@@ -21,11 +18,9 @@ typedef struct registers {
     uint64_t rbx;
     uint64_t rax;
 
-    // Interrupt number and error code (if applicable)
     uint64_t int_no;
     uint64_t err_code;
 
-    // Pushed automatically by CPU on exception
     uint64_t rip;
     uint64_t cs;
     uint64_t rflags;
@@ -33,7 +28,6 @@ typedef struct registers {
     uint64_t ss;
 } registers_t;
 
-// Forward declarations for CPU exception handlers
 void isr0(registers_t* r);
 void isr1(registers_t* r);
 void isr2(registers_t* r);

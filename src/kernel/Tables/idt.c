@@ -10,7 +10,6 @@
 #define GDT_ENTRIES 5
 #define INPUT_BUFFER_SIZE 256
 
-// GDT Entry Structure
 struct gdt_entry {
     uint16_t limit_low;
     uint16_t base_low;
@@ -111,7 +110,6 @@ void idt_install() {
     idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
     idtp.base = (uint64_t)&idt;
     
-    // Clear all entries first
     for(int i = 0; i < IDT_ENTRIES; i++) {
         idt[i].offset_low = 0;
         idt[i].selector = 0;
@@ -154,20 +152,15 @@ void idt_install() {
     idt_set_gate(29, (uint64_t)isr29, 0x08, 0x8E);
     idt_set_gate(30, (uint64_t)isr30, 0x08, 0x8E);
     idt_set_gate(31, (uint64_t)isr31, 0x08, 0x8E);
-    // set handler to handle interrupt vectors < 256
     for(int i = 32; i < 256; i++) {
         idt_set_gate(i, (uint64_t)generic_handler, 0x08, 0x8E);
     }
     
-    // CRITICAL: Set specific handlers
-    // Timer (IRQ0 -> vector 32)
     extern void timer_handler_asm(void);
     idt_set_gate(32, (uint64_t)timer_handler_asm, 0x08, 0x8E);
     
-    // Keyboard (IRQ1 -> vector 33)
     idt_set_gate(33, (uint64_t)keyboard_handler, 0x08, 0x8E);
 
-    // Load the IDT
     __asm__ volatile("lidt %0" : : "m"(idtp));
 
     PRINT(MAGENTA, BLACK, "[IDT] IDT installed (256 entries)\n");
@@ -177,21 +170,18 @@ void idt_install() {
 
 #include "keyboard.h"
 
-// Keyboard scancode buffer
 volatile uint8_t scancode_buffer[256];
 volatile uint8_t scancode_read_pos = 0;
 volatile uint8_t scancode_write_pos = 0;
 
-// Debug counters
 volatile uint32_t interrupt_counter = 0;
 volatile uint8_t last_scancode = 0;
 volatile uint8_t last_status = 0;
 volatile uint32_t interrupt_vector = 0;
 
-// INPUT BUFFER - stores user's typed line
 char input_buffer[INPUT_BUFFER_SIZE];
 volatile int input_pos = 0;
-volatile int input_ready = 0;  // Set to 1 when user presses Enter
+volatile int input_ready = 0;
 
 void generic_handler_tracked(void) {
     __asm__ volatile(
@@ -240,7 +230,6 @@ void keyboard_handler(void) {
     );
 }
 
-// Scancode to ASCII conversion
 static char scancode_to_ascii(uint8_t scancode, int shifted) {
     if (!shifted) {
         switch(scancode) {
@@ -256,9 +245,9 @@ static char scancode_to_ascii(uint8_t scancode, int shifted) {
             case 0x0B: return '0';
             case 0x0C: return '-';
             case 0x0D: return '=';
-            case 0x0E: return '\b';  // Backspace
-            case 0x1C: return '\n';  // Enter
-            case 0x39: return ' ';   // Space
+            case 0x0E: return '\b';
+            case 0x1C: return '\n';
+            case 0x39: return ' ';
             case 0x1E: return 'a';
             case 0x1F: return 's';
             case 0x20: return 'd';
@@ -291,7 +280,6 @@ static char scancode_to_ascii(uint8_t scancode, int shifted) {
             default: return 0;
         }
     } else {
-        // Shifted characters
         switch(scancode) {
             case 0x02: return '!';
             case 0x03: return '@';
@@ -341,32 +329,26 @@ static char scancode_to_ascii(uint8_t scancode, int shifted) {
 
 static int shift_pressed = 0;
 
-// Handle backspace by erasing last character on screen
 void handle_backspace(void) {
     if (input_pos > 0) {
         input_pos--;
         input_buffer[input_pos] = '\0';
         
-        // Move cursor back and erase character
         if (cursor.x >= 8) {
             cursor.x -= 8;
         } else if (cursor.y >= 8) {
-            // Wrap to previous line
             cursor.y -= 8;
             cursor.x = (fb.width - 8);
         }
         
-        // Draw space to erase the character
         draw_char(cursor.x, cursor.y, ' ', cursor.fg_color, cursor.bg_color);
     }
 }
 
-// Process keyboard buffer with input storage
 void process_keyboard_buffer(void) {
     while (scancode_read_pos != scancode_write_pos) {
         uint8_t scancode = scancode_buffer[scancode_read_pos++];
         
-        // Handle shift keys
         if (scancode == 0x2A || scancode == 0x36) {
             shift_pressed = 1;
             continue;
@@ -376,29 +358,22 @@ void process_keyboard_buffer(void) {
             continue;
         }
         
-        // Ignore key releases
         if (scancode & 0x80) continue;
         
-        // Convert to ASCII
         char ascii = scancode_to_ascii(scancode, shift_pressed);
         
         if (ascii) {
-            // Handle special keys
             if (ascii == '\b') {
-                // BACKSPACE
                 handle_backspace();
                 serial_write_byte(COM1, '\b');
             } else if (ascii == '\n') {
-                // ENTER - finalize input
                 input_buffer[input_pos] = '\0';
-                input_ready = 1;  // Signal that input is ready
+                input_ready = 1;
                 
-                // Echo newline to screen and serial
                 printc('\n');
                 serial_write_byte(COM1, '\r');
                 serial_write_byte(COM1, '\n');
             } else {
-                // Regular character
                 if (input_pos < INPUT_BUFFER_SIZE - 1) {
                     input_buffer[input_pos++] = ascii;
                     cursor.fg_color = WHITE;
@@ -411,9 +386,7 @@ void process_keyboard_buffer(void) {
     }
 }
 
-// Function to get user input (blocking)
 char* get_input_line(void) {
-    // Wait for Enter key
     input_ready = 0;
     input_pos = 0;
     
@@ -425,12 +398,10 @@ char* get_input_line(void) {
     return input_buffer;
 }
 
-// Function to check if input is ready (non-blocking)
 int input_available(void) {
     return input_ready;
 }
 
-// Get the input and reset for next line
 char* get_input_and_reset(void) {
     if (input_ready) {
         input_ready = 0;

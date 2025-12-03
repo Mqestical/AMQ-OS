@@ -3,21 +3,18 @@
 #include "print.h"
 #include "string_helpers.h"
 
-#define ATA_TIMEOUT 5000000  // Much longer timeout for VirtualBox
+#define ATA_TIMEOUT 5000000
 #define ATA_PRIMARY_ALTSTATUS 0x3F6
 
-// Wait for drive to be ready with timeout
 static int ata_wait_ready(void) {
     int timeout = ATA_TIMEOUT;
     while (timeout > 0) {
         uint8_t status = inb(ATA_PRIMARY_STATUS);
         
-        // Check if BSY is clear and RDY is set
         if (!(status & ATA_STATUS_BSY) && (status & ATA_STATUS_RDY)) {
-            return 0;  // Success
+            return 0;
         }
         
-        // Check for error
         if (status & ATA_STATUS_ERR) {
             PRINT(YELLOW, BLACK, "[ATA] Error bit set in status: 0x%x\n", status);
             return -1;
@@ -28,13 +25,12 @@ static int ata_wait_ready(void) {
     }
     
     PRINT(YELLOW, BLACK, "[ATA] Timeout waiting for ready\n");
-    return -1;  // Timeout
+    return -1;
 }
 
 static int ata_wait_drq(void) {
     int timeout = ATA_TIMEOUT;
     
-    // First wait for BSY to clear
     while (timeout > 0) {
         uint8_t status = inb(ATA_PRIMARY_STATUS);
         
@@ -49,12 +45,11 @@ static int ata_wait_drq(void) {
         return -1;
     }
     
-    // Now wait for DRQ
     timeout = ATA_TIMEOUT;
     while (timeout > 0) {
         uint8_t status = inb(ATA_PRIMARY_STATUS);
         
-        if (status & ATA_STATUS_DRQ) return 0;  // Success
+        if (status & ATA_STATUS_DRQ) return 0;
         
         if (status & ATA_STATUS_ERR) {
             PRINT(YELLOW, BLACK, "[ATA] Error bit set waiting for DRQ: 0x%x\n", status);
@@ -69,11 +64,10 @@ static int ata_wait_drq(void) {
     return -1;
 }
 
-// Soft reset the ATA controller
 static void ata_soft_reset(void) {
-    outb(ATA_PRIMARY_CONTROL, 0x04);  // Set SRST bit
+    outb(ATA_PRIMARY_CONTROL, 0x04);
     for (volatile int i = 0; i < 100000; i++);
-    outb(ATA_PRIMARY_CONTROL, 0x00);  // Clear SRST
+    outb(ATA_PRIMARY_CONTROL, 0x00);
     for (volatile int i = 0; i < 100000; i++);
 }
 
@@ -100,7 +94,7 @@ void ata_init(void) {
     
     PRINT(MAGENTA, BLACK, "[ATA] Drive ready\n");
     
-    outb(ATA_PRIMARY_COMMAND, 0xEC);  // IDENTIFY
+    outb(ATA_PRIMARY_COMMAND, 0xEC);
     for (volatile int i = 0; i < 100000; i++);
     
     status = inb(ATA_PRIMARY_STATUS);
@@ -190,7 +184,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, uint8_t *buffer) {
         for (volatile int k = 0; k < 10000; k++);
     }
     
-    outb(ATA_PRIMARY_COMMAND, 0xE7);  // Flush
+    outb(ATA_PRIMARY_COMMAND, 0xE7);
     for (volatile int i = 0; i < 100000; i++);
     
     if (ata_wait_ready() != 0) {

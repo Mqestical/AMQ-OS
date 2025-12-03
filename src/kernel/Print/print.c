@@ -2,7 +2,6 @@
 #include "FONT.h"
 #include "string_helpers.h"
 #include <stdarg.h>
-// Globals
 Framebuffer fb;
 Cursor cursor = {0, 0, WHITE, RED};
 EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
@@ -45,18 +44,15 @@ void put_pixel(uint32_t x, uint32_t y, uint32_t color) {
 }
 
 void draw_char(uint32_t x, uint32_t y, char c, uint32_t fg, uint32_t bg) {
-    // Bounds check
     if (x >= fb.width || y >= fb.height) return;
     if (x + 8 > fb.width || y + 8 > fb.height) return;
     
-    // Get glyph data
     unsigned char index = (unsigned char)c;
     if (index >= 128) index = 0;
     
     char *glyph = font8x8_basic[index];
 
     
-    // Draw 8x8 character
     for (int row = 0; row < 8; row++) {
     unsigned char row_data = (unsigned char)glyph[row];
     for (int col = 0; col < 8; col++) {
@@ -83,7 +79,6 @@ void draw_string(uint32_t x, uint32_t y, const char *s, uint32_t fg, uint32_t bg
         }
         s++;
         
-        // Wrap to next line if needed
         if (x + 8 > fb.width) {
             x = start_x;
             y += 8;
@@ -112,11 +107,9 @@ void SetColors(uint32_t fg, uint32_t bg) {
 }
 
 void printc(char c) {
-    // Handle special characters first
     if (c == '\n') {
         cursor.x = 0;
         cursor.y += 8;
-        // Wrap to top if we go off screen
         if (cursor.y + 8 > fb.height) {
             cursor.y = 0;
         }
@@ -130,7 +123,6 @@ void printc(char c) {
 
     if (c == '\t') {
         cursor.x = ((cursor.x / 8) + 4) * 8;
-        // Check for line wrap
         if (cursor.x + 8 > fb.width) {
             cursor.x = 0;
             cursor.y += 8;
@@ -141,18 +133,14 @@ void printc(char c) {
         return;
     }
 
-    // Check if character will fit on current line
     if (cursor.x + 8 > fb.width) {
-        // Wrap to next line
         cursor.x = 0;
         cursor.y += 8;
-        // Wrap to top if needed
         if (cursor.y + 8 > fb.height) {
             cursor.y = 0;
         }
     }
 
-    // Bounds check - if we're at an invalid position, reset
     if (cursor.y + 8 > fb.height) {
         cursor.y = 0;
     }
@@ -160,17 +148,15 @@ void printc(char c) {
         cursor.x = 0;
     }
 
-    // Draw the character
     draw_char(cursor.x, cursor.y, c, cursor.fg_color, cursor.bg_color);
 
-    // Advance cursor by 8 pixels (one character width)
     cursor.x += 8;
 }
 
 void printcs(char *str) {
     if (!str) return;
     for (size_t i = 0; str[i] != '\0'; i++) {
-        printc(str[i]);  // reuse single-char function
+        printc(str[i]);
     }
 }
 
@@ -195,13 +181,11 @@ void print_unsigned(unsigned long long num, int base) {
         num /= base;
     }
     
-    // Print in reverse (most significant digit first)
     while (i > 0) {
         printc(buf[--i]);
     }
 }
 
-// Helper to print signed integer
 void print_signed(long long num) {
     if (num < 0) {
         printc('-');
@@ -210,7 +194,6 @@ void print_signed(long long num) {
     print_unsigned((unsigned long long)num, 10);
 }
 
-// Helper to copy string literal to stack (works around .rodata issue)
 static void safe_print_str(const char* str) {
     if (!str) {
         printc('(');
@@ -222,18 +205,15 @@ static void safe_print_str(const char* str) {
         return;
     }
     
-    // Copy to local buffer to ensure it's accessible
     char buf[256];
     int i = 0;
     
-    // Copy string to stack
     while (str[i] && i < 255) {
         buf[i] = str[i];
         i++;
     }
     buf[i] = '\0';
     
-    // Now print from stack
     for (int j = 0; j < i; j++) {
         printc(buf[j]);
     }
@@ -242,13 +222,11 @@ static void safe_print_str(const char* str) {
 void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
     if (!format) return;
     
-    // Save and set colors
     uint32_t old_fg = cursor.fg_color;
     uint32_t old_bg = cursor.bg_color;
     cursor.fg_color = text_fg;
     cursor.bg_color = text_bg;
     
-    // Copy format string to stack to avoid .rodata issues
     char fmt[512];
     int fmt_len = 0;
     while (format[fmt_len] && fmt_len < 511) {
@@ -268,11 +246,9 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
             continue;
         }
         
-        // Found '%'
         i++;
         if (i >= fmt_len) break;
         
-        // Handle 'll' prefix for long long
         int is_longlong = 0;
         if (fmt[i] == 'l') {
             if (i + 1 < fmt_len && fmt[i + 1] == 'l') {
@@ -321,8 +297,6 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
                 unsigned long long val = is_longlong ?
                     va_arg(args, unsigned long long) :
                     (unsigned long long)va_arg(args, unsigned int);
-                // For uppercase, we'd need a modified print_unsigned
-                // For now, just use lowercase
                 print_unsigned(val, 16);
                 break;
             }
@@ -357,13 +331,10 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
     
     va_end(args);
     
-    // Restore colors
     cursor.fg_color = old_fg;
     cursor.bg_color = old_bg;
 }
 
-// Helper macro to make usage easier with string literals
-// Use this instead of direct PRINT calls:
 
 
 void buf_write(Buffer *buf, const char *str) {

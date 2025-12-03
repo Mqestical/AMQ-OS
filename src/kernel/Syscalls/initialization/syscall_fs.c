@@ -4,7 +4,6 @@
 #include "string_helpers.h"
 
 static int validate_user_pointer(const void *ptr, size_t size) {
-    // TODO: Implement proper validation // For now, just check for NULL
     return (ptr != NULL);
 }
 

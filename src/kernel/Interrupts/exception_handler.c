@@ -4,7 +4,6 @@
 
 void fatal_error(registers_t* r);
 
-// Forward declarations for CPU exception handlers
 void isr0(registers_t* r);  void isr1(registers_t* r);  void isr2(registers_t* r);
 void isr3(registers_t* r);  void isr4(registers_t* r);  void isr5(registers_t* r);
 void isr6(registers_t* r);  void isr7(registers_t* r);  void isr8(registers_t* r);
@@ -172,8 +171,6 @@ void isr14(registers_t* r) {
     for(;;) asm volatile("hlt");
 }
 
-// ISR15–ISR31 follow same pattern as above; all use PRINT(...) instead of printk
-// Reserved exceptions simply report vector and RIP
 
 #define DEFINE_RESERVED_ISR(n) \
 void isr##n(registers_t* r) { \

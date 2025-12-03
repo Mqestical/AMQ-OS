@@ -1,4 +1,3 @@
-// start.c - FIXED: All string literals replaced with local arrays
 
 #include <efi.h>
 #include <efilib.h>
@@ -45,7 +44,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     uefi_call_wrapper(ST->ConOut->SetCursorPosition, 3, ST->ConOut, 0, 0);
     uefi_call_wrapper(ST->ConOut->OutputString, 2, ST->ConOut, L"AMQ OS - Booting...\r\n");
 
-    // get memory map
     EFI_MEMORY_DESCRIPTOR *memory_map = NULL;
     UINTN memory_map_size = 0;
     UINTN map_key = 0;
@@ -113,9 +111,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     serial_init(COM1);
     PRINT(MAGENTA, BLACK, "[OK] Serial initialized\n");
 
-    // ========================================================================
-    // Initialize job system before enabling interrupts
-    // ========================================================================
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing job system...\n");
     jobs_init();
@@ -126,9 +121,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     irq_init();
     PRINT(MAGENTA, BLACK, "[OK] IRQ system enabled\n");
 
-    // ========================================================================
-    // Test timer for a few seconds
-    // ========================================================================
 
     PRINT(WHITE, BLACK, "\n[TEST] Testing timer for 3 seconds...\n");
 
@@ -147,18 +139,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     PRINT(MAGENTA, BLACK, "[OK] Timer is working correctly!\n");
 
-    // ========================================================================
-    // Enable keyboard
-    // ========================================================================
 
     uint8_t mask = inb(0x21);
     mask &= ~0x02;
     outb(0x21, mask);
     PRINT(MAGENTA, BLACK, "[OK] Keyboard enabled\n");
 
-    // ========================================================================
-    // Storage & Filesystem
-    // ========================================================================
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing storage...\n");
     ata_init();
@@ -203,15 +189,11 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     PRINT(MAGENTA, BLACK, "[OK] Filesystem mounted\n");
 
-    // ========================================================================
-    // Process/Thread System
-    // ========================================================================
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing processes...\n");
     process_init();
     scheduler_init();
 
-    // Initialize background thread data
     extern cmd_thread_data_t bg_thread_data[MAX_JOBS];
     for (int i = 0; i < MAX_JOBS; i++) {
         bg_thread_data[i].job_id = 0;
@@ -221,9 +203,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     init_kernel_threads();
     PRINT(MAGENTA, BLACK, "[OK] Threads initialized (scheduler DISABLED)\n");
 
-    // ========================================================================
-    // Enable job tracking and start shell
-    // ========================================================================
 
     PRINT(MAGENTA, BLACK, "\n=== Boot Complete ===\n");
 

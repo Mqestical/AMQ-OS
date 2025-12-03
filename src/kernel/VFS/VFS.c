@@ -1,4 +1,3 @@
-// VFS.c - FIXED: All string literals replaced with local arrays
 
 #include "vfs.h"
 #include "memory.h"
@@ -6,7 +5,6 @@
 #include "tinyfs.h"
 #include "string_helpers.h"
 
-// Global VFS state
 static vfs_node_t *root_node = NULL;
 static vfs_node_t *current_dir = NULL;
 static char current_path[256] = "/";
@@ -14,7 +12,6 @@ static file_descriptor_t vfs_fd_table[MAX_OPEN_FILES];
 static filesystem_t *registered_filesystems[16];
 static int num_filesystems = 0;
 
-// String helper functions
 int str_len(const char *str) {
     int len = 0;
     while (str[len]) len++;
@@ -148,7 +145,6 @@ int vfs_mount(const char *fs_type, const char *device, const char *mountpoint) {
     
     PRINT(MAGENTA, BLACK, "[VFS] Mount operation successful\n");
     
-    // Check if mounting to root
     if (mountpoint[0] == '/' && mountpoint[1] == '\0') {
         PRINT(WHITE, BLACK, "[VFS] Getting root node from filesystem...\n");
         root_node = fs->ops->get_root(fs);
