@@ -2,9 +2,6 @@
 #include "print.h"
 #include "string_helpers.h"
 
-// ============================================================================
-// STRING UTILITIES
-// ============================================================================
 
 static int str_equals(const char *s1, const char *s2) {
     while (*s1 && *s2 && *s1 == *s2) {
@@ -14,9 +11,6 @@ static int str_equals(const char *s1, const char *s2) {
     return (*s1 == '\0' && *s2 == '\0');
 }
 
-// ============================================================================
-// CONTEXT MANAGEMENT
-// ============================================================================
 
 void asm_init(asm_context_t *ctx) {
     for (size_t i = 0; i < MAX_ASM_SIZE; i++) {
@@ -51,12 +45,8 @@ static void asm_emit_bytes(asm_context_t *ctx, const uint8_t *bytes, size_t coun
     }
 }
 
-// ============================================================================
-// REGISTER AND IMMEDIATE PARSING
-// ============================================================================
 
 static int parse_register(const char *reg) {
-    // 64-bit registers
     if (reg[0] == 'r' && reg[1] == 'a' && reg[2] == 'x' && reg[3] == '\0') return 0;
     if (reg[0] == 'r' && reg[1] == 'c' && reg[2] == 'x' && reg[3] == '\0') return 1;
     if (reg[0] == 'r' && reg[1] == 'd' && reg[2] == 'x' && reg[3] == '\0') return 2;
@@ -70,7 +60,6 @@ static int parse_register(const char *reg) {
     if (reg[0] == 'r' && reg[1] == '1' && reg[2] >= '0' && reg[2] <= '5' && reg[3] == '\0') 
         return 10 + (reg[2] - '0');
     
-    // 32-bit registers
     if (reg[0] == 'e' && reg[1] == 'a' && reg[2] == 'x' && reg[3] == '\0') return 0;
     if (reg[0] == 'e' && reg[1] == 'c' && reg[2] == 'x' && reg[3] == '\0') return 1;
     if (reg[0] == 'e' && reg[1] == 'd' && reg[2] == 'x' && reg[3] == '\0') return 2;
@@ -88,13 +77,11 @@ static int64_t parse_immediate(const char *str) {
     int neg = 0;
     int i = 0;
     
-    // Handle negative
     if (str[i] == '-') {
         neg = 1;
         i++;
     }
     
-    // Hexadecimal
     if (str[i] == '0' && (str[i+1] == 'x' || str[i+1] == 'X')) {
         i += 2;
         while (str[i]) {
@@ -110,7 +97,6 @@ static int64_t parse_immediate(const char *str) {
             i++;
         }
     } 
-    // Decimal
     else {
         while (str[i] >= '0' && str[i] <= '9') {
             val = val * 10 + (str[i] - '0');
@@ -121,51 +107,44 @@ static int64_t parse_immediate(const char *str) {
     return neg ? -val : val;
 }
 
-// ============================================================================
-// INSTRUCTION ENCODERS
-// ============================================================================
 
-// MOV rax, imm64 - Full 64-bit immediate
 static void asm_mov_rax_imm64(asm_context_t *ctx, int64_t imm) {
-    asm_emit(ctx, 0x48);  // REX.W
-    asm_emit(ctx, 0xB8);  // MOV rax, imm64
+    asm_emit(ctx, 0x48);
+    asm_emit(ctx, 0xB8);
     for (int i = 0; i < 8; i++) {
         asm_emit(ctx, (imm >> (i * 8)) & 0xFF);
     }
 }
 
-// MOV reg, imm32 - Sign-extended 32-bit immediate
 static void asm_mov_reg_imm32(asm_context_t *ctx, int reg, int32_t imm) {
-    uint8_t rex = 0x48;  // REX.W
+    uint8_t rex = 0x48;
     if (reg >= 8) {
-        rex |= 0x01;  // REX.B
+        rex |= 0x01;
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0xC7);  // MOV r/m64, imm32
-    asm_emit(ctx, 0xC0 | reg);  // ModR/M: 11 000 reg
+    asm_emit(ctx, 0xC7);
+    asm_emit(ctx, 0xC0 | reg);
     for (int i = 0; i < 4; i++) {
         asm_emit(ctx, (imm >> (i * 8)) & 0xFF);
     }
 }
 
-// MOV reg, reg - Register to register
 static void asm_mov_reg_reg(asm_context_t *ctx, int dst, int src) {
-    uint8_t rex = 0x48;  // REX.W
+    uint8_t rex = 0x48;
     if (src >= 8) {
-        rex |= 0x04;  // REX.R
+        rex |= 0x04;
         src -= 8;
     }
     if (dst >= 8) {
-        rex |= 0x01;  // REX.B
+        rex |= 0x01;
         dst -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x89);  // MOV r/m64, r64
-    asm_emit(ctx, 0xC0 | (src << 3) | dst);  // ModR/M: 11 src dst
+    asm_emit(ctx, 0x89);
+    asm_emit(ctx, 0xC0 | (src << 3) | dst);
 }
 
-// ADD reg, imm8
 static void asm_add_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -173,12 +152,11 @@ static void asm_add_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x83);  // ADD r/m64, imm8
+    asm_emit(ctx, 0x83);
     asm_emit(ctx, 0xC0 | reg);
     asm_emit(ctx, imm);
 }
 
-// ADD reg, reg
 static void asm_add_reg_reg(asm_context_t *ctx, int dst, int src) {
     uint8_t rex = 0x48;
     if (src >= 8) {
@@ -190,11 +168,10 @@ static void asm_add_reg_reg(asm_context_t *ctx, int dst, int src) {
         dst -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x01);  // ADD r/m64, r64
+    asm_emit(ctx, 0x01);
     asm_emit(ctx, 0xC0 | (src << 3) | dst);
 }
 
-// SUB reg, imm8
 static void asm_sub_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -202,12 +179,11 @@ static void asm_sub_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x83);  // SUB r/m64, imm8
-    asm_emit(ctx, 0xE8 | reg);  // ModR/M: 11 101 reg (opcode /5)
+    asm_emit(ctx, 0x83);
+    asm_emit(ctx, 0xE8 | reg);
     asm_emit(ctx, imm);
 }
 
-// SUB reg, reg
 static void asm_sub_reg_reg(asm_context_t *ctx, int dst, int src) {
     uint8_t rex = 0x48;
     if (src >= 8) {
@@ -219,11 +195,10 @@ static void asm_sub_reg_reg(asm_context_t *ctx, int dst, int src) {
         dst -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x29);  // SUB r/m64, r64
+    asm_emit(ctx, 0x29);
     asm_emit(ctx, 0xC0 | (src << 3) | dst);
 }
 
-// XOR reg, reg
 static void asm_xor_reg_reg(asm_context_t *ctx, int dst, int src) {
     uint8_t rex = 0x48;
     if (src >= 8) {
@@ -235,11 +210,10 @@ static void asm_xor_reg_reg(asm_context_t *ctx, int dst, int src) {
         dst -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x31);  // XOR r/m64, r64
+    asm_emit(ctx, 0x31);
     asm_emit(ctx, 0xC0 | (src << 3) | dst);
 }
 
-// OR reg, reg
 static void asm_or_reg_reg(asm_context_t *ctx, int dst, int src) {
     uint8_t rex = 0x48;
     if (src >= 8) {
@@ -251,11 +225,10 @@ static void asm_or_reg_reg(asm_context_t *ctx, int dst, int src) {
         dst -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x09);  // OR r/m64, r64
+    asm_emit(ctx, 0x09);
     asm_emit(ctx, 0xC0 | (src << 3) | dst);
 }
 
-// AND reg, reg
 static void asm_and_reg_reg(asm_context_t *ctx, int dst, int src) {
     uint8_t rex = 0x48;
     if (src >= 8) {
@@ -267,11 +240,10 @@ static void asm_and_reg_reg(asm_context_t *ctx, int dst, int src) {
         dst -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x21);  // AND r/m64, r64
+    asm_emit(ctx, 0x21);
     asm_emit(ctx, 0xC0 | (src << 3) | dst);
 }
 
-// CMP reg, imm8
 static void asm_cmp_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -279,12 +251,11 @@ static void asm_cmp_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x83);  // CMP r/m64, imm8
-    asm_emit(ctx, 0xF8 | reg);  // ModR/M: 11 111 reg (opcode /7)
+    asm_emit(ctx, 0x83);
+    asm_emit(ctx, 0xF8 | reg);
     asm_emit(ctx, imm);
 }
 
-// CMP reg, reg
 static void asm_cmp_reg_reg(asm_context_t *ctx, int dst, int src) {
     uint8_t rex = 0x48;
     if (src >= 8) {
@@ -296,45 +267,39 @@ static void asm_cmp_reg_reg(asm_context_t *ctx, int dst, int src) {
         dst -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0x39);  // CMP r/m64, r64
+    asm_emit(ctx, 0x39);
     asm_emit(ctx, 0xC0 | (src << 3) | dst);
 }
 
-// PUSH reg
 static void asm_push_reg(asm_context_t *ctx, int reg) {
     if (reg >= 8) {
-        asm_emit(ctx, 0x41);  // REX.B
+        asm_emit(ctx, 0x41);
         reg -= 8;
     }
-    asm_emit(ctx, 0x50 | reg);  // PUSH reg
+    asm_emit(ctx, 0x50 | reg);
 }
 
-// POP reg
 static void asm_pop_reg(asm_context_t *ctx, int reg) {
     if (reg >= 8) {
-        asm_emit(ctx, 0x41);  // REX.B
+        asm_emit(ctx, 0x41);
         reg -= 8;
     }
-    asm_emit(ctx, 0x58 | reg);  // POP reg
+    asm_emit(ctx, 0x58 | reg);
 }
 
-// SYSCALL
 static void asm_syscall(asm_context_t *ctx) {
     asm_emit(ctx, 0x0F);
     asm_emit(ctx, 0x05);
 }
 
-// RET
 static void asm_ret(asm_context_t *ctx) {
     asm_emit(ctx, 0xC3);
 }
 
-// NOP
 static void asm_nop(asm_context_t *ctx) {
     asm_emit(ctx, 0x90);
 }
 
-// INC reg
 static void asm_inc_reg(asm_context_t *ctx, int reg) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -342,11 +307,10 @@ static void asm_inc_reg(asm_context_t *ctx, int reg) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0xFF);  // INC r/m64
-    asm_emit(ctx, 0xC0 | reg);  // ModR/M: 11 000 reg (opcode /0)
+    asm_emit(ctx, 0xFF);
+    asm_emit(ctx, 0xC0 | reg);
 }
 
-// DEC reg
 static void asm_dec_reg(asm_context_t *ctx, int reg) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -354,11 +318,10 @@ static void asm_dec_reg(asm_context_t *ctx, int reg) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0xFF);  // DEC r/m64
-    asm_emit(ctx, 0xC8 | reg);  // ModR/M: 11 001 reg (opcode /1)
+    asm_emit(ctx, 0xFF);
+    asm_emit(ctx, 0xC8 | reg);
 }
 
-// NEG reg
 static void asm_neg_reg(asm_context_t *ctx, int reg) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -366,11 +329,10 @@ static void asm_neg_reg(asm_context_t *ctx, int reg) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0xF7);  // NEG r/m64
-    asm_emit(ctx, 0xD8 | reg);  // ModR/M: 11 011 reg (opcode /3)
+    asm_emit(ctx, 0xF7);
+    asm_emit(ctx, 0xD8 | reg);
 }
 
-// NOT reg
 static void asm_not_reg(asm_context_t *ctx, int reg) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -378,11 +340,10 @@ static void asm_not_reg(asm_context_t *ctx, int reg) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0xF7);  // NOT r/m64
-    asm_emit(ctx, 0xD0 | reg);  // ModR/M: 11 010 reg (opcode /2)
+    asm_emit(ctx, 0xF7);
+    asm_emit(ctx, 0xD0 | reg);
 }
 
-// SHL reg, imm8
 static void asm_shl_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -390,12 +351,11 @@ static void asm_shl_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0xC1);  // SHL r/m64, imm8
-    asm_emit(ctx, 0xE0 | reg);  // ModR/M: 11 100 reg (opcode /4)
+    asm_emit(ctx, 0xC1);
+    asm_emit(ctx, 0xE0 | reg);
     asm_emit(ctx, imm);
 }
 
-// SHR reg, imm8
 static void asm_shr_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
     uint8_t rex = 0x48;
     if (reg >= 8) {
@@ -403,22 +363,17 @@ static void asm_shr_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
         reg -= 8;
     }
     asm_emit(ctx, rex);
-    asm_emit(ctx, 0xC1);  // SHR r/m64, imm8
-    asm_emit(ctx, 0xE8 | reg);  // ModR/M: 11 101 reg (opcode /5)
+    asm_emit(ctx, 0xC1);
+    asm_emit(ctx, 0xE8 | reg);
     asm_emit(ctx, imm);
 }
 
-// ============================================================================
-// INSTRUCTION PARSING AND ASSEMBLY
-// ============================================================================
 
 int asm_line(asm_context_t *ctx, const char *line) {
     if (ctx->error) return -1;
     
-    // Skip leading whitespace
     while (*line == ' ' || *line == '\t') line++;
     
-    // Skip empty lines and comments
     if (*line == '\0' || *line == ';' || *line == '#') {
         return 0;
     }
@@ -427,10 +382,8 @@ int asm_line(asm_context_t *ctx, const char *line) {
     char arg1[64];
     char arg2[64];
     
-    // Parse mnemonic
     int i = 0;
     while (line[i] && line[i] != ' ' && line[i] != '\t' && i < 31) {
-        // Convert to lowercase for case-insensitive matching
         mnemonic[i] = line[i];
         if (mnemonic[i] >= 'A' && mnemonic[i] <= 'Z') {
             mnemonic[i] += 32;
@@ -439,10 +392,8 @@ int asm_line(asm_context_t *ctx, const char *line) {
     }
     mnemonic[i] = '\0';
     
-    // Skip whitespace
     while (line[i] == ' ' || line[i] == '\t') i++;
     
-    // Parse arg1
     int j = 0;
     while (line[i] && line[i] != ',' && line[i] != ' ' && line[i] != '\t' && 
            line[i] != ';' && line[i] != '#' && j < 63) {
@@ -450,10 +401,8 @@ int asm_line(asm_context_t *ctx, const char *line) {
     }
     arg1[j] = '\0';
     
-    // Skip comma and whitespace
     while (line[i] == ',' || line[i] == ' ' || line[i] == '\t') i++;
     
-    // Parse arg2
     j = 0;
     while (line[i] && line[i] != ' ' && line[i] != '\t' && 
            line[i] != ';' && line[i] != '#' && j < 63) {
@@ -461,11 +410,7 @@ int asm_line(asm_context_t *ctx, const char *line) {
     }
     arg2[j] = '\0';
     
-    // ========================================================================
-    // INSTRUCTION DISPATCH
-    // ========================================================================
     
-    // MOV - Move data
     if (str_equals(mnemonic, "mov")) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
@@ -476,10 +421,8 @@ int asm_line(asm_context_t *ctx, const char *line) {
         }
         
         if (reg2 >= 0) {
-            // mov reg, reg
             asm_mov_reg_reg(ctx, reg1, reg2);
         } else {
-            // mov reg, imm
             int64_t imm = parse_immediate(arg2);
             if (reg1 == 0 && (imm > 0x7FFFFFFF || imm < (int64_t)0xFFFFFFFF80000000LL)) {
                 asm_mov_rax_imm64(ctx, imm);
@@ -489,7 +432,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         }
     }
     
-    // ADD - Addition
     else if (str_equals(mnemonic, "add")) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
@@ -500,10 +442,8 @@ int asm_line(asm_context_t *ctx, const char *line) {
         }
         
         if (reg2 >= 0) {
-            // add reg, reg
             asm_add_reg_reg(ctx, reg1, reg2);
         } else {
-            // add reg, imm
             int64_t imm = parse_immediate(arg2);
             if (imm >= -128 && imm <= 127) {
                 asm_add_reg_imm8(ctx, reg1, (int8_t)imm);
@@ -514,7 +454,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         }
     }
     
-    // SUB - Subtraction
     else if (str_equals(mnemonic, "sub")) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
@@ -525,10 +464,8 @@ int asm_line(asm_context_t *ctx, const char *line) {
         }
         
         if (reg2 >= 0) {
-            // sub reg, reg
             asm_sub_reg_reg(ctx, reg1, reg2);
         } else {
-            // sub reg, imm
             int64_t imm = parse_immediate(arg2);
             if (imm >= -128 && imm <= 127) {
                 asm_sub_reg_imm8(ctx, reg1, (int8_t)imm);
@@ -539,7 +476,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         }
     }
     
-    // XOR - Exclusive OR
     else if (str_equals(mnemonic, "xor")) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
@@ -550,7 +486,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_xor_reg_reg(ctx, reg1, reg2);
     }
     
-    // OR - Bitwise OR
     else if (str_equals(mnemonic, "or")) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
@@ -561,7 +496,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_or_reg_reg(ctx, reg1, reg2);
     }
     
-    // AND - Bitwise AND
     else if (str_equals(mnemonic, "and")) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
@@ -572,7 +506,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_and_reg_reg(ctx, reg1, reg2);
     }
     
-    // CMP - Compare
     else if (str_equals(mnemonic, "cmp")) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
@@ -583,10 +516,8 @@ int asm_line(asm_context_t *ctx, const char *line) {
         }
         
         if (reg2 >= 0) {
-            // cmp reg, reg
             asm_cmp_reg_reg(ctx, reg1, reg2);
         } else {
-            // cmp reg, imm
             int64_t imm = parse_immediate(arg2);
             if (imm >= -128 && imm <= 127) {
                 asm_cmp_reg_imm8(ctx, reg1, (int8_t)imm);
@@ -597,7 +528,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         }
     }
     
-    // PUSH - Push onto stack
     else if (str_equals(mnemonic, "push")) {
         int reg = parse_register(arg1);
         if (reg < 0) {
@@ -607,7 +537,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_push_reg(ctx, reg);
     }
     
-    // POP - Pop from stack
     else if (str_equals(mnemonic, "pop")) {
         int reg = parse_register(arg1);
         if (reg < 0) {
@@ -617,7 +546,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_pop_reg(ctx, reg);
     }
     
-    // INC - Increment
     else if (str_equals(mnemonic, "inc")) {
         int reg = parse_register(arg1);
         if (reg < 0) {
@@ -627,7 +555,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_inc_reg(ctx, reg);
     }
     
-    // DEC - Decrement
     else if (str_equals(mnemonic, "dec")) {
         int reg = parse_register(arg1);
         if (reg < 0) {
@@ -637,7 +564,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_dec_reg(ctx, reg);
     }
     
-    // NEG - Negate
     else if (str_equals(mnemonic, "neg")) {
         int reg = parse_register(arg1);
         if (reg < 0) {
@@ -647,7 +573,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_neg_reg(ctx, reg);
     }
     
-    // NOT - Bitwise NOT
     else if (str_equals(mnemonic, "not")) {
         int reg = parse_register(arg1);
         if (reg < 0) {
@@ -657,7 +582,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_not_reg(ctx, reg);
     }
     
-    // SHL - Shift left
     else if (str_equals(mnemonic, "shl")) {
         int reg = parse_register(arg1);
         if (reg < 0) {
@@ -672,7 +596,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_shl_reg_imm8(ctx, reg, (int8_t)imm);
     }
     
-    // SHR - Shift right
     else if (str_equals(mnemonic, "shr")) {
         int reg = parse_register(arg1);
         if (reg < 0) {
@@ -687,22 +610,18 @@ int asm_line(asm_context_t *ctx, const char *line) {
         asm_shr_reg_imm8(ctx, reg, (int8_t)imm);
     }
     
-    // SYSCALL - System call
     else if (str_equals(mnemonic, "syscall")) {
         asm_syscall(ctx);
     }
     
-    // RET - Return
     else if (str_equals(mnemonic, "ret")) {
         asm_ret(ctx);
     }
     
-    // NOP - No operation
     else if (str_equals(mnemonic, "nop")) {
         asm_nop(ctx);
     }
     
-    // Unknown instruction
     else {
         asm_error(ctx, "Unknown instruction");
         return -1;
@@ -718,19 +637,15 @@ int asm_program(asm_context_t *ctx, const char *program) {
     int line_num = 1;
     
     while (program[prog_idx]) {
-        // Read one line
         line_idx = 0;
         while (program[prog_idx] && program[prog_idx] != '\n' && line_idx < 255) {
             line[line_idx++] = program[prog_idx++];
         }
         line[line_idx] = '\0';
         
-        // Skip newline
         if (program[prog_idx] == '\n') prog_idx++;
         
-        // Assemble line
         if (asm_line(ctx, line) < 0) {
-            // Add line number to error message
             char new_msg[256];
             int i = 0;
             new_msg[i++] = 'L';
@@ -739,7 +654,6 @@ int asm_program(asm_context_t *ctx, const char *program) {
             new_msg[i++] = 'e';
             new_msg[i++] = ' ';
             
-            // Convert line number to string
             char num_buf[16];
             int num_len = 0;
             int temp_line = line_num;
@@ -755,14 +669,12 @@ int asm_program(asm_context_t *ctx, const char *program) {
             new_msg[i++] = ':';
             new_msg[i++] = ' ';
             
-            // Append original error message
             int j = 0;
             while (ctx->error_msg[j] && i < 255) {
                 new_msg[i++] = ctx->error_msg[j++];
             }
             new_msg[i] = '\0';
             
-            // Copy back
             for (i = 0; new_msg[i]; i++) {
                 ctx->error_msg[i] = new_msg[i];
             }
