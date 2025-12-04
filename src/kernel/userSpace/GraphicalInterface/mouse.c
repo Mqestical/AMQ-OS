@@ -2,7 +2,7 @@
 #include "string_helpers.h"
 #include "IO.h"
 #include "sleep.h"
-
+#include "anthropic.h"
 typedef unsigned long long ULL_t;
 
 #define MOUSE_CHECK 0x64
@@ -123,4 +123,19 @@ void overwrite_cursor(int prev_x, int prev_y) {
             put_pixel(prev_x + xx, prev_y + yy, 0x000000);
         }
     }
+}
+
+// Add these functions at the end of mouse.c
+
+int get_mouse_x(void) {
+    return cursor_x;
+}
+
+int get_mouse_y(void) {
+    return cursor_y;
+}
+
+int get_mouse_button(void) {
+        return mouse_button_state;  // Don't read from port!
+
 }
