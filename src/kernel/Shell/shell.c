@@ -994,7 +994,7 @@ else if (STRNCMP(cmd, "anthropic",9) == 0) {
 void run_text_demo(void) {
     scheduler_enable();
     PRINT(CYAN, BLACK, "==========================================\n");
-    PRINT(CYAN, BLACK, "    AMQ Operating System v1.1\n");
+    PRINT(CYAN, BLACK, "    AMQ Operating System v1.2\n");
     PRINT(CYAN, BLACK, "==========================================\n");
     PRINT(WHITE, BLACK, "Welcome! Type 'help' for commands.\n\n");
     PRINT(MAGENTA, BLACK, "%s> ", vfs_get_cwd_path());
