@@ -17,8 +17,8 @@ static void register_syscall(int num, syscall_fn_t handler) {
     if (num >= 0 && num < MAX_SYSCALLS) syscall_table[num] = handler;
 }
 
-uint64_t syscall_handler(uint64_t syscall_num, 
-                         uint64_t arg1, uint64_t arg2, 
+uint64_t syscall_handler(uint64_t syscall_num,
+                         uint64_t arg1, uint64_t arg2,
                          uint64_t arg3, uint64_t arg4,
                          uint64_t arg5, uint64_t arg6) {
     if (syscall_num >= MAX_SYSCALLS) {
@@ -39,7 +39,7 @@ void syscall_register_all(void) {
     register_syscall(SYS_THREAD_EXIT, (syscall_fn_t)sys_thread_exit);
     register_syscall(SYS_THREAD_YIELD, (syscall_fn_t)sys_thread_yield);
     register_syscall(SYS_SLEEP, (syscall_fn_t)sys_sleep);
-    
+
     register_syscall(SYS_OPEN, (syscall_fn_t)sys_open);
     register_syscall(SYS_CLOSE, (syscall_fn_t)sys_close);
     register_syscall(SYS_READ, (syscall_fn_t)sys_read);
@@ -47,12 +47,12 @@ void syscall_register_all(void) {
     register_syscall(SYS_LSEEK, (syscall_fn_t)sys_lseek);
     register_syscall(SYS_STAT, (syscall_fn_t)sys_stat);
     register_syscall(SYS_UNLINK, (syscall_fn_t)sys_unlink);
-    
+
     register_syscall(SYS_MKDIR, (syscall_fn_t)sys_mkdir);
     register_syscall(SYS_RMDIR, (syscall_fn_t)sys_rmdir);
     register_syscall(SYS_CHDIR, (syscall_fn_t)sys_chdir);
     register_syscall(SYS_GETCWD, (syscall_fn_t)sys_getcwd);
-    
+
     register_syscall(SYS_UPTIME, (syscall_fn_t)sys_uptime);
     register_syscall(SYS_GETTIME, (syscall_fn_t)sys_gettime);
     register_syscall(SYS_DEBUG_PRINT, (syscall_fn_t)sys_debug_print);

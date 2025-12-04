@@ -67,7 +67,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     init_graphics(ST);
 
-    /*exit uefi BS*/
+
     EFI_STATUS status = uefi_call_wrapper(BS->ExitBootServices, 2, ImageHandle, map_key);
     if (EFI_ERROR(status)) {
         uefi_call_wrapper(BS->GetMemoryMap, 5, &memory_map_size, memory_map, &map_key, &descriptor_size, &descriptor_version);
@@ -76,7 +76,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
             while(1) __asm__ volatile("hlt");
         }
     }
-    
+
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
 
@@ -86,7 +86,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     enable_io_privilege();
     PRINT(MAGENTA, BLACK, "[OK] I/O privileges enabled\n");
 
-    PRINT(MAGENTA, BLACK, "[OK] Stack: base=0x%llx, top=0x%llx\n", 
+    PRINT(MAGENTA, BLACK, "[OK] Stack: base=0x%llx, top=0x%llx\n",
           kernel_stack_base, kernel_stack_top);
 
     tss_init();
@@ -133,7 +133,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
             __asm__ volatile("hlt");
         }
 
-        PRINT(MAGENTA, BLACK, "[TEST] Second %d: timer_ticks=%llu\n", 
+        PRINT(MAGENTA, BLACK, "[TEST] Second %d: timer_ticks=%llu\n",
               sec, timer_ticks);
     }
 
@@ -165,7 +165,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     }
 
     PRINT(WHITE, BLACK, "[INIT] Formatting disk...\n");
-    
+
     char device_name[] = "ata0";
     if (tinyfs_format(device_name) != 0) {
         PRINT(YELLOW, BLACK, "[ERROR] Format failed\n");
@@ -209,7 +209,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     jobs_set_active(1);
     PRINT(MAGENTA, BLACK, "[OK] Job tracking ENABLED\n");
     PRINT(MAGENTA, BLACK, "\nStarting shell...\n\n");
-    
+
     for (volatile int i = 0; i < 5000000; i++);
 
     init_shell();

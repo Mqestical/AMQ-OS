@@ -19,9 +19,9 @@ void jobs_init(void) {
         fg_table[i].sleep_until = 0;
         fg_table[i].command[0] = '\0';
     }
-    
+
     jobs_active = 0;
-    
+
     PRINT(MAGENTA, BLACK, "[FG] Job control initialized (INACTIVE)\n");
 }
 
@@ -49,7 +49,7 @@ int add_fg_job(const char *command, uint32_t pid, uint32_t tid) {
         PRINT(YELLOW, BLACK, "[FG] No free job slots\n");
         return -1;
     }
-    
+
     job_t *job = &fg_table[idx];
     job->job_id = next_job_id++;
     job->pid = pid;
@@ -58,14 +58,14 @@ int add_fg_job(const char *command, uint32_t pid, uint32_t tid) {
     job->is_background = 0;
     job->used = 1;
     job->sleep_until = 0;
-    
+
     int i = 0;
     while (command[i] && i < 255) {
         job->command[i] = command[i];
         i++;
     }
     job->command[i] = '\0';
-    
+
     return job->job_id;
 }
 
@@ -75,7 +75,7 @@ int add_bg_job(const char *command, uint32_t pid, uint32_t tid) {
         PRINT(YELLOW, BLACK, "[BG] No free job slots\n");
         return -1;
     }
-    
+
     job_t *job = &fg_table[idx];
     job->job_id = next_job_id++;
     job->pid = pid;
@@ -84,16 +84,16 @@ int add_bg_job(const char *command, uint32_t pid, uint32_t tid) {
     job->is_background = 1;
     job->used = 1;
     job->sleep_until = 0;
-    
+
     int i = 0;
     while (command[i] && i < 255) {
         job->command[i] = command[i];
         i++;
     }
     job->command[i] = '\0';
-    
+
     PRINT(WHITE, BLACK, "[%d] %d\n", job->job_id, job->pid);
-    
+
     return job->job_id;
 }
 
@@ -102,7 +102,7 @@ void remove_job(int job_id) {
         if (fg_table[i].used && fg_table[i].job_id == job_id) {
             PRINT(MAGENTA, BLACK, "[%d]+ Done                    %s\n",
                   job_id, fg_table[i].command);
-            
+
             fg_table[i].used = 0;
             fg_table[i].state = JOB_DONE;
             return;
@@ -112,18 +112,18 @@ void remove_job(int job_id) {
 
 void list_jobs(void) {
     PRINT(WHITE, BLACK, "\nJobs:\n");
-    
+
     int count = 0;
     for (int i = 0; i < MAX_JOBS; i++) {
         if (fg_table[i].used) {
             job_t *job = &fg_table[i];
-            
+
             char *state_str;
             if (job->state == JOB_RUNNING) state_str = "Running";
             else if (job->state == JOB_STOPPED) state_str = "Stopped";
             else if (job->state == JOB_SLEEPING) state_str = "Sleeping";
             else state_str = "Done";
-            
+
             if (job->is_background) {
                 PRINT(WHITE, BLACK, "[%d]  %s                    %s\n",
                       job->job_id, state_str, job->command);
@@ -134,7 +134,7 @@ void list_jobs(void) {
             count++;
         }
     }
-    
+
     if (count == 0) {
         PRINT(WHITE, BLACK, "(No jobs)\n");
     }
@@ -153,12 +153,12 @@ void update_jobs_safe(void) {
     if (!jobs_active) {
         return;
     }
-    
+
     extern thread_t thread_table[MAX_THREADS_GLOBAL];
     if (!thread_table) {
         return;
     }
-    
+
     update_jobs();
 }
 
@@ -167,36 +167,36 @@ void update_jobs(void) {
     if (!jobs_active) {
         return;
     }
-    
+
     system_time_ms++;
-    
+
     for (int i = 0; i < MAX_JOBS; i++) {
         if (!fg_table[i].used) continue;
-        
+
         job_t *job = &fg_table[i];
-        
+
         thread_t *thread = get_thread(job->tid);
-        
+
         if (!thread || thread->state == THREAD_STATE_TERMINATED) {
             if (job->is_background && job->state != JOB_DONE) {
                 PRINT(MAGENTA, BLACK, "\n[%d]+ Done                    %s\n",
                       job->job_id, job->command);
             }
-            
+
             job->used = 0;
             job->state = JOB_DONE;
             continue;
         }
-        
+
         if (job->state == JOB_SLEEPING) {
             if (system_time_ms >= job->sleep_until) {
                 PRINT(WHITE, BLACK, "\n[JOB %d] Waking up at %llu ms (target was %llu)\n",
                       job->job_id, system_time_ms, job->sleep_until);
-                
+
                 thread_unblock(job->tid);
                 job->state = JOB_RUNNING;
                 job->sleep_until = 0;
-                
+
                 if (job->is_background) {
                     PRINT(MAGENTA, BLACK, "[%d]  Resumed                  %s\n",
                           job->job_id, job->command);
@@ -208,24 +208,24 @@ void update_jobs(void) {
 
 void list_bg_jobs(void) {
     PRINT(WHITE, BLACK, "\nBackground Jobs:\n");
-    
+
     int count = 0;
     for (int i = 0; i < MAX_JOBS; i++) {
         if (fg_table[i].used && fg_table[i].is_background) {
             job_t *job = &fg_table[i];
-            
+
             char *state_str;
             if (job->state == JOB_RUNNING) state_str = "Running";
             else if (job->state == JOB_STOPPED) state_str = "Stopped";
             else if (job->state == JOB_SLEEPING) state_str = "Sleeping";
             else state_str = "Done";
-            
+
             PRINT(WHITE, BLACK, "[%d]  %s                    %s\n",
                   job->job_id, state_str, job->command);
             count++;
         }
     }
-    
+
     if (count == 0) {
         PRINT(WHITE, BLACK, "(No background jobs)\n");
     }

@@ -47,7 +47,7 @@ static inline int64_t syscall3(uint64_t num, uint64_t arg1, uint64_t arg2, uint6
     return ret;
 }
 
-static inline int64_t syscall4(uint64_t num, uint64_t arg1, uint64_t arg2, 
+static inline int64_t syscall4(uint64_t num, uint64_t arg1, uint64_t arg2,
                                uint64_t arg3, uint64_t arg4) {
     int64_t ret;
     register uint64_t r10 __asm__("r10") = arg4;
@@ -60,7 +60,7 @@ static inline int64_t syscall4(uint64_t num, uint64_t arg1, uint64_t arg2,
     return ret;
 }
 
-static inline int64_t syscall5(uint64_t num, uint64_t arg1, uint64_t arg2, 
+static inline int64_t syscall5(uint64_t num, uint64_t arg1, uint64_t arg2,
                                uint64_t arg3, uint64_t arg4, uint64_t arg5) {
     int64_t ret;
     register uint64_t r10 __asm__("r10") = arg4;
@@ -74,7 +74,7 @@ static inline int64_t syscall5(uint64_t num, uint64_t arg1, uint64_t arg2,
     return ret;
 }
 
-static inline int64_t syscall6(uint64_t num, uint64_t arg1, uint64_t arg2, 
+static inline int64_t syscall6(uint64_t num, uint64_t arg1, uint64_t arg2,
                                uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     int64_t ret;
     register uint64_t r10 __asm__("r10") = arg4;
@@ -184,14 +184,14 @@ int debug_print(const char *str) {
 
 void example_user_thread(void) {
     debug_print("Hello from user thread!\n");
-    
+
     int fd = open("/test.txt", SYS_WRITE, 0);
     if (fd >= 0) {
         write(fd, "Hello World\n", 12);
         close(fd);
         debug_print("Created /test.txt\n");
     }
-    
+
     fd = open("/test.txt", SYS_READ, 0);
     if (fd >= 0) {
         char buf[64];
@@ -203,26 +203,26 @@ void example_user_thread(void) {
         }
         close(fd);
     }
-    
+
     debug_print("Sleeping for 2 seconds...\n");
     sleep_user(2);
     debug_print("Awake!\n");
-    
+
     thread_exit_user();
 }
 
 void test_syscalls(void) {
     debug_print("\n=== Testing Syscalls ===\n");
-    
+
     int pid = getpid();
     char msg1[] = "Current PID: %d\n";
-    
+
     debug_print("Creating directory /testdir...\n");
     int ret = mkdir("/testdir", SYS_READ | SYS_WRITE);
     if (ret == 0) {
         debug_print("Success!\n");
     }
-    
+
     debug_print("Changing to /testdir...\n");
     ret = chdir("/testdir");
     if (ret == 0) {
@@ -232,25 +232,13 @@ void test_syscalls(void) {
         debug_print(cwd);
         debug_print("\n");
     }
-    
+
     debug_print("Creating user thread...\n");
     int tid = thread_create_user(example_user_thread, 8192);
     if (tid > 0) {
         debug_print("Created thread successfully\n");
     }
-    
+
     debug_print("=== Syscall Tests Complete ===\n");
 }
 
-/*
-
-#define SYS_OPEN            20
-#define SYS_CLOSE           21
-#define SYS_READ            22
-#define SYS_WRITE           23
-#define SYS_LSEEK           24
-#define SYS_STAT            25
-#define SYS_FSTAT           26
-#define SYS_UNLINK          27
-
-*/

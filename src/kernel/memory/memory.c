@@ -1,6 +1,6 @@
 #include <efi.h>
 #include <efilib.h>
-#include <stdarg.h> 
+#include <stdarg.h>
 #include "memory.h"
 #include "definitions.h"
 #include "print.h"
@@ -128,7 +128,7 @@ int stackalloc(int pages, int page_size) {
 void init_kernel_heap(void) {
     const uint64_t initial_pages = 16;
     void* base = pmm_alloc_pages(initial_pages);
-    
+
     if (!base) {
         return;
     }
@@ -150,7 +150,7 @@ static size_t align_size(size_t size) {
 
 static void split_block(HeapBlock* block, size_t size) {
     size_t remaining = block->size - size - HEAP_BLOCK_HEADER_SIZE;
-    
+
     if (remaining >= MIN_BLOCK_SIZE) {
         HeapBlock* new_block = (HeapBlock*)((uint8_t*)block + HEAP_BLOCK_HEADER_SIZE + size);
         new_block->size = remaining;
@@ -160,20 +160,20 @@ static void split_block(HeapBlock* block, size_t size) {
 
         block->size = size;
         block->next = new_block;
-        
+
         split_count++;
     }
 }
 
 static void coalesce_blocks() {
     HeapBlock* current = (HeapBlock*)kernel_heap_base;
-    
+
     while ((uint64_t)current < kernel_heap_base + kernel_heap_used) {
         if (current->magic != HEAP_MAGIC) break;
-        
+
         if (current->is_free) {
             HeapBlock* next = (HeapBlock*)((uint8_t*)current + HEAP_BLOCK_HEADER_SIZE + current->size);
-            
+
             if ((uint64_t)next < kernel_heap_base + kernel_heap_used &&
                 next->magic == HEAP_MAGIC && next->is_free) {
                 current->size += HEAP_BLOCK_HEADER_SIZE + next->size;
@@ -182,7 +182,7 @@ static void coalesce_blocks() {
                 continue;
             }
         }
-        
+
         current = (HeapBlock*)((uint8_t*)current + HEAP_BLOCK_HEADER_SIZE + current->size);
     }
 }
@@ -191,7 +191,7 @@ void* kmalloc(size_t size) {
     if (size == 0) return NULL;
 
     size = align_size(size);
-    
+
     HeapBlock* current = heap_free_list;
     HeapBlock* prev = NULL;
 
@@ -222,7 +222,7 @@ void* kmalloc(size_t size) {
 
     uint64_t new_pages = (size + HEAP_BLOCK_HEADER_SIZE + 4095) / 4096;
     void* new_mem = pmm_alloc_pages(new_pages);
-    
+
     if (!new_mem) return NULL;
 
     HeapBlock* new_block = (HeapBlock*)new_mem;
@@ -263,14 +263,14 @@ void kfree(void* ptr) {
 void* kcalloc(size_t num, size_t size) {
     size_t total = num * size;
     void* ptr = kmalloc(total);
-    
+
     if (ptr) {
         uint8_t* bytes = (uint8_t*)ptr;
         for (size_t i = 0; i < total; i++) {
             bytes[i] = 0;
         }
     }
-    
+
     return ptr;
 }
 
@@ -282,7 +282,7 @@ void* krealloc(void* ptr, size_t new_size) {
     }
 
     HeapBlock* block = (HeapBlock*)((uint8_t*)ptr - HEAP_BLOCK_HEADER_SIZE);
-    
+
     if (block->magic != HEAP_MAGIC) return NULL;
 
     if (block->size >= new_size) {
@@ -340,15 +340,15 @@ PRINT(WHITE, RED, "  Size: %llu KB\n", (kernel_stack_top - kernel_stack_base) / 
 
 int memory_test(void) {
     ClearScreen(RED);
-    
+
     cursor.x = 0;
     cursor.y = 0;
-    
+
     cursor.fg_color = WHITE;
     cursor.bg_color = RED;
-    
+
     PRINT(WHITE, RED, "=== Memory Allocator Tests ===\n");
-    
+
     PRINT(WHITE, RED, "Test 1: Basic allocation... ");
     void* p1 = kmalloc(100);
     if (!p1) {
@@ -469,4 +469,3 @@ void* mmcpy(void* dest, const void* src, size_t n) {
 
     return dest;
 }
-

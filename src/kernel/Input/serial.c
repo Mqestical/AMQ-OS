@@ -9,40 +9,40 @@ volatile int serial_initialized;
 
 void serial_init(uint16_t port) {
     serial_initialized = 0;
-    
+
     outb(port + 1, 0x00);
-    
+
     for (volatile int i = 0; i < 1000; i++);
-    
+
     outb(port + 3, 0x80);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     outb(port + 0, 0x01);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     outb(port + 1, 0x00);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     outb(port + 3, 0x03);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     outb(port + 2, 0xC7);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     outb(port + 4, 0x0B);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     outb(port + 4, 0x1E);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     outb(port + 0, 0xAE);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     uint8_t test = inb(port + 0);
-    
+
     outb(port + 4, 0x0F);
     for (volatile int i = 0; i < 1000; i++);
-    
+
     if (test == 0xAE) {
         serial_initialized = 1;
     }
@@ -56,13 +56,13 @@ int serial_can_write(uint16_t port) {
 
 void serial_write_byte(uint16_t port, uint8_t data) {
     if (!serial_initialized) return;
-    
+
     int timeout = 100000;
     while (!serial_can_write(port) && timeout > 0) {
         timeout--;
         for (volatile int i = 0; i < 10; i++);
     }
-    
+
     if (timeout > 0) {
         outb(port + SERIAL_DATA, data);
         for (volatile int i = 0; i < 100; i++);
@@ -76,12 +76,12 @@ int serial_can_read(uint16_t port) {
 
 uint8_t serial_read_byte(uint16_t port) {
     if (!serial_initialized) return 0;
-    
+
     int timeout = 10000;
     while (!serial_can_read(port) && timeout > 0) {
         timeout--;
     }
-    
+
     if (timeout > 0) {
         return inb(port + SERIAL_DATA);
     }
@@ -90,7 +90,7 @@ uint8_t serial_read_byte(uint16_t port) {
 
 void serial_write_string(uint16_t port, const char* str) {
     if (!serial_initialized || !str) return;
-    
+
     while (*str) {
         serial_write_byte(port, *str);
         str++;
@@ -151,7 +151,7 @@ static char scancode_to_char(uint8_t scancode, int shifted) {
             case 0x34: return '.';
             case 0x35: return '/';
             case 0x39: return ' ';
-            
+
             default: return 0;
         }
     } else {
@@ -199,7 +199,7 @@ static char scancode_to_char(uint8_t scancode, int shifted) {
 
 void serial_write_scancode(uint8_t scancode) {
     if (!serial_initialized) return;
-    
+
     if (scancode == 0x2A || scancode == 0x36) {
         shift_pressed = 1;
         return;
@@ -208,9 +208,9 @@ void serial_write_scancode(uint8_t scancode) {
         shift_pressed = 0;
         return;
     }
-    
+
     if (scancode & 0x80) return;
-    
+
     char ascii = scancode_to_char(scancode, shift_pressed);
     if (ascii) {
         serial_write_byte(COM1, ascii);
@@ -219,7 +219,7 @@ void serial_write_scancode(uint8_t scancode) {
 
 void serial_process_input(void) {
     if (!serial_initialized) return;
-    
+
     if (serial_can_read(COM1)) {
         uint8_t data = serial_read_byte(COM1);
         printc(data);
