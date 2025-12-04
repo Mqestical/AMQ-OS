@@ -36,17 +36,17 @@ void pic_send_eoi(int irq) {
 
 void pic_clear_mask(uint8_t irq) {
     if (irq >= 16) return;
-    
+
     uint16_t port;
     uint8_t bit;
-    
+
     if (irq < 8) {
         port = PIC1_DATA;
         bit = irq;
     } else {
         port = PIC2_DATA;
         bit = irq - 8;
-        
+
         uint8_t master_mask = inb(PIC1_DATA);
         if (master_mask & 0x04) {
             master_mask &= ~0x04;
@@ -54,25 +54,25 @@ void pic_clear_mask(uint8_t irq) {
             for (volatile int i = 0; i < 1000; i++);
         }
     }
-    
+
     uint8_t mask = inb(port);
     mask &= ~(1 << bit);
     outb(port, mask);
-    
+
     for (volatile int i = 0; i < 1000; i++);
 }
 
 void pic_set_mask(uint8_t irq) {
     uint16_t port;
     uint8_t value;
-    
+
     if (irq < 8) {
         port = PIC1_DATA;
     } else {
         port = PIC2_DATA;
         irq -= 8;
     }
-    
+
     value = inb(port) | (1 << irq);
     outb(port, value);
 }
@@ -100,19 +100,19 @@ void irq_common_handler(int irq_num) {
         irq_handler_t handler = irq_handlers[irq_num];
         handler();
     }
-    
+
     pic_send_eoi(irq_num);
 }
 
 
 void timer_irq_handler(void) {
     timer_ticks++;
-    
-    update_jobs_safe(); 
-    
+
+    update_jobs_safe();
+
     extern void scheduler_tick(void);
     scheduler_tick();
-    
+
     outb(0x20, 0x20);
 }
 
@@ -162,7 +162,7 @@ void timer_handler_asm(void) {
 
 void pit_init(uint32_t frequency) {
     uint32_t divisor = 1193182 / frequency;
-    
+
     outb(PIT_COMMAND, 0x36);
     for (volatile int i = 0; i < 1000; i++);
     outb(PIT_CHANNEL0, (uint8_t)(divisor & 0xFF));
@@ -174,32 +174,32 @@ void pit_init(uint32_t frequency) {
 
 void irq_init(void) {
     PRINT(WHITE, BLACK, "[IRQ] Initializing IRQ system...\n");
-    
+
     for (int i = 0; i < 16; i++) {
         irq_handlers[i] = NULL;
     }
-    
+
     timer_ticks = 0;
     timer_seconds = 0;
-    
+
     pit_init(TIMER_FREQ);
-    
+
     PRINT(WHITE, BLACK, "[IRQ] Unmasking IRQ0 (timer)...\n");
     pic_clear_mask(0);
     for (volatile int i = 0; i < 10000; i++);
-    
+
     uint8_t mask = inb(0x21);
     PRINT(WHITE, BLACK, "[IRQ] PIC1 mask after unmask: 0x%x\n", mask);
-    
+
     if (mask & 0x01) {
         PRINT(YELLOW, BLACK, "[WARNING] IRQ0 still masked!\n");
     } else {
         PRINT(MAGENTA, BLACK, "[OK] IRQ0 is unmasked\n");
     }
-    
+
     PRINT(WHITE, BLACK, "[IRQ] Enabling interrupts...\n");
     __asm__ volatile("sti");
-    
+
     PRINT(MAGENTA, BLACK, "[IRQ] IRQ system ready\n");
 }
 

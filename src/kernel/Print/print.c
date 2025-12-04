@@ -31,7 +31,7 @@ void init_graphics(EFI_SYSTEM_TABLE *ST) {
     fb.height = gop->Mode->Info->VerticalResolution;
     fb.pitch = gop->Mode->Info->PixelsPerScanLine;
     fb.bytes_per_pixel = 4;
-    
+
     cursor.x = 0;
     cursor.y = 0;
     cursor.fg_color = WHITE;
@@ -46,13 +46,13 @@ void put_pixel(uint32_t x, uint32_t y, uint32_t color) {
 void draw_char(uint32_t x, uint32_t y, char c, uint32_t fg, uint32_t bg) {
     if (x >= fb.width || y >= fb.height) return;
     if (x + 8 > fb.width || y + 8 > fb.height) return;
-    
+
     unsigned char index = (unsigned char)c;
     if (index >= 128) index = 0;
-    
+
     char *glyph = font8x8_basic[index];
 
-    
+
     for (int row = 0; row < 8; row++) {
     unsigned char row_data = (unsigned char)glyph[row];
     for (int col = 0; col < 8; col++) {
@@ -78,7 +78,7 @@ void draw_string(uint32_t x, uint32_t y, const char *s, uint32_t fg, uint32_t bg
             x += 8;
         }
         s++;
-        
+
         if (x + 8 > fb.width) {
             x = start_x;
             y += 8;
@@ -169,18 +169,18 @@ static void debug_print_hex(unsigned char val) {
 void print_unsigned(unsigned long long num, int base) {
     char buf[32];
     int i = 0;
-    
+
     if (num == 0) {
         printc('0');
         return;
     }
-    
+
     while (num > 0) {
         int digit = num % base;
         buf[i++] = (digit < 10) ? ('0' + digit) : ('a' + (digit - 10));
         num /= base;
     }
-    
+
     while (i > 0) {
         printc(buf[--i]);
     }
@@ -204,16 +204,16 @@ static void safe_print_str(const char* str) {
         printc(')');
         return;
     }
-    
+
     char buf[256];
     int i = 0;
-    
+
     while (str[i] && i < 255) {
         buf[i] = str[i];
         i++;
     }
     buf[i] = '\0';
-    
+
     for (int j = 0; j < i; j++) {
         printc(buf[j]);
     }
@@ -221,12 +221,12 @@ static void safe_print_str(const char* str) {
 
 void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
     if (!format) return;
-    
+
     uint32_t old_fg = cursor.fg_color;
     uint32_t old_bg = cursor.bg_color;
     cursor.fg_color = text_fg;
     cursor.bg_color = text_bg;
-    
+
     char fmt[512];
     int fmt_len = 0;
     while (format[fmt_len] && fmt_len < 511) {
@@ -234,10 +234,10 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
         fmt_len++;
     }
     fmt[fmt_len] = '\0';
-    
+
     va_list args;
     va_start(args, format);
-    
+
     int i = 0;
     while (i < fmt_len) {
         if (fmt[i] != '%') {
@@ -245,10 +245,10 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
             i++;
             continue;
         }
-        
+
         i++;
         if (i >= fmt_len) break;
-        
+
         int is_longlong = 0;
         if (fmt[i] == 'l') {
             if (i + 1 < fmt_len && fmt[i + 1] == 'l') {
@@ -259,24 +259,24 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
                 i++;
             }
         }
-        
+
         if (i >= fmt_len) break;
-        
+
         switch (fmt[i]) {
             case 's': {
                 const char *str = va_arg(args, const char*);
                 safe_print_str(str);
                 break;
             }
-            
+
             case 'd': {
-                long long val = is_longlong ? 
-                    va_arg(args, long long) : 
+                long long val = is_longlong ?
+                    va_arg(args, long long) :
                     (long long)va_arg(args, int);
                 print_signed(val);
                 break;
             }
-            
+
             case 'u': {
                 unsigned long long val = is_longlong ?
                     va_arg(args, unsigned long long) :
@@ -284,7 +284,7 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
                 print_unsigned(val, 10);
                 break;
             }
-            
+
             case 'x': {
                 unsigned long long val = is_longlong ?
                     va_arg(args, unsigned long long) :
@@ -292,7 +292,7 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
                 print_unsigned(val, 16);
                 break;
             }
-            
+
             case 'X': {
                 unsigned long long val = is_longlong ?
                     va_arg(args, unsigned long long) :
@@ -300,7 +300,7 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
                 print_unsigned(val, 16);
                 break;
             }
-            
+
             case 'p': {
                 void *ptr = va_arg(args, void*);
                 printc('0');
@@ -308,18 +308,18 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
                 print_unsigned((unsigned long long)ptr, 16);
                 break;
             }
-            
+
             case 'c': {
                 char ch = (char)va_arg(args, int);
                 printc(ch);
                 break;
             }
-            
+
             case '%': {
                 printc('%');
                 break;
             }
-            
+
             default: {
                 printc('%');
                 printc(fmt[i]);
@@ -328,9 +328,9 @@ void printk(uint32_t text_fg, uint32_t text_bg, const char *format, ...) {
         }
         i++;
     }
-    
+
     va_end(args);
-    
+
     cursor.fg_color = old_fg;
     cursor.bg_color = old_bg;
 }
@@ -347,11 +347,11 @@ void buf_write(Buffer *buf, const char *str) {
 void test_PRINT(void) {
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
-    
+
     int num = 42;
     char* ptr = (char*)0xDEADBEEF;
     char* str = "Hello";
-    
+
     PRINT(WHITE, BLACK, "Testing PRINT:\n");
     PRINT(WHITE, BLACK, "Integer: %d\n", num);
     PRINT(WHITE, BLACK, "Hex: 0x%x\n", num);

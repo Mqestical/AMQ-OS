@@ -57,15 +57,15 @@ void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_
 void gdt_install() {
     gdtp.limit = (sizeof(struct gdt_entry) * GDT_ENTRIES) - 1;
     gdtp.base = (uint64_t)&gdt;
-    
+
     gdt_set_gate(0, 0, 0, 0, 0);
     gdt_set_gate(1, 0, 0, 0x9A, 0x20);
     gdt_set_gate(2, 0, 0, 0x92, 0x00);
     gdt_set_gate(3, 0, 0, 0xFA, 0x20);
     gdt_set_gate(4, 0, 0, 0xF2, 0x00);
-    
+
     __asm__ volatile("lgdt %0" : : "m"(gdtp));
-    
+
     __asm__ volatile(
         "mov $0x10, %%ax\n"
         "mov %%ax, %%ds\n"
@@ -109,7 +109,7 @@ void idt_set_gate(int num, uint64_t handler, uint16_t selector, uint8_t flags) {
 void idt_install() {
     idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
     idtp.base = (uint64_t)&idt;
-    
+
     for(int i = 0; i < IDT_ENTRIES; i++) {
         idt[i].offset_low = 0;
         idt[i].selector = 0;
@@ -119,7 +119,7 @@ void idt_install() {
         idt[i].offset_high = 0;
         idt[i].zero = 0;
     }
-    
+
     idt_set_gate(0, (uint64_t)isr0, 0x08, 0x8E);
     idt_set_gate(1, (uint64_t)isr1, 0x08, 0x8E);
     idt_set_gate(2, (uint64_t)isr2, 0x08, 0x8E);
@@ -155,10 +155,10 @@ void idt_install() {
     for(int i = 32; i < 256; i++) {
         idt_set_gate(i, (uint64_t)generic_handler, 0x08, 0x8E);
     }
-    
+
     extern void timer_handler_asm(void);
     idt_set_gate(32, (uint64_t)timer_handler_asm, 0x08, 0x8E);
-    
+
     idt_set_gate(33, (uint64_t)keyboard_handler, 0x08, 0x8E);
 
     __asm__ volatile("lidt %0" : : "m"(idtp));
@@ -203,26 +203,26 @@ void keyboard_handler(void) {
         "push %rax\n"
         "push %rbx\n"
         "push %rcx\n"
-        
+
         "lea interrupt_counter(%rip), %rbx\n"
         "incl (%rbx)\n"
-        
+
         "inb $0x60, %al\n"
-        
+
         "lea last_scancode(%rip), %rbx\n"
         "movb %al, (%rbx)\n"
-        
+
         "lea scancode_buffer(%rip), %rbx\n"
         "lea scancode_write_pos(%rip), %rcx\n"
         "movzbl (%rcx), %ecx\n"
         "movb %al, (%rbx,%rcx,1)\n"
-        
+
         "lea scancode_write_pos(%rip), %rbx\n"
         "incb (%rbx)\n"
-        
+
         "movb $0x20, %al\n"
         "outb %al, $0x20\n"
-        
+
         "pop %rcx\n"
         "pop %rbx\n"
         "pop %rax\n"
@@ -345,14 +345,14 @@ void handle_backspace(void) {
     if (input_pos > 0) {
         input_pos--;
         input_buffer[input_pos] = '\0';
-        
+
         if (cursor.x >= 8) {
             cursor.x -= 8;
         } else if (cursor.y >= 8) {
             cursor.y -= 8;
             cursor.x = (fb.width - 8);
         }
-        
+
         draw_char(cursor.x, cursor.y, ' ', cursor.fg_color, cursor.bg_color);
     }
 }
@@ -360,7 +360,7 @@ void handle_backspace(void) {
 void process_keyboard_buffer(void) {
     while (scancode_read_pos != scancode_write_pos) {
         uint8_t scancode = scancode_buffer[scancode_read_pos++];
-        
+
         if (scancode == 0x2A || scancode == 0x36) {
             shift_pressed = 1;
             continue;
@@ -369,11 +369,11 @@ void process_keyboard_buffer(void) {
             shift_pressed = 0;
             continue;
         }
-        
+
         if (scancode & 0x80) continue;
-        
+
         char ascii = scancode_to_ascii(scancode, shift_pressed);
-        
+
         if (ascii) {
             if (ascii == '\b') {
                 handle_backspace();
@@ -381,7 +381,7 @@ void process_keyboard_buffer(void) {
             } else if (ascii == '\n') {
                 input_buffer[input_pos] = '\0';
                 input_ready = 1;
-                
+
                 printc('\n');
                 serial_write_byte(COM1, '\r');
                 serial_write_byte(COM1, '\n');
@@ -401,12 +401,12 @@ void process_keyboard_buffer(void) {
 char* get_input_line(void) {
     input_ready = 0;
     input_pos = 0;
-    
+
     while (!input_ready) {
         process_keyboard_buffer();
         for (volatile int i = 0; i < 1000; i++);
     }
-    
+
     return input_buffer;
 }
 

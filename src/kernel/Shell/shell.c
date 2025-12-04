@@ -90,36 +90,36 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
 void create_elf_from_asm(const char *output_path, const char *asm_code) {
     asm_context_t asm_ctx;
     asm_init(&asm_ctx);
-    
+
     PRINT(WHITE, BLACK, "[ASM] Assembling code...\n");
-    
+
     if (asm_program(&asm_ctx, asm_code) < 0) {
         PRINT(YELLOW, BLACK, "[ASM] Error: %s\n", asm_ctx.error_msg);
         return;
     }
-    
+
     size_t code_size;
     uint8_t *code = asm_get_code(&asm_ctx, &code_size);
-    
+
     if (!code || code_size == 0) {
         PRINT(YELLOW, BLACK, "[ASM] No code generated\n");
         return;
     }
-    
+
     PRINT(MAGENTA, BLACK, "[ASM] Generated %zu bytes of machine code\n", code_size);
-    
+
     size_t total_size = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + code_size;
     uint8_t *elf = kmalloc(total_size);
-    
+
     if (!elf) {
         PRINT(YELLOW, BLACK, "[ASM] Out of memory\n");
         return;
     }
-    
+
     for (size_t i = 0; i < total_size; i++) {
         elf[i] = 0;
     }
-    
+
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)elf;
     ehdr->e_ident[EI_MAG0] = 0x7F;
     ehdr->e_ident[EI_MAG1] = 'E';
@@ -136,7 +136,7 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
     ehdr->e_ehsize = sizeof(Elf64_Ehdr);
     ehdr->e_phentsize = sizeof(Elf64_Phdr);
     ehdr->e_phnum = 1;
-    
+
     Elf64_Phdr *phdr = (Elf64_Phdr *)(elf + sizeof(Elf64_Ehdr));
     phdr->p_type = PT_LOAD;
     phdr->p_flags = PF_R | PF_X;
@@ -146,12 +146,12 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
     phdr->p_filesz = code_size;
     phdr->p_memsz = code_size;
     phdr->p_align = 0x1000;
-    
+
     uint8_t *code_section = elf + sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
     for (size_t i = 0; i < code_size; i++) {
         code_section[i] = code[i];
     }
-    
+
     char fullpath[256];
     if (output_path[0] == '/') {
         strcpy_local(fullpath, output_path);
@@ -170,13 +170,13 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         }
         fullpath[i] = '\0';
     }
-    
+
     int fd = vfs_open(fullpath, FILE_WRITE);
     if (fd < 0) {
         vfs_create(fullpath, FILE_READ | FILE_WRITE);
         fd = vfs_open(fullpath, FILE_WRITE);
     }
-    
+
     if (fd >= 0) {
         int written = vfs_write(fd, elf, total_size);
         vfs_close(fd);
@@ -190,7 +190,7 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
     } else {
         PRINT(YELLOW, BLACK, "[ASM] Failed to create file\n");
     }
-    
+
     kfree(elf);
 }
 
@@ -201,11 +201,11 @@ void bg_command_thread(void) {
         thread_exit();
         return;
     }
-    
+
     cmd_thread_data_t *data = (cmd_thread_data_t*)current->private_data;
-    
+
     PRINT(MAGENTA, BLACK, "\n[BG %d] Starting: %s\n", data->job_id, data->command);
-    
+
     char cmd_name[64];
     int i = 0;
     while (data->command[i] && data->command[i] != ' ' && i < 63) {
@@ -213,21 +213,21 @@ void bg_command_thread(void) {
         i++;
     }
     cmd_name[i] = '\0';
-    
+
     if (strcmp(cmd_name, "sleep") == 0) {
         char *arg = data->command;
         while (*arg && *arg != ' ') arg++;
         while (*arg == ' ') arg++;
-        
+
         uint32_t seconds = 0;
         while (*arg >= '0' && *arg <= '9') {
             seconds = seconds * 10 + (*arg - '0');
             arg++;
         }
-        
+
         if (seconds > 0) {
             PRINT(WHITE, BLACK, "[BG %d] Sleeping %u seconds\n", data->job_id, seconds);
-            
+
             for (uint32_t s = 0; s < seconds; s++) {
                 for (volatile uint64_t j = 0; j < 50000000; j++) {
                     if (j % 5000000 == 0) {
@@ -236,7 +236,7 @@ void bg_command_thread(void) {
                 }
                 PRINT(WHITE, BLACK, "[BG %d] %u/%u\n", data->job_id, s + 1, seconds);
             }
-            
+
             PRINT(MAGENTA, BLACK, "[BG %d] Done!\n", data->job_id);
         }
     }
@@ -247,10 +247,10 @@ void bg_command_thread(void) {
     else {
         PRINT(YELLOW, BLACK, "[BG %d] Unknown command: %s\n", data->job_id, cmd_name);
     }
-    
+
     data->job_id = 0;
     data->command[0] = '\0';
-    
+
     thread_exit();
 }
 
@@ -261,34 +261,34 @@ void bring_to_foreground(int job_id) {
         PRINT(YELLOW, BLACK, "fg: job %d not found\n", job_id);
         return;
     }
-    
+
     if (!job->is_background) {
         PRINT(WHITE, BLACK, "fg: job %d is already in foreground\n", job_id);
         return;
     }
-    
+
     thread_t *thread = get_thread(job->tid);
     if (!thread) {
         PRINT(YELLOW, BLACK, "fg: thread %u not found for job %d\n", job->tid, job_id);
         return;
     }
-    
-    PRINT(MAGENTA, BLACK, "fg: job %d (%s) - thread state = %d\n", 
+
+    PRINT(MAGENTA, BLACK, "fg: job %d (%s) - thread state = %d\n",
           job_id, job->command, thread->state);
-    
+
     if (thread->state == THREAD_STATE_BLOCKED) {
         PRINT(WHITE, BLACK, "fg: Unblocking thread %u...\n", thread->tid);
         thread_unblock(job->tid);
         job->state = JOB_RUNNING;
         job->sleep_until = 0;
     }
-    
+
     if (thread->state == THREAD_STATE_READY) {
         PRINT(MAGENTA, BLACK, "fg: Thread %u is ready, will be scheduled\n", thread->tid);
     }
-    
+
     job->is_background = 0;
-    
+
     PRINT(MAGENTA, BLACK, "fg: job %d (%s) moved to foreground\n", job_id, job->command);
     PRINT(WHITE, BLACK, "Note: Job continues running. Check with 'jobs' command.\n");
 }
@@ -299,12 +299,12 @@ void send_to_background(int job_id) {
         PRINT(YELLOW, BLACK, "bg: job %d not found\n", job_id);
         return;
     }
-    
+
     if (job->is_background) {
         PRINT(WHITE, BLACK, "bg: job %d is already in background\n", job_id);
         return;
     }
-    
+
     job->is_background = 1;
 
     PRINT(MAGENTA, BLACK, "bg: job %d (%s) sent to background\n", job_id, job->command);
@@ -360,7 +360,7 @@ void process_command(char* cmd) {
             500000000,
             500000000
         );
-        
+
         if (tid < 0) {
             PRINT(YELLOW, BLACK, "[ERROR] Failed to create background thread\n");
             bg_thread_data[data_idx].job_id = 0;
@@ -375,14 +375,14 @@ void process_command(char* cmd) {
         int job_id = add_bg_job(cmd, proc->pid, tid);
         if (job_id > 0) {
             bg_thread_data[data_idx].job_id = job_id;
-            PRINT(MAGENTA, BLACK, "[SHELL] Created background job %d (TID=%d)\n", 
+            PRINT(MAGENTA, BLACK, "[SHELL] Created background job %d (TID=%d)\n",
                   job_id, tid);
         } else {
             PRINT(YELLOW, BLACK, "[ERROR] Failed to add background job\n");
             bg_thread_data[data_idx].job_id = 0;
         }
 
-        return; 
+        return;
     }
 
     char cmd1[] = "hello";
@@ -577,11 +577,11 @@ void process_command(char* cmd) {
         process_command(test1);
 
         for (volatile int i = 0; i < 10000000; i++);
-        
+
         PRINT(WHITE, BLACK, "Test 2: sleep 3 &\n");
         char test2[] = "sleep 3 &";
         process_command(test2);
-        
+
         PRINT(MAGENTA, BLACK, "\nCheck with 'jobs' command\n");
     }
     else if (strncmp(cmd, cmd5, 3) == 0) {
@@ -723,22 +723,22 @@ void process_command(char* cmd) {
         char* rest = cmd + 6;
         char filename[256];
         char content[512];
-        
+
         int i = 0;
         while (rest[i] && rest[i] != ' ' && i < 255) {
             filename[i] = rest[i];
             i++;
         }
         filename[i] = '\0';
-        
+
         while (rest[i] == ' ') i++;
-        
+
         int j = 0;
         while (rest[i] && j < 511) {
             content[j++] = rest[i++];
         }
         content[j] = '\0';
-        
+
         if (filename[0] == '\0' || content[0] == '\0') {
             PRINT(YELLOW, BLACK, "Usage: write <file> <content>\n");
         } else {
@@ -800,13 +800,13 @@ void process_command(char* cmd) {
         if (root && root->fs && root->fs->ops && root->fs->ops->unmount) {
             root->fs->ops->unmount(root->fs);
         }
-        
+
         char device[] = "ata0";
         if (tinyfs_format(device) != 0) {
             PRINT(YELLOW, BLACK, "[ERROR] Format failed\n");
             for (;;) {}
         }
-        
+
         PRINT(WHITE, BLACK, "Remounting filesystem...\n");
         char fs_type[] = "tinyfs";
         char mount_point[] = "/";
@@ -831,7 +831,7 @@ void process_command(char* cmd) {
             i++;
         }
         dir[i] = '\0';
-        
+
         if (dir[0] == '\0') {
             char root[] = "/";
             if (vfs_chdir(root) == 0) {
@@ -869,22 +869,22 @@ void process_command(char* cmd) {
    }
    else if (STRNCMP(cmd, "elftest", 8) == 0) {
        shell_command_elftest();
-   } 
+   }
 else if (strncmp(cmd, "ASM ", 4) == 0) {
     char *rest = cmd + 4;
     char filename[256];
-    
+
     int i = 0;
     while (rest[i] && rest[i] != ' ' && i < 255) {
         filename[i] = rest[i];
         i++;
     }
     filename[i] = '\0';
-    
+
     while (rest[i] == ' ') i++;
-    
+
     char *asm_code = &rest[i];
-    
+
     if (filename[0] == '\0' || asm_code[0] == '\0') {
         PRINT(YELLOW, BLACK, "Usage: asm <file> <assembly code>\n");
         PRINT(WHITE, BLACK, "Example: asm test.elf mov rax, 42; ret\n");
@@ -899,7 +899,7 @@ else if (strncmp(cmd, "ASM ", 4) == 0) {
             }
         }
         code_buf[j] = '\0';
-        
+
         create_elf_from_asm(filename, code_buf);
     }
 }
@@ -908,27 +908,27 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
     char *rest = cmd + 8;
     char source[256];
     char output[256];
-    
+
     int i = 0;
     while (rest[i] && rest[i] != ' ' && i < 255) {
         source[i] = rest[i];
         i++;
     }
     source[i] = '\0';
-    
+
     while (rest[i] == ' ') i++;
-    
+
     int j = 0;
     while (rest[i] && j < 255) {
         output[j++] = rest[i++];
     }
     output[j] = '\0';
-    
+
     if (source[0] == '\0' || output[0] == '\0') {
         PRINT(YELLOW, BLACK, "Usage: asmfile <source.asm> <output.elf>\n");
         return;
     }
-    
+
     char fullpath[256];
     if (source[0] == '/') {
         strcpy_local(fullpath, source);
@@ -947,31 +947,31 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
         }
         fullpath[k] = '\0';
     }
-    
+
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
         PRINT(YELLOW, BLACK, "Cannot open source file: %s\n", fullpath);
         return;
     }
-    
+
     uint8_t asm_buf[2048];
     int bytes = vfs_read(fd, asm_buf, 2047);
     vfs_close(fd);
-    
+
     if (bytes <= 0) {
         PRINT(YELLOW, BLACK, "Failed to read source file\n");
         return;
     }
-    
+
     asm_buf[bytes] = '\0';
-    
+
     create_elf_from_asm(output, (char *)asm_buf);
 } else if (STRNCMP(cmd, "anthropic ", 10) == 0) {
     char* filename = cmd + 10;
-    
-    // Skip leading spaces
+
+
     while (*filename == ' ') filename++;
-    
+
     if (filename[0] == '\0') {
         PRINT(YELLOW, BLACK, "Usage: anthropic <filename>\n");
         PRINT(WHITE, BLACK, "  Opens a graphical text editor\n");
@@ -979,7 +979,7 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
         PRINT(WHITE, BLACK, "  Click X button to close\n");
     } else {
         anthropic_editor(filename);
-        // Redraw shell prompt after editor closes
+
         PRINT(MAGENTA, BLACK, "\n%s> ", vfs_get_cwd_path());
     }
 }
@@ -1004,7 +1004,7 @@ void run_text_demo(void) {
 
     while (1) {
         cursor_timer++;
-        
+
         process_keyboard_buffer();
         mouse();
         if (input_available()) {
@@ -1012,13 +1012,13 @@ void run_text_demo(void) {
             process_command(input);
             PRINT(MAGENTA, BLACK, "%s> ", vfs_get_cwd_path());
         }
-        
+
         if (cursor_timer >= CURSOR_BLINK_RATE) {
             cursor_timer = 0;
             cursor_visible = !cursor_visible;
             draw_cursor(cursor_visible);
         }
-        
+
         for (volatile int i = 0; i < 4000; i++);
     }
 }
@@ -1034,16 +1034,16 @@ void test_syscall_interface(void) {
     PRINT(WHITE, BLACK, "[TEST] Calling sys_getpid...\n");
     int64_t pid = sys_getpid();
     PRINT(MAGENTA, BLACK, "[TEST] PID = %lld\n", pid);
-    
+
     PRINT(WHITE, BLACK, "[TEST] Calling sys_uptime...\n");
     int64_t uptime = sys_uptime();
     PRINT(MAGENTA, BLACK, "[TEST] Uptime = %lld seconds\n", uptime);
-    
+
     PRINT(WHITE, BLACK, "[TEST] Calling sys_getcwd...\n");
     char cwd[256];
     sys_getcwd(cwd, 256);
     PRINT(MAGENTA, BLACK, "[TEST] CWD = %s\n", cwd);
-    
+
     PRINT(WHITE, BLACK, "[TEST] Testing sys_mkdir...\n");
     char t1[] = "/syscall_test";
     int ret = sys_mkdir(t1, FILE_READ | FILE_WRITE);
@@ -1052,7 +1052,7 @@ void test_syscall_interface(void) {
     } else {
         PRINT(YELLOW, BLACK, "[TEST] mkdir failed: %d\n", ret);
     }
-    
+
     PRINT(WHITE, BLACK, "[TEST] Testing sys_open/write/close...\n");
     char t2[] = "/test_syscall.txt";
     int fd = sys_open(t2, FILE_WRITE, 0);
@@ -1061,7 +1061,7 @@ void test_syscall_interface(void) {
         int64_t written = sys_write(fd, data, sizeof(data) - 1);
         PRINT(MAGENTA, BLACK, "[TEST] Wrote %lld bytes\n", written);
         sys_close(fd);
-        
+
         char t3[] = "/test_syscall";
         fd = sys_open(t3, FILE_READ, 0);
         if (fd >= 0) {
@@ -1074,23 +1074,23 @@ void test_syscall_interface(void) {
             sys_close(fd);
         }
     }
-    
+
     PRINT(MAGENTA, BLACK, "=== Syscall Tests Complete ===\n\n");
 }
 
 
 void switch_to_user_mode(void (*user_func)(void)) {
     PRINT(WHITE, BLACK, "[SWITCH] Entering user mode...\n");
-    
+
     extern void* kmalloc(size_t size);
     uint8_t *user_stack = (uint8_t*)kmalloc(16384);
     uint64_t user_stack_top = (uint64_t)user_stack + 16384;
-    
+
     user_stack_top &= ~0xF;
-    
+
     PRINT(WHITE, BLACK, "[SWITCH] User stack at 0x%llx\n", user_stack_top);
     PRINT(WHITE, BLACK, "[SWITCH] User function at 0x%llx\n", (uint64_t)user_func);
-    
+
     __asm__ volatile(
         "cli\n"
         "mov %0, %%rsp\n"
@@ -1107,14 +1107,14 @@ void switch_to_user_mode(void (*user_func)(void)) {
         : "r"(user_stack_top), "r"((uint64_t)user_func)
         : "memory", "rax"
     );
-    
+
     PRINT(YELLOW, BLACK, "[ERROR] Failed to switch to user mode\n");
 }
 
 int fibonacci_rng() {
     static int a = 0;
     static int b = 1;
-    
+
     int next = a + b;
     a = b;
     b = next;
@@ -1153,7 +1153,7 @@ void play_rps() {
 
     if (!user_str) {
         PRINT(YELLOW,BLACK, "Invalid input!\n");
-        return; 
+        return;
     }
 
     PRINT(YELLOW, BLACK, "You picked: %s\n", user_str);
@@ -1189,20 +1189,20 @@ void shell_command_elftest(void) {
     PRINT(CYAN, BLACK, "\n========================================\n");
     PRINT(CYAN, BLACK, "  ELF Loader Test Suite\n");
     PRINT(CYAN, BLACK, "========================================\n\n");
-    
+
     elf_test_simple();
-    
+
     PRINT(MAGENTA, BLACK, "\n=== All Tests Complete ===\n");
 }
 
 void shell_command_elfcheck(const char *args) {
     while (*args == ' ') args++;
-    
+
     if (*args == '\0') {
         PRINT(YELLOW, BLACK, "Usage: elfcheck <file>\n");
         return;
     }
-    
+
     char fullpath[256];
     if (args[0] == '/') {
         int i = 0;
@@ -1227,42 +1227,42 @@ void shell_command_elfcheck(const char *args) {
         }
         fullpath[i] = '\0';
     }
-    
+
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
         PRINT(YELLOW, BLACK, "Cannot open: %s\n", fullpath);
         return;
     }
-    
+
     uint8_t header[64];
     int bytes = vfs_read(fd, header, 64);
     vfs_close(fd);
-    
+
     if (bytes < 64) {
         PRINT(YELLOW, BLACK, "File too small\n");
         return;
     }
-    
-    if (header[0] != 0x7F || header[1] != 'E' || 
+
+    if (header[0] != 0x7F || header[1] != 'E' ||
         header[2] != 'L' || header[3] != 'F') {
         PRINT(YELLOW, BLACK, "✗ Not an ELF file\n");
         return;
     }
-    
+
     PRINT(MAGENTA, BLACK, "✓ Valid ELF file\n");
-    
+
     if (header[4] == 1) {
         PRINT(WHITE, BLACK, "  Class: ELF32 (32-bit)\n");
     } else if (header[4] == 2) {
         PRINT(WHITE, BLACK, "  Class: ELF64 (64-bit)\n");
     }
-    
+
     if (header[5] == 1) {
         PRINT(WHITE, BLACK, "  Data: Little-endian\n");
     } else if (header[5] == 2) {
         PRINT(WHITE, BLACK, "  Data: Big-endian\n");
     }
-    
+
     uint16_t type = *(uint16_t *)&header[16];
     PRINT(WHITE, BLACK, "  Type: ");
     switch (type) {
@@ -1273,7 +1273,7 @@ void shell_command_elfcheck(const char *args) {
         case 4: PRINT(WHITE, BLACK, "Core dump\n"); break;
         default: PRINT(WHITE, BLACK, "Unknown\n"); break;
     }
-    
+
     uint16_t machine = *(uint16_t *)&header[18];
     PRINT(WHITE, BLACK, "  Machine: ");
     switch (machine) {
@@ -1285,13 +1285,13 @@ void shell_command_elfcheck(const char *args) {
 
 void shell_command_elfload(const char *args) {
     while (*args == ' ') args++;
-    
+
     if (*args == '\0') {
         PRINT(YELLOW, BLACK, "Usage: elfload <file>\n");
         PRINT(WHITE, BLACK, "  Loads and executes an ELF executable\n");
         return;
     }
-    
+
     char fullpath[256];
     if (args[0] == '/') {
         int i = 0;
@@ -1316,99 +1316,99 @@ void shell_command_elfload(const char *args) {
         }
         fullpath[i] = '\0';
     }
-    
+
     PRINT(WHITE, BLACK, "[ELFLOAD] Loading: %s\n", fullpath);
-    
+
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
         PRINT(YELLOW, BLACK, "Failed to open: %s\n", fullpath);
         return;
     }
-    
+
     vfs_node_t *node = vfs_resolve_path(fullpath);
     if (!node) {
         vfs_close(fd);
         return;
     }
-    
+
     size_t file_size = node->size;
-    
+
     void *elf_buffer = kmalloc(file_size);
     if (!elf_buffer) {
         PRINT(YELLOW, BLACK, "Out of memory\n");
         vfs_close(fd);
         return;
     }
-    
+
     int bytes = vfs_read(fd, (uint8_t *)elf_buffer, file_size);
     vfs_close(fd);
-    
+
     if (bytes != (int)file_size) {
         PRINT(YELLOW, BLACK, "Failed to read file\n");
         kfree(elf_buffer);
         return;
     }
-    
+
     elf_load_info_t load_info;
     int result = elf_load(elf_buffer, file_size, &load_info);
-    
+
     if (result != ELF_SUCCESS) {
         PRINT(YELLOW, BLACK, "Failed to load ELF: error %d\n", result);
         kfree(elf_buffer);
         return;
     }
-    
+
     PRINT(MAGENTA, BLACK, "[ELFLOAD] Successfully loaded:\n");
     PRINT(MAGENTA, BLACK, "  Base address: 0x%llx\n", load_info.base_addr);
     PRINT(MAGENTA, BLACK, "  Entry point:  0x%llx\n", load_info.entry_point);
     PRINT(MAGENTA, BLACK, "  Dynamic: %s\n", load_info.is_dynamic ? "Yes" : "No");
     PRINT(MAGENTA, BLACK, "  TLS: %s\n", load_info.has_tls ? "Yes" : "No");
-    
+
     if (load_info.has_tls) {
         PRINT(WHITE, BLACK, "  TLS size: %llu bytes\n", load_info.tls_size);
     }
-    
+
     const char *name = fullpath;
     for (int i = 0; fullpath[i]; i++) {
         if (fullpath[i] == '/') {
             name = &fullpath[i + 1];
         }
     }
-    
+
     int pid = process_create(name, load_info.base_addr);
     if (pid < 0) {
         PRINT(YELLOW, BLACK, "Failed to create process\n");
         kfree(elf_buffer);
         return;
     }
-    
+
     void (*entry)(void) = (void (*)(void))load_info.entry_point;
     int tid = thread_create(pid, entry, 131072, 50000000, 1000000000, 1000000000);
-    
+
     if (tid < 0) {
         PRINT(YELLOW, BLACK, "Failed to create thread\n");
         kfree(elf_buffer);
         return;
     }
-    
+
     extern int add_fg_job(const char *command, uint32_t pid, uint32_t tid);
     int job_id = add_fg_job(fullpath, pid, tid);
-    
-    PRINT(MAGENTA, BLACK, "[ELFLOAD] Created process %d (thread %d, job %d)\n", 
+
+    PRINT(MAGENTA, BLACK, "[ELFLOAD] Created process %d (thread %d, job %d)\n",
           pid, tid, job_id);
     PRINT(MAGENTA, BLACK, "[ELFLOAD] Program is now running\n");
-    
+
 }
 
 void shell_command_elfinfo(const char *args) {
     while (*args == ' ') args++;
-    
+
     if (*args == '\0') {
         PRINT(YELLOW, BLACK, "Usage: elfinfo <file>\n");
         PRINT(WHITE, BLACK, "  Displays detailed ELF file information\n");
         return;
     }
-    
+
     char fullpath[256];
     if (args[0] == '/') {
         int i = 0;
@@ -1433,60 +1433,60 @@ void shell_command_elfinfo(const char *args) {
         }
         fullpath[i] = '\0';
     }
-    
+
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
         PRINT(YELLOW, BLACK, "Failed to open: %s\n", fullpath);
         return;
     }
-    
+
     vfs_node_t *node = vfs_resolve_path(fullpath);
     if (!node) {
         vfs_close(fd);
         return;
     }
-    
+
     size_t file_size = node->size;
-    
+
     void *elf_buffer = kmalloc(file_size);
     if (!elf_buffer) {
         PRINT(YELLOW, BLACK, "Out of memory\n");
         vfs_close(fd);
         return;
     }
-    
+
     int bytes = vfs_read(fd, (uint8_t *)elf_buffer, file_size);
     vfs_close(fd);
-    
+
     if (bytes != (int)file_size) {
         PRINT(YELLOW, BLACK, "Failed to read file\n");
         kfree(elf_buffer);
         return;
     }
-    
+
     if (elf_validate(elf_buffer, file_size) != ELF_SUCCESS) {
         PRINT(YELLOW, BLACK, "Not a valid ELF file\n");
         kfree(elf_buffer);
         return;
     }
-    
+
     elf_context_t *ctx = elf_create_context(elf_buffer, file_size);
     if (!ctx) {
         PRINT(YELLOW, BLACK, "Failed to parse ELF\n");
         kfree(elf_buffer);
         return;
     }
-    
+
     PRINT(CYAN, BLACK, "\n========================================\n");
     PRINT(CYAN, BLACK, "  ELF File Information: %s\n", fullpath);
     PRINT(CYAN, BLACK, "========================================\n");
-    
+
     elf_print_header(ctx->ehdr);
     elf_print_program_headers(ctx);
     elf_print_section_headers(ctx);
-    
+
     elf_resolve_symbols(ctx);
-    
+
     int func_count = 0, obj_count = 0, total_count = 0;
     for (int i = 0; i < 256; i++) {
         elf_symbol_t *sym = ctx->symbol_hash[i];
@@ -1497,22 +1497,22 @@ void shell_command_elfinfo(const char *args) {
             sym = sym->next;
         }
     }
-    
+
     PRINT(WHITE, BLACK, "\n=== Symbol Summary ===\n");
     PRINT(WHITE, BLACK, "Total symbols: %d\n", total_count);
     PRINT(WHITE, BLACK, "Functions: %d\n", func_count);
     PRINT(WHITE, BLACK, "Objects: %d\n", obj_count);
-    
+
     if (total_count > 0 && total_count <= 50) {
         elf_print_symbols(ctx);
     } else if (total_count > 50) {
         PRINT(WHITE, BLACK, "(Too many symbols to display, use 'elfsyms' for full list)\n");
     }
-    
+
     if (ctx->dynamic) {
         elf_print_dynamic(ctx);
     }
-    
+
     elf_destroy_context(ctx);
     kfree(elf_buffer);
 }
