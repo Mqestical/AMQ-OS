@@ -15,6 +15,7 @@
 #include "elf_loader.h"
 #include "elf_test.h"
 #include "asm.h"
+#include "anthropic.h"
 
 #define CURSOR_BLINK_RATE 50000
 
@@ -476,7 +477,9 @@ void process_command(char* cmd) {
         PRINT(BROWN, BLACK, "    Compare: cmp\n");
         PRINT(BROWN, BLACK, "    Control: syscall, ret, nop\n");
         PRINT(BROWN, BLACK, "  Registers: rax, rbx, rcx, rdx, rsi, rdi, rbp, rsp, r8-r15\n");
-        
+        PRINT(CYAN, BLACK, "\nText Editor:\n");
+        PRINT(WHITE, BLACK, "  anthropic <file> - Open graphical text editor\n");
+        PRINT(BROWN, BLACK, "    Ctrl+S to save, click X to close\n");
     }
     else if (strcmp(cmd, cmd3) == 0) {
         ClearScreen(BLACK);
@@ -963,6 +966,25 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
     asm_buf[bytes] = '\0';
     
     create_elf_from_asm(output, (char *)asm_buf);
+} else if (STRNCMP(cmd, "anthropic ", 10) == 0) {
+    char* filename = cmd + 10;
+    
+    // Skip leading spaces
+    while (*filename == ' ') filename++;
+    
+    if (filename[0] == '\0') {
+        PRINT(YELLOW, BLACK, "Usage: anthropic <filename>\n");
+        PRINT(WHITE, BLACK, "  Opens a graphical text editor\n");
+        PRINT(WHITE, BLACK, "  Ctrl+S to save\n");
+        PRINT(WHITE, BLACK, "  Click X button to close\n");
+    } else {
+        anthropic_editor(filename);
+        // Redraw shell prompt after editor closes
+        PRINT(MAGENTA, BLACK, "\n%s> ", vfs_get_cwd_path());
+    }
+}
+else if (STRNCMP(cmd, "anthropic",9) == 0) {
+    PRINT(YELLOW, BLACK, "Usage: anthropic <filename>\n");
 } else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");

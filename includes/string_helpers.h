@@ -55,6 +55,27 @@ extern int strncmp(const char* s1, const char* s2, int n);
     strcmp(_msg, b);                      \
 })
 
+#define STRLEN(s) ({           \
+    const char *_tmp = (s);    \
+    size_t _len = 0;           \
+    while (_tmp[_len]) _len++; \
+    _len;                      \
+})
+
+#define STRCPY(dest, src) ({           \
+    char *_d = (dest);                 \
+    const char *_s = (src);            \
+    while ((*_d++ = *_s++));           \
+    (dest);                             \
+})
+
+#define STRCAT(dest, src) ({           \
+    char *_d = (dest);                 \
+    const char *_s = (src);            \
+    while (*_d) _d++;                   \
+    while ((*_d++ = *_s++));           \
+    (dest);                             \
+})
 
 
 #endif
