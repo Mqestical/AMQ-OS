@@ -18,6 +18,9 @@ CFLAGS="-I/usr/include/efi -I/usr/include/efi/x86_64 -I./includes \
 LDFLAGS="-nostdlib -znocombreloc -T /usr/lib/elf_x86_64_efi.lds \
 -shared -Bsymbolic -L /usr/lib"
 
+# NASM flags for assembly
+NASMFLAGS="-f elf64"
+
 # =========[ PART 1: BOOTLOADER ]=========
 echo ""
 echo "--- Compiling Bootloader (bootloader.c) ---"
@@ -38,15 +41,26 @@ echo "✓ Bootloader compiled: BOOTX64.EFI"
 
 # =========[ PART 2: KERNEL ]=========
 echo ""
-echo "--- Compiling Kernel (recursive *.c in src/kernel) ---"
+echo "--- Compiling Kernel (recursive *.c and *.s in src/kernel) ---"
 
 KERNEL_OBJS=""
+
+# Compile all .c files
 while IFS= read -r SRC; do
     OBJ="$OBJDIR/$(basename "${SRC%.c}.o")"
     gcc $CFLAGS -c "$SRC" -o "$OBJ"
-    echo "  Compiled: $SRC → $OBJ"
+    echo "  Compiled C: $SRC → $OBJ"
     KERNEL_OBJS="$KERNEL_OBJS $OBJ"
 done < <(find src/kernel -type f -name "*.c")
+
+# Compile all .s/.asm files with NASM
+while IFS= read -r SRC; do
+    BASENAME=$(basename "$SRC")
+    OBJ="$OBJDIR/${BASENAME%.*}.o"
+    nasm $NASMFLAGS "$SRC" -o "$OBJ"
+    echo "  Compiled ASM: $SRC → $OBJ"
+    KERNEL_OBJS="$KERNEL_OBJS $OBJ"
+done < <(find src/kernel -type f \( -name "*.s" -o -name "*.asm" \))
 
 KERNEL_SO="$SODIR/kernel.so"
 
