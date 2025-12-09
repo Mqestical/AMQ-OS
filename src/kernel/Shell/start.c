@@ -209,7 +209,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     jobs_set_active(1);
     PRINT(MAGENTA, BLACK, "[OK] Job tracking ENABLED\n");
     PRINT(MAGENTA, BLACK, "\nStarting shell...\n\n");
-
     for (volatile int i = 0; i < 5000000; i++);
 
     init_shell();
