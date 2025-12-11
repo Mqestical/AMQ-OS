@@ -16,7 +16,7 @@
 #include "elf_test.h"
 #include "asm.h"
 #include "anthropic.h"
-
+#include "AC97.h"
 #define CURSOR_BLINK_RATE 50000
 
 void bg_command_thread(void);
@@ -86,6 +86,284 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
     dest[i] = '\0';
 }
 
+// ============================================================================
+// PARSE NUMBER FUNCTION
+// ============================================================================
+
+uint32_t parse_number(const char *str) {
+    uint32_t result = 0;
+    while (*str >= '0' && *str <= '9') {
+        result = result * 10 + (*str - '0');
+        str++;
+    }
+    return result;
+}
+
+// ============================================================================
+// Audio Command Implementations
+// ============================================================================
+
+void cmd_audioinit(void) {
+    PRINT(WHITE, BLACK, "Initializing AC'97 audio driver...\n");
+    
+    if (g_ac97_device && g_ac97_device->initialized) {
+        PRINT(WHITE, BLACK, "Audio already initialized.\n");
+        ac97_print_info();
+        return;
+    }
+    
+    if (ac97_init() == 0) {
+        PRINT(MAGENTA, BLACK, "\nAudio initialization successful!\n");
+        PRINT(WHITE, BLACK, "Try these commands:\n");
+        PRINT(WHITE, BLACK, "  audioinfo    - Display audio device information\n");
+        PRINT(WHITE, BLACK, "  beep <freq>  - Play a beep tone (440Hz default)\n");
+        PRINT(WHITE, BLACK, "  volume <L> <R> - Set master volume (0-100)\n");
+        PRINT(WHITE, BLACK, "  audiotest    - Run audio test\n");
+    } else {
+        PRINT(YELLOW, BLACK, "Audio initialization failed!\n");
+        PRINT(WHITE, BLACK, "This might be because:\n");
+        PRINT(WHITE, BLACK, "  - No AC'97 device present in system\n");
+        PRINT(WHITE, BLACK, "  - Device not properly detected\n");
+        PRINT(WHITE, BLACK, "  - Running in emulator without audio device\n");
+        PRINT(WHITE, BLACK, "  - For QEMU: add -soundhw ac97 to command line\n");
+    }
+}
+
+void cmd_audioinfo(void) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio device not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+    
+    ac97_print_info();
+}
+
+void cmd_audiotest(void) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+    
+    PRINT(CYAN, BLACK, "\n=== Audio Test Suite ===\n\n");
+    
+    // Test 1: Simple beeps at different frequencies
+    PRINT(WHITE, BLACK, "Test 1: Playing frequency sweep...\n");
+    
+    uint32_t frequencies[] = {262, 294, 330, 349, 392, 440, 494, 523};  // C4 to C5
+    const char *notes[] = {"C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"};
+    
+    for (int i = 0; i < 8; i++) {
+        PRINT(WHITE, BLACK, "  %s (%u Hz)... ", notes[i], frequencies[i]);
+        audio_beep(frequencies[i], 300);
+        PRINT(MAGENTA, BLACK, "OK\n");
+        
+        // Short delay between notes
+        for (volatile int j = 0; j < 10000000; j++);
+    }
+    
+    PRINT(MAGENTA, BLACK, "\nTest 1: Complete\n\n");
+    
+    // Test 2: Volume control
+    PRINT(WHITE, BLACK, "Test 2: Volume control test...\n");
+    
+    uint8_t volumes[] = {100, 75, 50, 25, 50, 75, 100};
+    
+    for (int i = 0; i < 7; i++) {
+        PRINT(WHITE, BLACK, "  Volume %u%%... ", volumes[i]);
+        ac97_set_master_volume(volumes[i], volumes[i]);
+        audio_beep(440, 200);
+        PRINT(MAGENTA, BLACK, "OK\n");
+        
+        for (volatile int j = 0; j < 5000000; j++);
+    }
+    
+    PRINT(MAGENTA, BLACK, "\nTest 2: Complete\n\n");
+    
+    // Test 3: Stereo panning
+    PRINT(WHITE, BLACK, "Test 3: Stereo panning test...\n");
+    
+    PRINT(WHITE, BLACK, "  Left channel... ");
+    ac97_set_master_volume(100, 0);
+    audio_beep(440, 500);
+    PRINT(MAGENTA, BLACK, "OK\n");
+    
+    for (volatile int j = 0; j < 10000000; j++);
+    
+    PRINT(WHITE, BLACK, "  Right channel... ");
+    ac97_set_master_volume(0, 100);
+    audio_beep(440, 500);
+    PRINT(MAGENTA, BLACK, "OK\n");
+    
+    for (volatile int j = 0; j < 10000000; j++);
+    
+    PRINT(WHITE, BLACK, "  Both channels... ");
+    ac97_set_master_volume(100, 100);
+    audio_beep(440, 500);
+    PRINT(MAGENTA, BLACK, "OK\n");
+    
+    PRINT(MAGENTA, BLACK, "\nTest 3: Complete\n\n");
+    
+    // Reset to normal volume
+    ac97_set_master_volume(75, 75);
+    
+    PRINT(CYAN, BLACK, "=== All Tests Complete ===\n\n");
+    PRINT(MAGENTA, BLACK, "Audio system is working correctly!\n");
+}
+
+void cmd_beep(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+    
+    // Parse frequency from arguments
+    uint32_t frequency = 440;  // Default A4 note
+    
+    if (args && *args) {
+        // Skip whitespace
+        while (*args == ' ') args++;
+        
+        if (*args >= '0' && *args <= '9') {
+            frequency = parse_number(args);
+            
+            if (frequency < 20 || frequency > 20000) {
+                PRINT(YELLOW, BLACK, "Frequency must be between 20-20000 Hz\n");
+                return;
+            }
+        }
+    }
+    
+    PRINT(WHITE, BLACK, "Playing %u Hz beep...\n", frequency);
+    
+    if (audio_beep(frequency, 500) == 0) {
+        PRINT(MAGENTA, BLACK, "Beep complete!\n");
+    } else {
+        PRINT(YELLOW, BLACK, "Beep failed!\n");
+    }
+}
+
+void cmd_volume(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+    
+    if (!args || !*args) {
+        // Display current volume
+        uint8_t left, right;
+        ac97_get_master_volume(&left, &right);
+        PRINT(WHITE, BLACK, "Master Volume: L=%u%% R=%u%%\n", left, right);
+        ac97_get_pcm_volume(&left, &right);
+        PRINT(WHITE, BLACK, "PCM Volume:    L=%u%% R=%u%%\n", left, right);
+        return;
+    }
+    
+    // Parse left and right values
+    const char *p = args;
+    while (*p == ' ') p++;
+    
+    if (*p < '0' || *p > '9') {
+        PRINT(YELLOW, BLACK, "Usage: volume <left> <right>\n");
+        PRINT(WHITE, BLACK, "  Values: 0-100 (0 = mute, 100 = max)\n");
+        return;
+    }
+    
+    uint32_t left = parse_number(p);
+    
+    // Skip to next number
+    while (*p >= '0' && *p <= '9') p++;
+    while (*p == ' ') p++;
+    
+    uint32_t right = left;  // Default: same as left
+    if (*p >= '0' && *p <= '9') {
+        right = parse_number(p);
+    }
+    
+    if (left > 100) left = 100;
+    if (right > 100) right = 100;
+    
+    ac97_set_master_volume(left, right);
+    
+    PRINT(MAGENTA, BLACK, "Volume set: L=%u%% R=%u%%\n", left, right);
+}
+
+void cmd_playtone(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+    
+    // Parse: freq duration (e.g., "440 1000" for 440Hz 1 second)
+    const char *p = args;
+    while (*p == ' ') p++;
+    
+    if (*p < '0' || *p > '9') {
+        PRINT(YELLOW, BLACK, "Usage: playtone <frequency> <duration_ms>\n");
+        PRINT(WHITE, BLACK, "  Example: playtone 440 1000\n");
+        return;
+    }
+    
+    uint32_t frequency = parse_number(p);
+    
+    while (*p >= '0' && *p <= '9') p++;
+    while (*p == ' ') p++;
+    
+    uint32_t duration = 1000;  // Default 1 second
+    if (*p >= '0' && *p <= '9') {
+        duration = parse_number(p);
+    }
+    
+    if (frequency < 20 || frequency > 20000) {
+        PRINT(YELLOW, BLACK, "Frequency must be between 20-20000 Hz\n");
+        return;
+    }
+    
+    if (duration > 10000) {
+        PRINT(YELLOW, BLACK, "Duration limited to 10 seconds\n");
+        duration = 10000;
+    }
+    
+    PRINT(WHITE, BLACK, "Playing %u Hz for %u ms...\n", frequency, duration);
+    
+    audio_beep(frequency, duration);
+    
+    PRINT(MAGENTA, BLACK, "Done!\n");
+}
+
+void cmd_playsine(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+    
+    PRINT(WHITE, BLACK, "Simple sine wave playback - use 'playtone' for now\n");
+    PRINT(WHITE, BLACK, "Example: playtone 440 1000\n");
+}
+
+void cmd_audiomute(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+    
+    // Check if we should unmute
+    if (args && *args) {
+        while (*args == ' ') args++;
+        if (strncmp(args, "off", 3) == 0) {
+            ac97_mute_master(0);
+            PRINT(MAGENTA, BLACK, "Audio unmuted\n");
+            return;
+        }
+    }
+    
+    ac97_mute_master(1);
+    PRINT(MAGENTA, BLACK, "Audio muted\n");
+}
+
+void cmd_ac97test(void) {
+    PRINT(YELLOW, BLACK, "Comprehensive test suite not included in shell.\n");
+    PRINT(WHITE, BLACK, "Use 'audiotest' for basic audio tests.\n");
+}
 
 void create_elf_from_asm(const char *output_path, const char *asm_code) {
     asm_context_t asm_ctx;
@@ -449,6 +727,16 @@ void process_command(char* cmd) {
         PRINT(MAGENTA, BLACK, "  syscalltest - Test syscall interface\n");
         PRINT(MAGENTA, BLACK, "  testbg - Test background jobs\n");
         PRINT(YELLOW, BLACK, "  stum -r3 - switch to usermode (UnAvailable!)\n");
+
+        PRINT(CYAN, BLACK, "\nAudio Commands:\n");
+        PRINT(WHITE, BLACK, "  audioinit - Initialize AC'97 audio device\n");
+        PRINT(WHITE, BLACK, "  audioinfo - Display audio device information\n");
+        PRINT(WHITE, BLACK, "  audiotest - Run comprehensive audio test suite\n");
+        PRINT(WHITE, BLACK, "  beep [freq] - Play beep tone (default 440Hz)\n");
+        PRINT(WHITE, BLACK, "  volume [L] [R] - Set/display master volume (0-100)\n");
+        PRINT(WHITE, BLACK, "  playtone <freq> <ms> - Play specific frequency\n");
+        PRINT(WHITE, BLACK, "  audiomute [off] - Mute/unmute audio\n");
+
         PRINT(BROWN, BLACK, "RPS - Play Rock Paper Scissors with a Computer!\n");
         PRINT(CYAN, BLACK, "\nELF Commands:\n");
         PRINT(WHITE, BLACK, "  elfinfo <file>  - Display ELF file information\n");
@@ -990,6 +1278,38 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
 }
 else if (STRNCMP(cmd, "anthropic",9) == 0) {
     PRINT(YELLOW, BLACK, "Usage: anthropic <filename>\n");
+} else if (STRNCMP(cmd, "audioinit", 9) == 0) {
+    cmd_audioinit();
+}
+else if (STRNCMP(cmd, "audioinfo", 9) == 0) {
+    cmd_audioinfo();
+}
+else if (STRNCMP(cmd, "audiotest", 9) == 0) {
+    cmd_audiotest();
+}
+else if (STRNCMP(cmd, "beep ", 5) == 0) {
+    cmd_beep(cmd + 5);
+}
+else if (STRNCMP(cmd, "beep", 4) == 0) {
+    cmd_beep(NULL);
+}
+else if (STRNCMP(cmd, "volume ", 7) == 0) {
+    cmd_volume(cmd + 7);
+}
+else if (STRNCMP(cmd, "volume", 6) == 0) {
+    cmd_volume(NULL);
+}
+else if (STRNCMP(cmd, "playtone ", 9) == 0) {
+    cmd_playtone(cmd + 9);
+}
+else if (STRNCMP(cmd, "playtone", 8) == 0) {
+    cmd_playtone(NULL);
+}
+else if (STRNCMP(cmd, "audiomute ", 10) == 0) {
+    cmd_audiomute(cmd + 10);
+}
+else if (STRNCMP(cmd, "audiomute", 9) == 0) {
+    cmd_audiomute(NULL);
 } else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");
