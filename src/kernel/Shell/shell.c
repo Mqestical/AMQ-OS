@@ -854,16 +854,16 @@ void process_command(char* cmd) {
         play_rps();
 }
 
-   else if (STRNCMP(cmd, "elfinfo ", 9) == 0) {
+   else if (STRNCMP(cmd, "elfinfo ", 8) == 0) {
        shell_command_elfinfo(cmd + 8);
    }
    else if (STRNCMP(cmd, "elfinfo", 8) == 0) {
        PRINT(YELLOW, BLACK, "Usage: elfinfo <file>\n");
    }
-   else if (STRNCMP(cmd, "elfload ", 9) == 0) {
+   else if (STRNCMP(cmd, "elfload ", 8) == 0) {
        shell_command_elfload(cmd + 8);
    }
-   else if (STRNCMP(cmd, "elfload", 8) == 0) {
+   else if (STRNCMP(cmd, "elfload", 7) == 0) {
        PRINT(YELLOW, BLACK, "Usage: elfload <file>\n");
    }
    else if (STRNCMP(cmd, "elfcheck ", 9) == 0) {
