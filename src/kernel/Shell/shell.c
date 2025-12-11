@@ -92,6 +92,9 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
     asm_init(&asm_ctx);
 
     PRINT(WHITE, BLACK, "[ASM] Assembling code...\n");
+    print_unsigned(asm_ctx.error, 16);
+
+    printk(CYAN, BLACK, asm_code);
 
     if (asm_program(&asm_ctx, asm_code) < 0) {
         PRINT(YELLOW, BLACK, "[ASM] Error: %s\n", asm_ctx.error_msg);
@@ -106,7 +109,9 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         return;
     }
 
-    PRINT(MAGENTA, BLACK, "[ASM] Generated %zu bytes of machine code\n", code_size);
+    PRINT(MAGENTA, BLACK, "[ASM] Generated");
+    print_unsigned(code_size, 16);
+     PRINT(MAGENTA, BLACK, "bytes of machine code\n");
 
     size_t total_size = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + code_size;
     uint8_t *elf = kmalloc(total_size);
