@@ -2,14 +2,9 @@
 #include "print.h"
 #include "string_helpers.h"
 
+extern int strlen_local(const char* str);
 
-static int str_equals(const char *s1, const char *s2) {
-    while (*s1 && *s2 && *s1 == *s2) {
-        s1++;
-        s2++;
-    }
-    return (*s1 == '\0' && *s2 == '\0');
-}
+
 
 
 void asm_init(asm_context_t *ctx) {
@@ -33,7 +28,7 @@ static void asm_error(asm_context_t *ctx, const char *msg) {
 
 static void asm_emit(asm_context_t *ctx, uint8_t byte) {
     if (ctx->size >= MAX_ASM_SIZE) {
-        asm_error(ctx, "Code size exceeded");
+        ASM_ERROR(ctx, "Code size exceeded");
         return;
     }
     ctx->code[ctx->size++] = byte;
@@ -47,32 +42,38 @@ static void asm_emit_bytes(asm_context_t *ctx, const uint8_t *bytes, size_t coun
 
 
 static int parse_register(const char *reg) {
-    if (reg[0] == 'r' && reg[1] == 'a' && reg[2] == 'x' && reg[3] == '\0') return 0;
-    if (reg[0] == 'r' && reg[1] == 'c' && reg[2] == 'x' && reg[3] == '\0') return 1;
-    if (reg[0] == 'r' && reg[1] == 'd' && reg[2] == 'x' && reg[3] == '\0') return 2;
-    if (reg[0] == 'r' && reg[1] == 'b' && reg[2] == 'x' && reg[3] == '\0') return 3;
-    if (reg[0] == 'r' && reg[1] == 's' && reg[2] == 'p' && reg[3] == '\0') return 4;
-    if (reg[0] == 'r' && reg[1] == 'b' && reg[2] == 'p' && reg[3] == '\0') return 5;
-    if (reg[0] == 'r' && reg[1] == 's' && reg[2] == 'i' && reg[3] == '\0') return 6;
-    if (reg[0] == 'r' && reg[1] == 'd' && reg[2] == 'i' && reg[3] == '\0') return 7;
-    if (reg[0] == 'r' && reg[1] >= '8' && reg[1] <= '9' && reg[2] == '\0')
+    // Skip any leading whitespace
+    while (*reg == ' ' || *reg == '\t') reg++;
+    
+    if (reg[0] == 'r' && reg[1] == 'a' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 0;
+    if (reg[0] == 'r' && reg[1] == 'c' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 1;
+    if (reg[0] == 'r' && reg[1] == 'd' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 2;
+    if (reg[0] == 'r' && reg[1] == 'b' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 3;
+    if (reg[0] == 'r' && reg[1] == 's' && reg[2] == 'p' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 4;
+    if (reg[0] == 'r' && reg[1] == 'b' && reg[2] == 'p' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 5;
+    if (reg[0] == 'r' && reg[1] == 's' && reg[2] == 'i' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 6;
+    if (reg[0] == 'r' && reg[1] == 'd' && reg[2] == 'i' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 7;
+    if (reg[0] == 'r' && reg[1] >= '8' && reg[1] <= '9' && (reg[2] == '\0' || reg[2] == ' ' || reg[2] == ','))
         return 8 + (reg[1] - '8');
-    if (reg[0] == 'r' && reg[1] == '1' && reg[2] >= '0' && reg[2] <= '5' && reg[3] == '\0')
+    if (reg[0] == 'r' && reg[1] == '1' && reg[2] >= '0' && reg[2] <= '5' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ','))
         return 10 + (reg[2] - '0');
 
-    if (reg[0] == 'e' && reg[1] == 'a' && reg[2] == 'x' && reg[3] == '\0') return 0;
-    if (reg[0] == 'e' && reg[1] == 'c' && reg[2] == 'x' && reg[3] == '\0') return 1;
-    if (reg[0] == 'e' && reg[1] == 'd' && reg[2] == 'x' && reg[3] == '\0') return 2;
-    if (reg[0] == 'e' && reg[1] == 'b' && reg[2] == 'x' && reg[3] == '\0') return 3;
-    if (reg[0] == 'e' && reg[1] == 's' && reg[2] == 'p' && reg[3] == '\0') return 4;
-    if (reg[0] == 'e' && reg[1] == 'b' && reg[2] == 'p' && reg[3] == '\0') return 5;
-    if (reg[0] == 'e' && reg[1] == 's' && reg[2] == 'i' && reg[3] == '\0') return 6;
-    if (reg[0] == 'e' && reg[1] == 'd' && reg[2] == 'i' && reg[3] == '\0') return 7;
+    if (reg[0] == 'e' && reg[1] == 'a' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 0;
+    if (reg[0] == 'e' && reg[1] == 'c' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 1;
+    if (reg[0] == 'e' && reg[1] == 'd' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 2;
+    if (reg[0] == 'e' && reg[1] == 'b' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 3;
+    if (reg[0] == 'e' && reg[1] == 's' && reg[2] == 'p' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 4;
+    if (reg[0] == 'e' && reg[1] == 'b' && reg[2] == 'p' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 5;
+    if (reg[0] == 'e' && reg[1] == 's' && reg[2] == 'i' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 6;
+    if (reg[0] == 'e' && reg[1] == 'd' && reg[2] == 'i' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 7;
 
     return -1;
 }
 
 static int64_t parse_immediate(const char *str) {
+    // Skip whitespace
+    while (*str == ' ' || *str == '\t') str++;
+    
     int64_t val = 0;
     int neg = 0;
     int i = 0;
@@ -372,8 +373,10 @@ static void asm_shr_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
 int asm_line(asm_context_t *ctx, const char *line) {
     if (ctx->error) return -1;
 
+    // Skip leading whitespace
     while (*line == ' ' || *line == '\t') line++;
 
+    // Skip empty lines and comments
     if (*line == '\0' || *line == ';' || *line == '#') {
         return 0;
     }
@@ -381,42 +384,59 @@ int asm_line(asm_context_t *ctx, const char *line) {
     char mnemonic[32];
     char arg1[64];
     char arg2[64];
-
     int i = 0;
+
+    // Parse mnemonic (instruction name)
     while (line[i] && line[i] != ' ' && line[i] != '\t' && i < 31) {
         mnemonic[i] = line[i];
         if (mnemonic[i] >= 'A' && mnemonic[i] <= 'Z') {
-            mnemonic[i] += 32;
+            mnemonic[i] += 32;  // Convert to lowercase
         }
         i++;
     }
     mnemonic[i] = '\0';
 
+PRINT(YELLOW, BLACK, "[DEBUG] Parsed mnemonic: '%s'\n", mnemonic);
+PRINT(WHITE, BLACK, "[DEBUG] Length: ");
+print_unsigned(i, 10);
+PRINT(WHITE, BLACK, "\n");
+for (int d = 0; d < i; d++) {
+    PRINT(WHITE, BLACK, "[DEBUG] mnemonic[");
+    print_unsigned(d, 10);
+    PRINT(WHITE, BLACK, "] = 0x");
+    print_unsigned((unsigned char)mnemonic[d], 16);
+    PRINT(WHITE, BLACK, "\n");
+}
+
+    // Skip whitespace after mnemonic
     while (line[i] == ' ' || line[i] == '\t') i++;
 
+    // Parse arg1
     int j = 0;
     while (line[i] && line[i] != ',' && line[i] != ' ' && line[i] != '\t' &&
-           line[i] != ';' && line[i] != '#' && j < 63) {
+           line[i] != ';' && line[i] != '#' && line[i] != '\n' && line[i] != '\r' && j < 63) {
         arg1[j++] = line[i++];
     }
     arg1[j] = '\0';
 
-    while (line[i] == ',' || line[i] == ' ' || line[i] == '\t') i++;
+    // Skip whitespace and comma
+    while (line[i] == ' ' || line[i] == '\t' || line[i] == ',') i++;
 
+    // Parse arg2
     j = 0;
     while (line[i] && line[i] != ' ' && line[i] != '\t' &&
-           line[i] != ';' && line[i] != '#' && j < 63) {
+           line[i] != ';' && line[i] != '#' && line[i] != '\n' && line[i] != '\r' && line[i] != ',' && j < 63) {
         arg2[j++] = line[i++];
     }
     arg2[j] = '\0';
 
-
-    if (str_equals(mnemonic, "mov")) {
+    // Handle instructions
+    if (STRNCMP(mnemonic, "mov", 3)) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
 
         if (reg1 < 0) {
-            asm_error(ctx, "Invalid destination register");
+            ASM_ERROR(ctx, "Invalid destination register");
             return -1;
         }
 
@@ -431,13 +451,12 @@ int asm_line(asm_context_t *ctx, const char *line) {
             }
         }
     }
-
-    else if (str_equals(mnemonic, "add")) {
+    else if (STRNCMP(mnemonic, "add", 3)) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
 
         if (reg1 < 0) {
-            asm_error(ctx, "Invalid destination register");
+            ASM_ERROR(ctx, "Invalid destination register");
             return -1;
         }
 
@@ -448,18 +467,17 @@ int asm_line(asm_context_t *ctx, const char *line) {
             if (imm >= -128 && imm <= 127) {
                 asm_add_reg_imm8(ctx, reg1, (int8_t)imm);
             } else {
-                asm_error(ctx, "Immediate out of range (-128 to 127)");
+                ASM_ERROR(ctx, "Immediate out of range (-128 to 127)");
                 return -1;
             }
         }
     }
-
-    else if (str_equals(mnemonic, "sub")) {
+    else if (STRNCMP(mnemonic, "sub", 3)) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
 
         if (reg1 < 0) {
-            asm_error(ctx, "Invalid destination register");
+            ASM_ERROR(ctx, "Invalid destination register");
             return -1;
         }
 
@@ -470,48 +488,44 @@ int asm_line(asm_context_t *ctx, const char *line) {
             if (imm >= -128 && imm <= 127) {
                 asm_sub_reg_imm8(ctx, reg1, (int8_t)imm);
             } else {
-                asm_error(ctx, "Immediate out of range (-128 to 127)");
+                ASM_ERROR(ctx, "Immediate out of range (-128 to 127)");
                 return -1;
             }
         }
     }
-
-    else if (str_equals(mnemonic, "xor")) {
+    else if (STRNCMP(mnemonic, "xor", 3)) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
         if (reg1 < 0 || reg2 < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_xor_reg_reg(ctx, reg1, reg2);
     }
-
-    else if (str_equals(mnemonic, "or")) {
+    else if (STRNCMP(mnemonic, "or", 2)) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
         if (reg1 < 0 || reg2 < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_or_reg_reg(ctx, reg1, reg2);
     }
-
-    else if (str_equals(mnemonic, "and")) {
+    else if (STRNCMP(mnemonic, "and", 3)) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
         if (reg1 < 0 || reg2 < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_and_reg_reg(ctx, reg1, reg2);
     }
-
-    else if (str_equals(mnemonic, "cmp")) {
+    else if (STRNCMP(mnemonic, "cmp", 3)) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
 
         if (reg1 < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
 
@@ -522,114 +536,101 @@ int asm_line(asm_context_t *ctx, const char *line) {
             if (imm >= -128 && imm <= 127) {
                 asm_cmp_reg_imm8(ctx, reg1, (int8_t)imm);
             } else {
-                asm_error(ctx, "Immediate out of range (-128 to 127)");
+                ASM_ERROR(ctx, "Immediate out of range (-128 to 127)");
                 return -1;
             }
         }
     }
-
-    else if (str_equals(mnemonic, "push")) {
+    else if (STRNCMP(mnemonic, "push", 4)) {
         int reg = parse_register(arg1);
         if (reg < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_push_reg(ctx, reg);
     }
-
-    else if (str_equals(mnemonic, "pop")) {
+    else if (STRNCMP(mnemonic, "pop", 3)) {
         int reg = parse_register(arg1);
         if (reg < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_pop_reg(ctx, reg);
     }
-
-    else if (str_equals(mnemonic, "inc")) {
+    else if (STRNCMP(mnemonic, "inc", 3)) {
         int reg = parse_register(arg1);
         if (reg < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_inc_reg(ctx, reg);
     }
-
-    else if (str_equals(mnemonic, "dec")) {
+    else if (STRNCMP(mnemonic, "dec", 3)) {
         int reg = parse_register(arg1);
         if (reg < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_dec_reg(ctx, reg);
     }
-
-    else if (str_equals(mnemonic, "neg")) {
+    else if (STRNCMP(mnemonic, "neg", 3)) {
         int reg = parse_register(arg1);
         if (reg < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_neg_reg(ctx, reg);
     }
-
-    else if (str_equals(mnemonic, "not")) {
+    else if (STRNCMP(mnemonic, "not", 3)) {
         int reg = parse_register(arg1);
         if (reg < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         asm_not_reg(ctx, reg);
     }
-
-    else if (str_equals(mnemonic, "shl")) {
+    else if (STRNCMP(mnemonic, "shl", 3)) {
         int reg = parse_register(arg1);
         if (reg < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         int64_t imm = parse_immediate(arg2);
         if (imm < 0 || imm > 63) {
-            asm_error(ctx, "Shift count out of range (0-63)");
+            ASM_ERROR(ctx, "Shift count out of range (0-63)");
             return -1;
         }
         asm_shl_reg_imm8(ctx, reg, (int8_t)imm);
     }
-
-    else if (str_equals(mnemonic, "shr")) {
+    else if (STRNCMP(mnemonic, "shr", 3)) {
         int reg = parse_register(arg1);
         if (reg < 0) {
-            asm_error(ctx, "Invalid register");
+            ASM_ERROR(ctx, "Invalid register");
             return -1;
         }
         int64_t imm = parse_immediate(arg2);
         if (imm < 0 || imm > 63) {
-            asm_error(ctx, "Shift count out of range (0-63)");
+            ASM_ERROR(ctx, "Shift count out of range (0-63)");
             return -1;
         }
         asm_shr_reg_imm8(ctx, reg, (int8_t)imm);
     }
-
-    else if (str_equals(mnemonic, "syscall")) {
+    else if (STRNCMP(mnemonic, "syscall", 7)) {
         asm_syscall(ctx);
     }
-
-    else if (str_equals(mnemonic, "ret")) {
+    else if (STRNCMP(mnemonic, "ret", 3)) {
         asm_ret(ctx);
     }
-
-    else if (str_equals(mnemonic, "nop")) {
+    else if (STRNCMP(mnemonic, "nop", 3)) {
         asm_nop(ctx);
     }
-
     else {
-        asm_error(ctx, "Unknown instruction");
+        ASM_ERROR(ctx, "Unknown instruction");
         return -1;
     }
 
     return 0;
 }
-
 int asm_program(asm_context_t *ctx, const char *program) {
     char line[256];
     int line_idx = 0;

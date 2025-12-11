@@ -30,6 +30,11 @@ extern int strncmp(const char* s1, const char* s2, int n);
     printk(fg, bg, _msg, ##__VA_ARGS__); \
 } while(0)
 
+#define ASM_ERROR(ctx, literal) do { \
+    char _tmp[] = literal; \
+    asm_error(ctx, _tmp); \
+} while(0)
+
 #define STRNCMP(intermediate, literal, n) ({      \
     char _lit_buf[128];                                \
     char _tmp[] = literal;                             \
