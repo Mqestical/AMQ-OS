@@ -16,7 +16,9 @@
 #include "elf_test.h"
 #include "asm.h"
 #include "anthropic.h"
+#include "System_States.h"
 #include "AC97.h"
+
 #define CURSOR_BLINK_RATE 50000
 
 void bg_command_thread(void);
@@ -113,7 +115,7 @@ void cmd_audioinit(void) {
     }
 
     if (ac97_init() == 0) {
-        PRINT(MAGENTA, BLACK, "\nAudio initialization successful!\n");
+        PRINT(GREEN, BLACK, "\nAudio initialization successful!\n");
         PRINT(WHITE, BLACK, "Try these commands:\n");
         PRINT(WHITE, BLACK, "  audioinfo    - Display audio device information\n");
         PRINT(WHITE, BLACK, "  beep <freq>  - Play a beep tone (440Hz default)\n");
@@ -155,13 +157,13 @@ void cmd_audiotest(void) {
     for (int i = 0; i < 8; i++) {
         PRINT(WHITE, BLACK, "  %s (%u Hz)... ", notes[i], frequencies[i]);
         audio_beep(frequencies[i], 300);
-        PRINT(MAGENTA, BLACK, "OK\n");
+        PRINT(GREEN, BLACK, "OK\n");
 
 
         for (volatile int j = 0; j < 10000000; j++);
     }
 
-    PRINT(MAGENTA, BLACK, "\nTest 1: Complete\n\n");
+    PRINT(GREEN, BLACK, "\nTest 1: Complete\n\n");
 
 
     PRINT(WHITE, BLACK, "Test 2: Volume control test...\n");
@@ -172,12 +174,12 @@ void cmd_audiotest(void) {
         PRINT(WHITE, BLACK, "  Volume %u%%... ", volumes[i]);
         ac97_set_master_volume(volumes[i], volumes[i]);
         audio_beep(440, 200);
-        PRINT(MAGENTA, BLACK, "OK\n");
+        PRINT(GREEN, BLACK, "OK\n");
 
         for (volatile int j = 0; j < 5000000; j++);
     }
 
-    PRINT(MAGENTA, BLACK, "\nTest 2: Complete\n\n");
+    PRINT(GREEN, BLACK, "\nTest 2: Complete\n\n");
 
 
     PRINT(WHITE, BLACK, "Test 3: Stereo panning test...\n");
@@ -185,29 +187,29 @@ void cmd_audiotest(void) {
     PRINT(WHITE, BLACK, "  Left channel... ");
     ac97_set_master_volume(100, 0);
     audio_beep(440, 500);
-    PRINT(MAGENTA, BLACK, "OK\n");
+    PRINT(GREEN, BLACK, "OK\n");
 
     for (volatile int j = 0; j < 10000000; j++);
 
     PRINT(WHITE, BLACK, "  Right channel... ");
     ac97_set_master_volume(0, 100);
     audio_beep(440, 500);
-    PRINT(MAGENTA, BLACK, "OK\n");
+    PRINT(GREEN, BLACK, "OK\n");
 
     for (volatile int j = 0; j < 10000000; j++);
 
     PRINT(WHITE, BLACK, "  Both channels... ");
     ac97_set_master_volume(100, 100);
     audio_beep(440, 500);
-    PRINT(MAGENTA, BLACK, "OK\n");
+    PRINT(GREEN, BLACK, "OK\n");
 
-    PRINT(MAGENTA, BLACK, "\nTest 3: Complete\n\n");
+    PRINT(GREEN, BLACK, "\nTest 3: Complete\n\n");
 
 
     ac97_set_master_volume(75, 75);
 
     PRINT(CYAN, BLACK, "=== All Tests Complete ===\n\n");
-    PRINT(MAGENTA, BLACK, "Audio system is working correctly!\n");
+    PRINT(GREEN, BLACK, "Audio system is working correctly!\n");
 }
 
 void cmd_beep(const char *args) {
@@ -236,7 +238,7 @@ void cmd_beep(const char *args) {
     PRINT(WHITE, BLACK, "Playing %u Hz beep...\n", frequency);
 
     if (audio_beep(frequency, 1) == 0) {
-        PRINT(MAGENTA, BLACK, "Beep complete!\n");
+        PRINT(GREEN, BLACK, "Beep complete!\n");
     } else {
         PRINT(YELLOW, BLACK, "Beep failed!\n");
     }
@@ -284,7 +286,7 @@ void cmd_volume(const char *args) {
 
     ac97_set_master_volume(left, right);
 
-    PRINT(MAGENTA, BLACK, "Volume set: L=%u%% R=%u%%\n", left, right);
+    PRINT(GREEN, BLACK, "Volume set: L=%u%% R=%u%%\n", left, right);
 }
 
 void cmd_playtone(const char *args) {
@@ -324,10 +326,10 @@ void cmd_playtone(const char *args) {
     }
 
     PRINT(WHITE, BLACK, "Playing %u Hz for %u ms...\n", frequency, duration);
-
-    audio_beep(frequency, duration);
-
-    PRINT(MAGENTA, BLACK, "Done!\n");
+    for (uint32_t t = 0; t < duration; t++) {
+    audio_beep(frequency, 1);
+    }
+    PRINT(GREEN, BLACK, "Done!\n");
 }
 
 void cmd_playsine(const char *args) {
@@ -351,13 +353,13 @@ void cmd_audiomute(const char *args) {
         while (*args == ' ') args++;
         if (strncmp(args, "off", 3) == 0) {
             ac97_mute_master(0);
-            PRINT(MAGENTA, BLACK, "Audio unmuted\n");
+            PRINT(GREEN, BLACK, "Audio unmuted\n");
             return;
         }
     }
 
     ac97_mute_master(1);
-    PRINT(MAGENTA, BLACK, "Audio muted\n");
+    PRINT(GREEN, BLACK, "Audio muted\n");
 }
 
 void cmd_ac97test(void) {
@@ -387,9 +389,9 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         return;
     }
 
-    PRINT(MAGENTA, BLACK, "[ASM] Generated");
+    PRINT(GREEN, BLACK, "[ASM] Generated");
     print_unsigned(code_size, 16);
-     PRINT(MAGENTA, BLACK, "bytes of machine code\n");
+     PRINT(GREEN, BLACK, "bytes of machine code\n");
 
     size_t total_size = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + code_size;
     uint8_t *elf = kmalloc(total_size);
@@ -464,7 +466,7 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         int written = vfs_write(fd, elf, total_size);
         vfs_close(fd);
         if (written > 0) {
-            PRINT(MAGENTA, BLACK, "[ASM] Created ELF: %s (%d bytes)\n", fullpath, written);
+            PRINT(GREEN, BLACK, "[ASM] Created ELF: %s (%d bytes)\n", fullpath, written);
             PRINT(WHITE, BLACK, "[ASM] Test with: elfinfo %s\n", output_path);
             PRINT(WHITE, BLACK, "[ASM] Run with: elfload %s\n", output_path);
         } else {
@@ -487,7 +489,7 @@ void bg_command_thread(void) {
 
     cmd_thread_data_t *data = (cmd_thread_data_t*)current->private_data;
 
-    PRINT(MAGENTA, BLACK, "\n[BG %d] Starting: %s\n", data->job_id, data->command);
+    PRINT(GREEN, BLACK, "\n[BG %d] Starting: %s\n", data->job_id, data->command);
 
     char cmd_name[64];
     int i = 0;
@@ -520,7 +522,7 @@ void bg_command_thread(void) {
                 PRINT(WHITE, BLACK, "[BG %d] %u/%u\n", data->job_id, s + 1, seconds);
             }
 
-            PRINT(MAGENTA, BLACK, "[BG %d] Done!\n", data->job_id);
+            PRINT(GREEN, BLACK, "[BG %d] Done!\n", data->job_id);
         }
     }
     else if (strcmp(cmd_name, "echo") == 0) {
@@ -556,7 +558,7 @@ void bring_to_foreground(int job_id) {
         return;
     }
 
-    PRINT(MAGENTA, BLACK, "fg: job %d (%s) - thread state = %d\n",
+    PRINT(GREEN, BLACK, "fg: job %d (%s) - thread state = %d\n",
           job_id, job->command, thread->state);
 
     if (thread->state == THREAD_STATE_BLOCKED) {
@@ -567,12 +569,12 @@ void bring_to_foreground(int job_id) {
     }
 
     if (thread->state == THREAD_STATE_READY) {
-        PRINT(MAGENTA, BLACK, "fg: Thread %u is ready, will be scheduled\n", thread->tid);
+        PRINT(GREEN, BLACK, "fg: Thread %u is ready, will be scheduled\n", thread->tid);
     }
 
     job->is_background = 0;
 
-    PRINT(MAGENTA, BLACK, "fg: job %d (%s) moved to foreground\n", job_id, job->command);
+    PRINT(GREEN, BLACK, "fg: job %d (%s) moved to foreground\n", job_id, job->command);
     PRINT(WHITE, BLACK, "Note: Job continues running. Check with 'jobs' command.\n");
 }
 
@@ -590,7 +592,7 @@ void send_to_background(int job_id) {
 
     job->is_background = 1;
 
-    PRINT(MAGENTA, BLACK, "bg: job %d (%s) sent to background\n", job_id, job->command);
+    PRINT(GREEN, BLACK, "bg: job %d (%s) sent to background\n", job_id, job->command);
 }
 
 void process_command(char* cmd) {
@@ -658,7 +660,7 @@ void process_command(char* cmd) {
         int job_id = add_bg_job(cmd, proc->pid, tid);
         if (job_id > 0) {
             bg_thread_data[data_idx].job_id = job_id;
-            PRINT(MAGENTA, BLACK, "[SHELL] Created background job %d (TID=%d)\n",
+            PRINT(GREEN, BLACK, "[SHELL] Created background job %d (TID=%d)\n",
                   job_id, tid);
         } else {
             PRINT(YELLOW, BLACK, "[ERROR] Failed to add background job\n");
@@ -699,7 +701,7 @@ void process_command(char* cmd) {
     char subcmd25_2[] = "paper";
     char subcmd25_3[] = "scissors";
     if (strcmp(cmd, cmd1) == 0) {
-        PRINT(MAGENTA, BLACK, "hello :D\n");
+        PRINT(GREEN, BLACK, "hello :D\n");
     }
     else if (strcmp(cmd, cmd2) == 0) {
         PRINT(WHITE, BLACK, "Available commands:\n");
@@ -717,15 +719,15 @@ void process_command(char* cmd) {
         PRINT(YELLOW, BLACK, "  format - Format disk (WARNING: DISK WILL BE WIPED!)\n");
         PRINT(WHITE, BLACK, "  cd <dir> - Change directory\n");
         PRINT(WHITE, BLACK, "  pwd - Print working directory\n");
-        PRINT(MAGENTA, BLACK, "  ps - Show processes\n");
-        PRINT(MAGENTA, BLACK, "  threads - Show threads\n");
-        PRINT(MAGENTA, BLACK, "  jobs - List all jobs\n");
-        PRINT(MAGENTA, BLACK, "  fg <job_id> - Bring to foreground\n");
-        PRINT(MAGENTA, BLACK, "  bg <job_id> - Send to background\n");
-        PRINT(MAGENTA, BLACK, "  sleep <sec> - Sleep for seconds\n");
+        PRINT(GREEN, BLACK, "  ps - Show processes\n");
+        PRINT(GREEN, BLACK, "  threads - Show threads\n");
+        PRINT(GREEN, BLACK, "  jobs - List all jobs\n");
+        PRINT(GREEN, BLACK, "  fg <job_id> - Bring to foreground\n");
+        PRINT(GREEN, BLACK, "  bg <job_id> - Send to background\n");
+        PRINT(GREEN, BLACK, "  sleep <sec> - Sleep for seconds\n");
         PRINT(WHITE, BLACK, "  command & - Run in background\n");
-        PRINT(MAGENTA, BLACK, "  syscalltest - Test syscall interface\n");
-        PRINT(MAGENTA, BLACK, "  testbg - Test background jobs\n");
+        PRINT(GREEN, BLACK, "  syscalltest - Test syscall interface\n");
+        PRINT(GREEN, BLACK, "  testbg - Test background jobs\n");
         PRINT(YELLOW, BLACK, "  stum -r3 - switch to usermode (UnAvailable!)\n");
 
         PRINT(CYAN, BLACK, "\nAudio Commands:\n");
@@ -763,10 +765,21 @@ void process_command(char* cmd) {
         PRINT(CYAN, BLACK, "\nText Editor:\n");
         PRINT(WHITE, BLACK, "  anthropic <file> - Open graphical text editor\n");
         PRINT(BROWN, BLACK, "    Ctrl+S to save, click X to close\n");
+        PRINT(GREEN, BLACK, "Shutdown commands: \n");
+        PRINT(WHITE, BLACK, "  shutdown - Power off the system\n");
+        PRINT(WHITE, BLACK, "  reboot   - Reboot the system\n");
     }
     else if (strcmp(cmd, cmd3) == 0) {
         ClearScreen(BLACK);
         SetCursorPos(0, 0);
+    }
+    else if (STRNCMP(cmd, "shutdown", 8) == 0) {
+        PRINT(WHITE, BLACK, "Shutting down...\n");
+        system_shutdown();
+    }
+    else if (STRNCMP(cmd, "reboot", 6) == 0) {
+        PRINT(WHITE, BLACK, "Rebooting...\n");
+        system_reboot();
     }
     else if (strncmp(cmd, cmd4, 5) == 0) {
         PRINT(WHITE, BLACK, "%s\n", cmd + 5);
@@ -781,7 +794,7 @@ void process_command(char* cmd) {
         PRINT(WHITE, BLACK, "\n=== Thread Information ===\n");
         thread_t *current = get_current_thread();
         if (current) {
-            PRINT(MAGENTA, BLACK, "Current thread: TID=%u (PID=%u)\n", current->tid, current->parent->pid);
+            PRINT(GREEN, BLACK, "Current thread: TID=%u (PID=%u)\n", current->tid, current->parent->pid);
         } else {
             PRINT(WHITE, BLACK, "No thread currently running\n");
         }
@@ -796,7 +809,7 @@ void process_command(char* cmd) {
         }
 
         PRINT(WHITE, BLACK, "\nThread states:\n");
-        PRINT(MAGENTA, BLACK, "  Running: %d\n", running);
+        PRINT(GREEN, BLACK, "  Running: %d\n", running);
         PRINT(WHITE, BLACK, "  Ready: %d\n", ready);
         PRINT(YELLOW, BLACK, "  Blocked: %d\n", blocked);
     }
@@ -839,7 +852,7 @@ void process_command(char* cmd) {
         if (seconds > 0) {
             PRINT(WHITE, BLACK, "Sleeping for %u seconds...\n", seconds);
             sleep_seconds(seconds);
-            PRINT(MAGENTA, BLACK, "Awake!\n");
+            PRINT(GREEN, BLACK, "Awake!\n");
         } else {
             PRINT(YELLOW, BLACK, "error: sleep count can not be under 0!\n");
         }
@@ -854,7 +867,7 @@ void process_command(char* cmd) {
         test_syscall_interface();
     }
     else if (strcmp(cmd, cmd23) == 0) {
-        PRINT(MAGENTA, BLACK, "\n=== Testing Background Jobs ===\n");
+        PRINT(GREEN, BLACK, "\n=== Testing Background Jobs ===\n");
         PRINT(WHITE, BLACK, "Test 1: echo test &\n");
         char test1[] = "echo Hello from background! &";
         process_command(test1);
@@ -865,7 +878,7 @@ void process_command(char* cmd) {
         char test2[] = "sleep 3 &";
         process_command(test2);
 
-        PRINT(MAGENTA, BLACK, "\nCheck with 'jobs' command\n");
+        PRINT(GREEN, BLACK, "\nCheck with 'jobs' command\n");
     }
     else if (strncmp(cmd, cmd5, 3) == 0) {
         char* path = cmd + 3;
@@ -945,7 +958,7 @@ void process_command(char* cmd) {
             fullpath[i] = '\0';
         }
         if (vfs_create(fullpath, FILE_READ | FILE_WRITE) == 0) {
-            PRINT(MAGENTA, BLACK, "Created file: %s\n\n\n", fullpath);
+            PRINT(GREEN, BLACK, "Created file: %s\n\n\n", fullpath);
         } else {
             PRINT(YELLOW, BLACK, "Failed to create file\n");
         }
@@ -971,7 +984,7 @@ void process_command(char* cmd) {
             fullpath[i] = '\0';
         }
         if (vfs_mkdir(fullpath, FILE_READ | FILE_WRITE) == 0) {
-            PRINT(MAGENTA, BLACK, "Created directory: %s\n\n\n", fullpath);
+            PRINT(GREEN, BLACK, "Created directory: %s\n\n\n", fullpath);
         } else {
             PRINT(YELLOW, BLACK, "Failed to create directory\n");
         }
@@ -997,7 +1010,7 @@ void process_command(char* cmd) {
             fullpath[i] = '\0';
         }
         if (vfs_unlink(fullpath) == 0) {
-            PRINT(MAGENTA, BLACK, "Removed: %s\n", fullpath);
+            PRINT(GREEN, BLACK, "Removed: %s\n", fullpath);
         } else {
             PRINT(YELLOW, BLACK, "Failed to remove: %s\n", fullpath);
         }
@@ -1048,7 +1061,7 @@ void process_command(char* cmd) {
                 int written = vfs_write(fd, (uint8_t*)content, strlen_local(content));
                 vfs_close(fd);
                 if (written > 0) {
-                    PRINT(MAGENTA, BLACK, "Wrote %d bytes to %s\n", written, fullpath);
+                    PRINT(GREEN, BLACK, "Wrote %d bytes to %s\n", written, fullpath);
                 } else {
                     PRINT(YELLOW, BLACK, "Write failed\n");
                 }
@@ -1097,12 +1110,12 @@ void process_command(char* cmd) {
             PRINT(YELLOW, BLACK, "[ERROR] Remount failed\n");
             for (;;) {}
         }
-        PRINT(MAGENTA, BLACK, "Format complete - filesystem remounted\n");
+        PRINT(GREEN, BLACK, "Format complete - filesystem remounted\n");
     }
     else if (strcmp(cmd, cmd144) == 0) {
         char root[] = "/";
         if (vfs_chdir(root) == 0) {
-            PRINT(MAGENTA, BLACK, "%s\n", vfs_get_cwd_path());
+            PRINT(GREEN, BLACK, "%s\n", vfs_get_cwd_path());
         }
     }
     else if (strncmp(cmd, cmd14, 3) == 0) {
@@ -1118,11 +1131,11 @@ void process_command(char* cmd) {
         if (dir[0] == '\0') {
             char root[] = "/";
             if (vfs_chdir(root) == 0) {
-                PRINT(MAGENTA, BLACK, "%s\n", vfs_get_cwd_path());
+                PRINT(GREEN, BLACK, "%s\n", vfs_get_cwd_path());
             }
         } else {
             if (vfs_chdir(dir) == 0) {
-                PRINT(MAGENTA, BLACK, "%s\n", vfs_get_cwd_path());
+                PRINT(GREEN, BLACK, "%s\n", vfs_get_cwd_path());
             }
         }
     } else if (strncmp(cmd, cmd24, 9) == 0) {
@@ -1263,7 +1276,7 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
     } else {
         anthropic_editor(filename);
 
-        PRINT(MAGENTA, BLACK, "\n%s> ", vfs_get_cwd_path());
+        PRINT(GREEN, BLACK, "\n%s> ", vfs_get_cwd_path());
     }
 }
 else if (STRNCMP(cmd, "anthropic",9) == 0) {
@@ -1312,7 +1325,7 @@ void run_text_demo(void) {
     PRINT(CYAN, BLACK, "    AMQ Operating System v1.2\n");
     PRINT(CYAN, BLACK, "==========================================\n");
     PRINT(WHITE, BLACK, "Welcome! Type 'help' for commands.\n\n");
-    PRINT(MAGENTA, BLACK, "%s> ", vfs_get_cwd_path());
+    PRINT(GREEN, BLACK, "%s> ", vfs_get_cwd_path());
 
     int cursor_visible = 1;
     int cursor_timer = 0;
@@ -1325,7 +1338,7 @@ void run_text_demo(void) {
         if (input_available()) {
             char* input = get_input_and_reset();
             process_command(input);
-            PRINT(MAGENTA, BLACK, "%s> ", vfs_get_cwd_path());
+            PRINT(GREEN, BLACK, "%s> ", vfs_get_cwd_path());
         }
 
         if (cursor_timer >= CURSOR_BLINK_RATE) {
@@ -1345,25 +1358,25 @@ void init_shell(void) {
 }
 
 void test_syscall_interface(void) {
-    PRINT(MAGENTA, BLACK, "\n=== Testing Syscall Interface ===\n");
+    PRINT(GREEN, BLACK, "\n=== Testing Syscall Interface ===\n");
     PRINT(WHITE, BLACK, "[TEST] Calling sys_getpid...\n");
     int64_t pid = sys_getpid();
-    PRINT(MAGENTA, BLACK, "[TEST] PID = %lld\n", pid);
+    PRINT(GREEN, BLACK, "[TEST] PID = %lld\n", pid);
 
     PRINT(WHITE, BLACK, "[TEST] Calling sys_uptime...\n");
     int64_t uptime = sys_uptime();
-    PRINT(MAGENTA, BLACK, "[TEST] Uptime = %lld seconds\n", uptime);
+    PRINT(GREEN, BLACK, "[TEST] Uptime = %lld seconds\n", uptime);
 
     PRINT(WHITE, BLACK, "[TEST] Calling sys_getcwd...\n");
     char cwd[256];
     sys_getcwd(cwd, 256);
-    PRINT(MAGENTA, BLACK, "[TEST] CWD = %s\n", cwd);
+    PRINT(GREEN, BLACK, "[TEST] CWD = %s\n", cwd);
 
     PRINT(WHITE, BLACK, "[TEST] Testing sys_mkdir...\n");
     char t1[] = "/syscall_test";
     int ret = sys_mkdir(t1, FILE_READ | FILE_WRITE);
     if (ret == 0) {
-        PRINT(MAGENTA, BLACK, "[TEST] Created /syscall_test\n");
+        PRINT(GREEN, BLACK, "[TEST] Created /syscall_test\n");
     } else {
         PRINT(YELLOW, BLACK, "[TEST] mkdir failed: %d\n", ret);
     }
@@ -1374,7 +1387,7 @@ void test_syscall_interface(void) {
     if (fd >= 0) {
         char data[] = "Hello from syscall!\n";
         int64_t written = sys_write(fd, data, sizeof(data) - 1);
-        PRINT(MAGENTA, BLACK, "[TEST] Wrote %lld bytes\n", written);
+        PRINT(GREEN, BLACK, "[TEST] Wrote %lld bytes\n", written);
         sys_close(fd);
 
         char t3[] = "/test_syscall";
@@ -1384,13 +1397,13 @@ void test_syscall_interface(void) {
             int64_t bytes = sys_read(fd, buf, 63);
             if (bytes > 0) {
                 buf[bytes] = '\0';
-                PRINT(MAGENTA, BLACK, "[TEST] Read back: %s", buf);
+                PRINT(GREEN, BLACK, "[TEST] Read back: %s", buf);
             }
             sys_close(fd);
         }
     }
 
-    PRINT(MAGENTA, BLACK, "=== Syscall Tests Complete ===\n\n");
+    PRINT(GREEN, BLACK, "=== Syscall Tests Complete ===\n\n");
 }
 
 
@@ -1507,7 +1520,7 @@ void shell_command_elftest(void) {
 
     elf_test_simple();
 
-    PRINT(MAGENTA, BLACK, "\n=== All Tests Complete ===\n");
+    PRINT(GREEN, BLACK, "\n=== All Tests Complete ===\n");
 }
 
 void shell_command_elfcheck(const char *args) {
@@ -1564,7 +1577,7 @@ void shell_command_elfcheck(const char *args) {
         return;
     }
 
-    PRINT(MAGENTA, BLACK, "✓ Valid ELF file\n");
+    PRINT(GREEN, BLACK, "✓ Valid ELF file\n");
 
     if (header[4] == 1) {
         PRINT(WHITE, BLACK, "  Class: ELF32 (32-bit)\n");
@@ -1673,11 +1686,11 @@ void shell_command_elfload(const char *args) {
         return;
     }
 
-    PRINT(MAGENTA, BLACK, "[ELFLOAD] Successfully loaded:\n");
-    PRINT(MAGENTA, BLACK, "  Base address: 0x%llx\n", load_info.base_addr);
-    PRINT(MAGENTA, BLACK, "  Entry point:  0x%llx\n", load_info.entry_point);
-    PRINT(MAGENTA, BLACK, "  Dynamic: %s\n", load_info.is_dynamic ? "Yes" : "No");
-    PRINT(MAGENTA, BLACK, "  TLS: %s\n", load_info.has_tls ? "Yes" : "No");
+    PRINT(GREEN, BLACK, "[ELFLOAD] Successfully loaded:\n");
+    PRINT(GREEN, BLACK, "  Base address: 0x%llx\n", load_info.base_addr);
+    PRINT(GREEN, BLACK, "  Entry point:  0x%llx\n", load_info.entry_point);
+    PRINT(GREEN, BLACK, "  Dynamic: %s\n", load_info.is_dynamic ? "Yes" : "No");
+    PRINT(GREEN, BLACK, "  TLS: %s\n", load_info.has_tls ? "Yes" : "No");
 
     if (load_info.has_tls) {
         PRINT(WHITE, BLACK, "  TLS size: %llu bytes\n", load_info.tls_size);
@@ -1709,9 +1722,9 @@ void shell_command_elfload(const char *args) {
     extern int add_fg_job(const char *command, uint32_t pid, uint32_t tid);
     int job_id = add_fg_job(fullpath, pid, tid);
 
-    PRINT(MAGENTA, BLACK, "[ELFLOAD] Created process %d (thread %d, job %d)\n",
+    PRINT(GREEN, BLACK, "[ELFLOAD] Created process %d (thread %d, job %d)\n",
           pid, tid, job_id);
-    PRINT(MAGENTA, BLACK, "[ELFLOAD] Program is now running\n");
+    PRINT(GREEN, BLACK, "[ELFLOAD] Program is now running\n");
 
 }
 
