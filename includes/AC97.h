@@ -106,6 +106,14 @@
 #define AC97_GLOB_STA_PRI_READY     0x00000100  // Primary Codec Ready
 #define AC97_GLOB_STA_SEC_READY     0x00000200  // Secondary Codec Ready
 
+// POWER REGISTER(S)('(S)) BITS
+
+#define AC97_PWR_ADC            0x0001  // ADC sections
+#define AC97_PWR_DAC            0x0002  // DAC sections  
+#define AC97_PWR_ANL            0x0004  // Analog mixer
+#define AC97_PWR_VREF           0x0008  // VREF
+#define AC97_PWR_EAPD           0x8000  // External amplifier
+
 // Buffer Descriptor Entry
 typedef struct {
     uint32_t buffer_addr;     // Physical address of audio buffer
@@ -208,13 +216,13 @@ int ac97_codec_write(uint8_t reg, uint16_t value);
 uint16_t ac97_codec_read(uint8_t reg);
 int ac97_wait_codec_ready(void);
 
-// Stream Control
+// Stream control
 int ac97_stream_init(ac97_stream_t *stream, int is_playback);
-void ac97_stream_start(ac97_stream_t *stream, int is_playback);
-void ac97_stream_stop(ac97_stream_t *stream, int is_playback);
 void ac97_stream_reset(ac97_stream_t *stream, int is_playback);
+void ac97_stream_start(ac97_stream_t *stream, int is_playback, uint8_t buffers_to_play);  // ← Updated
+void ac97_stream_stop(ac97_stream_t *stream, int is_playback);
 
-// Playback Functions
+// Playback functions
 int ac97_play_init(ac97_format_t format, ac97_sample_rate_t rate);
 int ac97_play_buffer(const void *data, uint32_t size);
 void ac97_play_start(void);
@@ -263,5 +271,6 @@ void ac97_print_info(void);
 
 // Global Device Instance
 extern ac97_device_t *g_ac97_device;
-
+/*GLOBAL INTERRUPT ENABLER*/
+void ac97_ensure_gie(void);
 #endif // AC97_H

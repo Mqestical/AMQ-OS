@@ -3,8 +3,8 @@
 #include "memory.h"
 #include "print.h"
 #include "string_helpers.h"
+#include "sleep.h"
 
-// PCI Configuration Space Registers
 #define PCI_CONFIG_ADDRESS  0xCF8
 #define PCI_CONFIG_DATA     0xCFC
 
@@ -19,15 +19,15 @@
 #define PCI_BAR1            0x14
 #define PCI_IRQ_LINE        0x3C
 
-// PCI Command Register Bits
+
 #define PCI_COMMAND_IO      0x0001
 #define PCI_COMMAND_MEMORY  0x0002
 #define PCI_COMMAND_MASTER  0x0004
 
-// Global device instance
+
 ac97_device_t *g_ac97_device = NULL;
 
-// Forward declarations
+
 static uint32_t pci_read_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset);
 static void pci_write_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset, uint32_t value);
 static int ac97_find_device(void);
@@ -36,120 +36,265 @@ static void ac97_setup_bd_list(ac97_stream_t *stream);
 static uint16_t volume_to_ac97(uint8_t volume);
 static uint8_t ac97_to_volume(uint16_t ac97_val);
 
-// ============================================================================
-// PCI Configuration Functions
-// ============================================================================
+
+
+
+
+void ac97_dump_registers(void) {
+    if (!g_ac97_device) return;
+
+    PRINT(CYAN, BLACK, "\n=== AC97 Register Dump ===\n");
+
+
+    PRINT(WHITE, BLACK, "\nMixer Registers (NAM BAR: 0x");
+    print_unsigned(g_ac97_device->nam_bar, 16);
+    PRINT(WHITE, BLACK, "):\n");
+
+    uint16_t reset = ac97_codec_read(0x00);
+    uint16_t master = ac97_codec_read(0x02);
+    uint16_t pcm = ac97_codec_read(0x18);
+    uint16_t ext_id = ac97_codec_read(0x28);
+    uint16_t ext_stat = ac97_codec_read(0x2A);
+    uint16_t pcm_rate = ac97_codec_read(0x2C);
+
+    PRINT(WHITE, BLACK, "  0x00 Reset:      0x");
+    print_unsigned(reset, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+    PRINT(WHITE, BLACK, "  0x02 Master Vol: 0x");
+    print_unsigned(master, 16);
+    PRINT(WHITE, BLACK, " (Mute: %s)\n", (master & 0x8000) ? "YES" : "NO");
+
+    PRINT(WHITE, BLACK, "  0x18 PCM Vol:    0x");
+    print_unsigned(pcm, 16);
+    PRINT(WHITE, BLACK, " (Mute: %s)\n", (pcm & 0x8000) ? "YES" : "NO");
+
+    PRINT(WHITE, BLACK, "  0x28 Ext Audio:  0x");
+    print_unsigned(ext_id, 16);
+    PRINT(WHITE, BLACK, " (VRA: %s)\n", (ext_id & 0x01) ? "YES" : "NO");
+
+    PRINT(WHITE, BLACK, "  0x2A Ext Status: 0x");
+    print_unsigned(ext_stat, 16);
+    PRINT(WHITE, BLACK, " (VRA: %s)\n", (ext_stat & 0x01) ? "Enabled" : "Disabled");
+
+    PRINT(WHITE, BLACK, "  0x2C PCM Rate:   ");
+    print_unsigned(pcm_rate, 10);
+    PRINT(WHITE, BLACK, " Hz\n");
+
+
+    PRINT(WHITE, BLACK, "\nBus Master Registers (NABM BAR: 0x");
+    print_unsigned(g_ac97_device->nabm_bar, 16);
+    PRINT(WHITE, BLACK, "):\n");
+
+    uint32_t glob_cnt = inl(g_ac97_device->nabm_bar + 0x2C);
+    uint32_t glob_sta = inl(g_ac97_device->nabm_bar + 0x30);
+
+    PRINT(WHITE, BLACK, "  Global Control:  0x");
+    print_unsigned(glob_cnt, 16);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "    GIE (bit 0):   %s\n", (glob_cnt & 0x01) ? "ON" : "OFF");
+    PRINT(WHITE, BLACK, "    Cold Reset:    %s\n", (glob_cnt & 0x02) ? "ON" : "OFF");
+
+    PRINT(WHITE, BLACK, "  Global Status:   0x");
+    print_unsigned(glob_sta, 16);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "    Pri Codec Rdy: %s\n", (glob_sta & 0x100) ? "YES" : "NO");
+
+
+    PRINT(WHITE, BLACK, "\nPCM Output Channel:\n");
+
+    uint32_t bdbar = inl(g_ac97_device->nabm_bar + AC97_PO_BDBAR);
+    uint8_t civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
+    uint8_t lvi = inb(g_ac97_device->nabm_bar + AC97_PO_LVI);
+    uint16_t sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);
+    uint16_t picb = inw(g_ac97_device->nabm_bar + AC97_PO_PICB);
+    uint8_t cr = inb(g_ac97_device->nabm_bar + AC97_PO_CR);
+
+    PRINT(WHITE, BLACK, "  BDBAR:    0x");
+    print_unsigned(bdbar, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+    PRINT(WHITE, BLACK, "  CIV:      ");
+    print_unsigned(civ, 10);
+    PRINT(WHITE, BLACK, " (current buffer)\n");
+
+    PRINT(WHITE, BLACK, "  LVI:      ");
+    print_unsigned(lvi, 10);
+    PRINT(WHITE, BLACK, " (last valid)\n");
+
+    PRINT(WHITE, BLACK, "  SR:       0x");
+    print_unsigned(sr, 16);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "    DCH:    %s (DMA halted)\n", (sr & 0x01) ? "YES" : "NO");
+    PRINT(WHITE, BLACK, "    LVBCI:  %s (last valid buf)\n", (sr & 0x04) ? "YES" : "NO");
+    PRINT(WHITE, BLACK, "    BCIS:   %s (buf complete)\n", (sr & 0x08) ? "YES" : "NO");
+    PRINT(WHITE, BLACK, "    FIFOE:  %s (FIFO error)\n", (sr & 0x10) ? "YES" : "NO");
+
+    PRINT(WHITE, BLACK, "  PICB:     ");
+    print_unsigned(picb, 10);
+    PRINT(WHITE, BLACK, " samples remaining\n");
+
+    PRINT(WHITE, BLACK, "  CR:       0x");
+    print_unsigned(cr, 16);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "    RPBM:   %s (run/pause)\n", (cr & 0x01) ? "RUN" : "PAUSE");
+    PRINT(WHITE, BLACK, "    RR:     %s (reset)\n", (cr & 0x02) ? "YES" : "NO");
+    PRINT(WHITE, BLACK, "    LVBIE:  %s (LVB int)\n", (cr & 0x04) ? "ON" : "OFF");
+    PRINT(WHITE, BLACK, "    IOCE:   %s (IOC int)\n", (cr & 0x08) ? "ON" : "OFF");
+
+    PRINT(CYAN, BLACK, "=========================\n\n");
+}
 
 static uint32_t pci_read_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset) {
-    uint32_t address = 0x80000000 | ((uint32_t)bus << 16) | 
-                       ((uint32_t)device << 11) | ((uint32_t)func << 8) | 
+    uint32_t address = 0x80000000 | ((uint32_t)bus << 16) |
+                       ((uint32_t)device << 11) | ((uint32_t)func << 8) |
                        (offset & 0xFC);
-    
+
     outl(PCI_CONFIG_ADDRESS, address);
     return inl(PCI_CONFIG_DATA);
 }
 
-static void pci_write_config(uint8_t bus, uint8_t device, uint8_t func, 
+static void pci_write_config(uint8_t bus, uint8_t device, uint8_t func,
                              uint8_t offset, uint32_t value) {
-    uint32_t address = 0x80000000 | ((uint32_t)bus << 16) | 
-                       ((uint32_t)device << 11) | ((uint32_t)func << 8) | 
+    uint32_t address = 0x80000000 | ((uint32_t)bus << 16) |
+                       ((uint32_t)device << 11) | ((uint32_t)func << 8) |
                        (offset & 0xFC);
-    
+
     outl(PCI_CONFIG_ADDRESS, address);
     outl(PCI_CONFIG_DATA, value);
 }
 
 static int ac97_find_device(void) {
-    // Scan PCI bus for AC'97 compatible device
+
     for (uint16_t bus = 0; bus < 256; bus++) {
         for (uint8_t device = 0; device < 32; device++) {
             for (uint8_t func = 0; func < 8; func++) {
                 uint32_t vendor_device = pci_read_config(bus, device, func, PCI_VENDOR_ID);
                 uint16_t vendor_id = vendor_device & 0xFFFF;
                 uint16_t device_id = (vendor_device >> 16) & 0xFFFF;
-                
+
                 if (vendor_id == 0xFFFF) continue;
-                
-                // Check for Intel AC'97 devices
+
+
                 if (vendor_id == AC97_VENDOR_INTEL) {
                     if (device_id == AC97_DEVICE_ICH || device_id == AC97_DEVICE_ICH0 ||
                         device_id == AC97_DEVICE_ICH2 || device_id == AC97_DEVICE_ICH3 ||
                         device_id == AC97_DEVICE_ICH4 || device_id == AC97_DEVICE_ICH5 ||
                         device_id == AC97_DEVICE_ICH6 || device_id == AC97_DEVICE_ICH7) {
-                        
+
                         g_ac97_device->vendor_id = vendor_id;
                         g_ac97_device->device_id = device_id;
                         g_ac97_device->bus = bus;
                         g_ac97_device->device = device;
                         g_ac97_device->function = func;
-                        
+
                         return 0;
                     }
                 }
-                
-                // Check class code for generic AC'97 audio (0x0401)
+
+
                 uint32_t class_info = pci_read_config(bus, device, func, PCI_SUBCLASS);
                 uint8_t class_code = (class_info >> 24) & 0xFF;
                 uint8_t subclass = (class_info >> 16) & 0xFF;
-                
+
                 if (class_code == 0x04 && subclass == 0x01) {
                     g_ac97_device->vendor_id = vendor_id;
                     g_ac97_device->device_id = device_id;
                     g_ac97_device->bus = bus;
                     g_ac97_device->device = device;
                     g_ac97_device->function = func;
-                    
+
                     return 0;
                 }
             }
         }
     }
-    
+
     return -1;
 }
 
-// ============================================================================
-// DMA Buffer Management
-// ============================================================================
+
+
+
 
 static void* ac97_alloc_dma_buffer(uint32_t *phys_addr) {
-    // Allocate physically contiguous memory for DMA
-    void *virt = kmalloc(AC97_BUFFER_SIZE);
-    if (!virt) return NULL;
-    
-    // For simplicity, assume virtual = physical (adjust for your memory manager)
-    // In a real implementation, you'd use your PMM to get physical address
-    *phys_addr = (uint32_t)(uintptr_t)virt;
-    
-    return virt;
+
+    void *page = pmm_alloc_page();
+    if (!page) return NULL;
+
+
+    *phys_addr = (uint32_t)(uintptr_t)page;
+
+
+    uint8_t *ptr = (uint8_t*)page;
+    for (int i = 0; i < 4096; i++) {
+        ptr[i] = 0;
+    }
+
+    return page;
 }
 
+
 static void ac97_setup_bd_list(ac97_stream_t *stream) {
+    uint16_t samples = AC97_BUFFER_SIZE / 4;
+
     for (int i = 0; i < AC97_BD_COUNT; i++) {
         stream->bd_list[i].buffer_addr = stream->buffer_phys[i];
-        stream->bd_list[i].length = AC97_BUFFER_SAMPLES;
-        stream->bd_list[i].flags = AC97_BD_FLAG_IOC;  // Interrupt on completion
+        stream->bd_list[i].length = samples;
+
+
+
+        if (i == AC97_BD_COUNT - 1) {
+            stream->bd_list[i].flags = AC97_BD_FLAG_IOC | AC97_BD_FLAG_BUP;
+        } else {
+            stream->bd_list[i].flags = AC97_BD_FLAG_IOC;
+        }
     }
 }
 
-// ============================================================================
-// Codec Communication
-// ============================================================================
+
+
+
+
+
+void ac97_ensure_gie(void) {
+    uint32_t glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
+
+    PRINT(WHITE, BLACK, "[AC97] Current Global Control: 0x");
+    print_unsigned(glob_cnt, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+    if (!(glob_cnt & AC97_GLOB_CNT_GIE)) {
+        PRINT(YELLOW, BLACK, "[AC97] GIE was OFF, enabling now...\n");
+        glob_cnt |= AC97_GLOB_CNT_GIE;
+        outl(g_ac97_device->nabm_bar + AC97_GLOB_CNT, glob_cnt);
+
+
+        uint32_t verify = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
+        PRINT(WHITE, BLACK, "[AC97] New Global Control: 0x");
+        print_unsigned(verify, 16);
+        PRINT(WHITE, BLACK, "\n");
+        PRINT(WHITE, BLACK, "[AC97] GIE is now: %s\n",
+              (verify & AC97_GLOB_CNT_GIE) ? "ON" : "OFF");
+    } else {
+        PRINT(MAGENTA, BLACK, "[AC97] GIE already ON\n");
+    }
+}
 
 int ac97_wait_codec_ready(void) {
     uint32_t timeout = 1000000;
-    
+
     while (timeout--) {
         uint32_t status = inl(g_ac97_device->nabm_bar + AC97_GLOB_STA);
         if (status & AC97_GLOB_STA_PRI_READY) {
             g_ac97_device->codec_ready = 1;
             return 0;
         }
-        
-        // Small delay
+
+
         for (volatile int i = 0; i < 100; i++);
     }
-    
+
     PRINT(YELLOW, BLACK, "[AC97] Codec ready timeout\n");
     return -1;
 }
@@ -158,12 +303,12 @@ int ac97_codec_write(uint8_t reg, uint16_t value) {
     if (!g_ac97_device->codec_ready) {
         if (ac97_wait_codec_ready() != 0) return -1;
     }
-    
+
     outw(g_ac97_device->nam_bar + reg, value);
-    
-    // Wait for write to complete
+
+
     for (volatile int i = 0; i < 1000; i++);
-    
+
     return 0;
 }
 
@@ -171,27 +316,27 @@ uint16_t ac97_codec_read(uint8_t reg) {
     if (!g_ac97_device->codec_ready) {
         ac97_wait_codec_ready();
     }
-    
+
     return inw(g_ac97_device->nam_bar + reg);
 }
 
-// ============================================================================
-// Volume Control Functions
-// ============================================================================
+
+
+
 
 static uint16_t volume_to_ac97(uint8_t volume) {
-    // Convert 0-100 to AC'97 attenuation (0 = 0dB, 31 = -46.5dB)
-    // Volume 100 = attenuation 0, Volume 0 = mute (bit 15)
-    if (volume == 0) return 0x8000;  // Mute
+
+
+    if (volume == 0) return 0x8000;
     if (volume > 100) volume = 100;
-    
+
     uint8_t attenuation = 31 - ((volume * 31) / 100);
     return attenuation;
 }
 
 static uint8_t ac97_to_volume(uint16_t ac97_val) {
-    if (ac97_val & 0x8000) return 0;  // Muted
-    
+    if (ac97_val & 0x8000) return 0;
+
     uint8_t attenuation = ac97_val & 0x1F;
     return ((31 - attenuation) * 100) / 31;
 }
@@ -200,9 +345,9 @@ void ac97_set_master_volume(uint8_t left, uint8_t right) {
     uint16_t left_atten = volume_to_ac97(left);
     uint16_t right_atten = volume_to_ac97(right);
     uint16_t value = (left_atten << 8) | right_atten;
-    
+
     ac97_codec_write(AC97_NAM_MASTER_VOLUME, value);
-    
+
     g_ac97_device->master_volume_left = left;
     g_ac97_device->master_volume_right = right;
 }
@@ -211,9 +356,9 @@ void ac97_set_pcm_volume(uint8_t left, uint8_t right) {
     uint16_t left_atten = volume_to_ac97(left);
     uint16_t right_atten = volume_to_ac97(right);
     uint16_t value = (left_atten << 8) | right_atten;
-    
+
     ac97_codec_write(AC97_NAM_PCM_OUT_VOLUME, value);
-    
+
     g_ac97_device->pcm_volume_left = left;
     g_ac97_device->pcm_volume_right = right;
 }
@@ -253,9 +398,9 @@ void ac97_mute_pcm(int mute) {
     }
 }
 
-// ============================================================================
-// Sample Rate Control
-// ============================================================================
+
+
+
 
 int ac97_set_sample_rate(ac97_sample_rate_t rate) {
     if (!g_ac97_device->has_variable_rate) {
@@ -265,17 +410,17 @@ int ac97_set_sample_rate(ac97_sample_rate_t rate) {
         }
         return 0;
     }
-    
-    // Set PCM Front DAC rate
+
+
     ac97_codec_write(AC97_NAM_PCM_FRONT_DAC_RATE, (uint16_t)rate);
-    
-    // Verify
+
+
     uint16_t actual = ac97_codec_read(AC97_NAM_PCM_FRONT_DAC_RATE);
     if (actual != (uint16_t)rate) {
-        PRINT(YELLOW, BLACK, "[AC97] Sample rate set to %u instead of %u\n", 
+        PRINT(YELLOW, BLACK, "[AC97] Sample rate set to %u instead of %u\n",
               actual, (uint16_t)rate);
     }
-    
+
     g_ac97_device->playback_stream.sample_rate = rate;
     return 0;
 }
@@ -284,38 +429,38 @@ ac97_sample_rate_t ac97_get_sample_rate(void) {
     return g_ac97_device->playback_stream.sample_rate;
 }
 
-// ============================================================================
-// Stream Control
-// ============================================================================
+
+
+
 
 int ac97_stream_init(ac97_stream_t *stream, int is_playback) {
-    // Allocate buffer descriptor list
+
     stream->bd_list = (ac97_bd_entry_t*)kmalloc(sizeof(ac97_bd_entry_t) * AC97_BD_COUNT);
     if (!stream->bd_list) {
         PRINT(YELLOW, BLACK, "[AC97] Failed to allocate BD list\n");
         return -1;
     }
-    
+
     stream->bd_list_phys = (uint32_t)(uintptr_t)stream->bd_list;
-    
-    // Allocate DMA buffers
+
+
     for (int i = 0; i < AC97_BD_COUNT; i++) {
         stream->buffers[i] = (uint8_t*)ac97_alloc_dma_buffer(&stream->buffer_phys[i]);
         if (!stream->buffers[i]) {
             PRINT(YELLOW, BLACK, "[AC97] Failed to allocate DMA buffer %d\n", i);
             return -1;
         }
-        
-        // Clear buffer
+
+
         for (int j = 0; j < AC97_BUFFER_SIZE; j++) {
             stream->buffers[i][j] = 0;
         }
     }
-    
-    // Setup buffer descriptors
+
+
     ac97_setup_bd_list(stream);
-    
-    // Initialize stream state
+
+
     stream->current_buffer = 0;
     stream->play_buffer = 0;
     stream->running = 0;
@@ -323,81 +468,126 @@ int ac97_stream_init(ac97_stream_t *stream, int is_playback) {
     stream->sample_rate = AC97_RATE_48000;
     stream->channels = 2;
     stream->bits_per_sample = 16;
-    
-    // Write BD list address to controller
+
+
     uint16_t bdbar_reg = is_playback ? AC97_PO_BDBAR : AC97_PI_BDBAR;
     outl(g_ac97_device->nabm_bar + bdbar_reg, stream->bd_list_phys);
-    
+
     PRINT(MAGENTA, BLACK, "[AC97] Stream initialized: %d buffers of %d bytes\n",
           AC97_BD_COUNT, AC97_BUFFER_SIZE);
-    
+
     return 0;
 }
 
 void ac97_stream_reset(ac97_stream_t *stream, int is_playback) {
     uint16_t cr_reg = is_playback ? AC97_PO_CR : AC97_PI_CR;
-    
-    // Set reset bit
+
+
     outb(g_ac97_device->nabm_bar + cr_reg, AC97_CR_RR);
-    
-    // Wait for reset to complete
+
+
     for (volatile int i = 0; i < 10000; i++);
-    
-    // Clear reset bit
+
+
     outb(g_ac97_device->nabm_bar + cr_reg, 0);
-    
+
     stream->current_buffer = 0;
     stream->play_buffer = 0;
 }
 
-void ac97_stream_start(ac97_stream_t *stream, int is_playback) {
+void ac97_stream_start(ac97_stream_t *stream, int is_playback, uint8_t buffers_to_play) {
     uint16_t cr_reg = is_playback ? AC97_PO_CR : AC97_PI_CR;
     uint16_t lvi_reg = is_playback ? AC97_PO_LVI : AC97_PI_LVI;
-    
-    // Set Last Valid Index (circular buffer)
-    outb(g_ac97_device->nabm_bar + lvi_reg, (AC97_BD_COUNT - 1));
-    
-    // Enable interrupts and start DMA
-    uint8_t control = AC97_CR_RPBM | AC97_CR_LVBIE | AC97_CR_IOCE;
+    uint16_t sr_reg = is_playback ? AC97_PO_SR : AC97_PI_SR;
+
+    PRINT(WHITE, BLACK, "[AC97] Starting stream with ");
+    print_unsigned(buffers_to_play, 10);
+    PRINT(WHITE, BLACK, " buffers...\n");
+
+
+    ac97_ensure_gie();
+
+
+    outw(g_ac97_device->nabm_bar + sr_reg, 0x1E);
+
+
+    uint8_t lvi_value = (buffers_to_play > 0) ? (buffers_to_play - 1) : 0;
+    outb(g_ac97_device->nabm_bar + lvi_reg, lvi_value);
+
+    PRINT(WHITE, BLACK, "[AC97] Set LVI to ");
+    print_unsigned(lvi_value, 10);
+    PRINT(WHITE, BLACK, "\n");
+
+
+    for (volatile int i = 0; i < 1000; i++);
+
+
+    uint8_t control = AC97_CR_RPBM | AC97_CR_IOCE;
     outb(g_ac97_device->nabm_bar + cr_reg, control);
-    
+
+    PRINT(WHITE, BLACK, "[AC97] Control register set to 0x");
+    print_unsigned(control, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+
+    for (volatile int i = 0; i < 10000; i++);
+
+    uint8_t cr_check = inb(g_ac97_device->nabm_bar + cr_reg);
+    uint16_t sr_check = inw(g_ac97_device->nabm_bar + sr_reg);
+    uint8_t civ = inb(g_ac97_device->nabm_bar + (is_playback ? AC97_PO_CIV : AC97_PI_CIV));
+
+    PRINT(WHITE, BLACK, "[AC97] Verification:\n");
+    PRINT(WHITE, BLACK, "  CR=0x");
+    print_unsigned(cr_check, 16);
+    PRINT(WHITE, BLACK, "\n  SR=0x");
+    print_unsigned(sr_check, 16);
+    PRINT(WHITE, BLACK, "\n  CIV=");
+    print_unsigned(civ, 10);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "  DMA Running: %s\n", (cr_check & 0x01) ? "YES" : "NO");
+    PRINT(WHITE, BLACK, "  DMA Halted: %s\n", (sr_check & 0x01) ? "YES" : "NO");
+
+    if (sr_check & 0x01) {
+        PRINT(YELLOW, BLACK, "[AC97] WARNING: DMA is still halted!\n");
+    } else {
+        PRINT(MAGENTA, BLACK, "[AC97] DMA is running!\n");
+    }
+
     stream->running = 1;
-    
-    PRINT(MAGENTA, BLACK, "[AC97] Stream started\n");
 }
 
 void ac97_stream_stop(ac97_stream_t *stream, int is_playback) {
     uint16_t cr_reg = is_playback ? AC97_PO_CR : AC97_PI_CR;
-    
-    // Clear run bit
+
+
     outb(g_ac97_device->nabm_bar + cr_reg, 0);
-    
+
     stream->running = 0;
-    
+
     PRINT(MAGENTA, BLACK, "[AC97] Stream stopped\n");
 }
 
-// ============================================================================
-// Playback Functions
-// ============================================================================
+
+
+
 
 int ac97_play_init(ac97_format_t format, ac97_sample_rate_t rate) {
     if (!g_ac97_device || !g_ac97_device->initialized) {
         PRINT(YELLOW, BLACK, "[AC97] Device not initialized\n");
         return -1;
     }
-    
-    // Stop if already playing
+
+
     if (g_ac97_device->playback_stream.running) {
         ac97_play_stop();
     }
-    
-    // Reset stream
+
+
     ac97_stream_reset(&g_ac97_device->playback_stream, 1);
-    
-    // Set format
+
+
     g_ac97_device->playback_stream.format = format;
-    
+
     switch (format) {
         case AC97_FORMAT_STEREO_16:
             g_ac97_device->playback_stream.channels = 2;
@@ -416,8 +606,8 @@ int ac97_play_init(ac97_format_t format, ac97_sample_rate_t rate) {
             g_ac97_device->playback_stream.bits_per_sample = 8;
             break;
     }
-    
-    // Set sample rate
+
+
     return ac97_set_sample_rate(rate);
 }
 
@@ -425,51 +615,52 @@ int ac97_play_buffer(const void *data, uint32_t size) {
     if (!g_ac97_device || !g_ac97_device->playback_stream.running) {
         return -1;
     }
-    
+
     ac97_stream_t *stream = &g_ac97_device->playback_stream;
-    
-    // Get current buffer index
+
+
     uint32_t buffer_idx = stream->current_buffer;
-    
-    // Check if buffer is available (not being played)
+
+
     uint8_t civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
     if (buffer_idx == civ) {
-        return -2;  // Buffer not available yet
+        return -2;
     }
-    
-    // Copy data to buffer
+
+
     uint32_t copy_size = (size > AC97_BUFFER_SIZE) ? AC97_BUFFER_SIZE : size;
-    
+
     for (uint32_t i = 0; i < copy_size; i++) {
         stream->buffers[buffer_idx][i] = ((uint8_t*)data)[i];
     }
-    
-    // Clear rest of buffer if needed
+
+
     for (uint32_t i = copy_size; i < AC97_BUFFER_SIZE; i++) {
         stream->buffers[buffer_idx][i] = 0;
     }
-    
-    // Move to next buffer
+
+
     stream->current_buffer = (stream->current_buffer + 1) % AC97_BD_COUNT;
-    
+
     return copy_size;
 }
 
 void ac97_play_start(void) {
     if (!g_ac97_device) return;
-    
-    ac97_stream_start(&g_ac97_device->playback_stream, 1);
+
+
+    ac97_stream_start(&g_ac97_device->playback_stream, 1, AC97_BD_COUNT);
 }
 
 void ac97_play_stop(void) {
     if (!g_ac97_device) return;
-    
+
     ac97_stream_stop(&g_ac97_device->playback_stream, 1);
 }
 
 void ac97_play_pause(void) {
     if (!g_ac97_device) return;
-    
+
     uint8_t cr = inb(g_ac97_device->nabm_bar + AC97_PO_CR);
     cr &= ~AC97_CR_RPBM;
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, cr);
@@ -477,327 +668,919 @@ void ac97_play_pause(void) {
 
 void ac97_play_resume(void) {
     if (!g_ac97_device) return;
-    
+
     uint8_t cr = inb(g_ac97_device->nabm_bar + AC97_PO_CR);
     cr |= AC97_CR_RPBM;
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, cr);
 }
 
-// ============================================================================
-// Interrupt Handler
-// ============================================================================
+
+
+
 
 void ac97_interrupt_handler(void) {
     if (!g_ac97_device) return;
-    
-    // Read status registers
+
+
     uint16_t po_sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);
     uint16_t pi_sr = inw(g_ac97_device->nabm_bar + AC97_PI_SR);
-    
-    // Handle playback interrupts
+
+
     if (po_sr & (AC97_SR_LVBCI | AC97_SR_BCIS)) {
-        // Clear interrupt flags
+
         outw(g_ac97_device->nabm_bar + AC97_PO_SR, po_sr);
-        
-        // Update buffer pointers
-        g_ac97_device->playback_stream.play_buffer = 
+
+
+        g_ac97_device->playback_stream.play_buffer =
             inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
     }
-    
-    // Handle FIFO errors
+
+
     if (po_sr & AC97_SR_FIFOE) {
         PRINT(YELLOW, BLACK, "[AC97] Playback FIFO error\n");
         outw(g_ac97_device->nabm_bar + AC97_PO_SR, AC97_SR_FIFOE);
     }
-    
-    // Handle recording interrupts
+
+
     if (pi_sr & (AC97_SR_LVBCI | AC97_SR_BCIS)) {
         outw(g_ac97_device->nabm_bar + AC97_PI_SR, pi_sr);
     }
-    
+
     if (pi_sr & AC97_SR_FIFOE) {
         PRINT(YELLOW, BLACK, "[AC97] Record FIFO error\n");
         outw(g_ac97_device->nabm_bar + AC97_PI_SR, AC97_SR_FIFOE);
     }
 }
 
-// ============================================================================
-// Utility Functions
-// ============================================================================
+
+
+
 
 int ac97_get_position(void) {
     if (!g_ac97_device) return 0;
-    
+
     uint16_t picb = inw(g_ac97_device->nabm_bar + AC97_PO_PICB);
     uint8_t civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
-    
+
     return (civ * AC97_BUFFER_SAMPLES) + (AC97_BUFFER_SAMPLES - picb);
 }
 
 int ac97_get_buffer_status(void) {
     if (!g_ac97_device) return 0;
-    
+
     uint8_t civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
     ac97_stream_t *stream = &g_ac97_device->playback_stream;
-    
+
     int filled = stream->current_buffer - civ;
     if (filled < 0) filled += AC97_BD_COUNT;
-    
+
     return filled;
 }
 
 void ac97_wait_for_buffer(void) {
     if (!g_ac97_device) return;
-    
+
     while (ac97_get_buffer_status() >= (AC97_BD_COUNT - 1)) {
         for (volatile int i = 0; i < 1000; i++);
     }
 }
 
-// ============================================================================
-// Reset and Initialization
-// ============================================================================
+
+
+
 
 int ac97_reset(void) {
     PRINT(WHITE, BLACK, "[AC97] Resetting device...\n");
     
-    // Cold reset
+    // Step 1: Cold reset - assert reset line
     uint32_t glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
+    PRINT(WHITE, BLACK, "[AC97] Initial Global Control: 0x");
+    print_unsigned(glob_cnt, 16);
+    PRINT(WHITE, BLACK, "\n");
+    
     glob_cnt &= ~AC97_GLOB_CNT_COLD_RESET;
     outl(g_ac97_device->nabm_bar + AC97_GLOB_CNT, glob_cnt);
     
-    // Wait
-    for (volatile int i = 0; i < 100000; i++);
+    PRINT(WHITE, BLACK, "[AC97] Cold reset asserted\n");
     
-    // Release reset
+    // Wait for reset to take effect (longer delay)
+    for (volatile int i = 0; i < 500000; i++);
+    
+    // Step 2: Release cold reset
+    glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
     glob_cnt |= AC97_GLOB_CNT_COLD_RESET;
     outl(g_ac97_device->nabm_bar + AC97_GLOB_CNT, glob_cnt);
     
-    // Wait for codec ready
+    PRINT(WHITE, BLACK, "[AC97] Cold reset released\n");
+    
+    // Wait for codec to come out of reset
+    for (volatile int i = 0; i < 100000; i++);
+    
+    // Step 3: Wait for codec ready signal
+    PRINT(WHITE, BLACK, "[AC97] Waiting for codec ready...\n");
+    
     if (ac97_wait_codec_ready() != 0) {
+        PRINT(YELLOW, BLACK, "[AC97] Codec ready timeout!\n");
         return -1;
     }
     
-    PRINT(MAGENTA, BLACK, "[AC97] Codec ready\n");
+    PRINT(MAGENTA, BLACK, "[AC97] Codec ready signal received\n");
     
-    // Reset mixer
+    // Step 4: Enable Global Interrupt Enable (GIE)
+    glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
+    glob_cnt |= AC97_GLOB_CNT_GIE;
+    outl(g_ac97_device->nabm_bar + AC97_GLOB_CNT, glob_cnt);
+    
+    PRINT(WHITE, BLACK, "[AC97] GIE enable requested\n");
+    
+    // Give it time to take effect
+    sleep_seconds(1);
+    
+    // Verify GIE status
+    uint32_t verify = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
+    PRINT(WHITE, BLACK, "[AC97] Global Control after GIE: 0x");
+    print_unsigned(verify, 16);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "[AC97] GIE Status: %s\n", 
+          (verify & AC97_GLOB_CNT_GIE) ? "ENABLED" : "DISABLED");
+    
+    if (!(verify & AC97_GLOB_CNT_GIE)) {
+        PRINT(YELLOW, BLACK, "[AC97] WARNING: GIE not enabled\n");
+        PRINT(WHITE, BLACK, "[AC97] This is normal for some devices - will use polling mode\n");
+    } else {
+        PRINT(MAGENTA, BLACK, "[AC97] GIE successfully enabled\n");
+    }
+    
+    // Step 5: Reset codec mixer
+    PRINT(WHITE, BLACK, "[AC97] Resetting codec mixer...\n");
     ac97_codec_write(AC97_NAM_RESET, 0);
     
+    // Wait for mixer reset to complete
     for (volatile int i = 0; i < 100000; i++);
     
-    // Check for variable rate support
+    // Step 6: Power up codec sections (FIXED VERSION)
+    PRINT(WHITE, BLACK, "[AC97] Powering up codec sections...\n");
+
+    // Read initial state
+    uint16_t power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
+    PRINT(WHITE, BLACK, "[AC97] Initial power register: 0x");
+    print_unsigned(power, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+    // Power up ALL sections (bit=0 means powered UP in AC97)
+    // Write multiple times with delays - some codecs are stubborn
+    for (int attempt = 0; attempt < 3; attempt++) {
+        PRINT(WHITE, BLACK, "[AC97] Power-up attempt %d/3...\n", attempt + 1);
+        ac97_codec_write(AC97_NAM_POWERDOWN_CTRL, 0x0000);
+        for (volatile int i = 0; i < 1000000; i++);
+    }
+
+    // Longer delay for hardware to stabilize
+    PRINT(WHITE, BLACK, "[AC97] Waiting for codec stabilization...\n");
+    sleep_seconds(1);
+
+    // Verify power status (but don't fail if it doesn't report correctly)
+    power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
+    PRINT(WHITE, BLACK, "[AC97] Power register after powerup: 0x");
+    print_unsigned(power, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+    // Check if DAC is powered up
+    if (power & AC97_PWR_DAC) {
+        PRINT(YELLOW, BLACK, "[AC97] WARNING: DAC bit still set (0x");
+        print_unsigned(power, 16);
+        PRINT(YELLOW, BLACK, ")\n");
+        PRINT(WHITE, BLACK, "[AC97] This is common with some codecs - continuing anyway\n");
+        PRINT(WHITE, BLACK, "[AC97] Audio playback may still work correctly\n");
+    } else {
+        PRINT(MAGENTA, BLACK, "[AC97] DAC powered up successfully!\n");
+    }
+
+    // Enable external amplifier if needed (clear EAPD bit to enable amp)
+    power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
+    if (power & AC97_PWR_EAPD) {
+        PRINT(WHITE, BLACK, "[AC97] Enabling external amplifier (clearing EAPD)...\n");
+        power &= ~AC97_PWR_EAPD;
+        ac97_codec_write(AC97_NAM_POWERDOWN_CTRL, power);
+        for (volatile int i = 0; i < 500000; i++);
+    }
+
+    // Final status
+    power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
+    PRINT(WHITE, BLACK, "[AC97] Final power register: 0x");
+    print_unsigned(power, 16);
+    PRINT(WHITE, BLACK, "\n");
+    
+    if (power == 0) {
+        PRINT(MAGENTA, BLACK, "[AC97] All sections report powered up!\n");
+    } else {
+        PRINT(WHITE, BLACK, "[AC97] Some sections may not report correctly, but continuing...\n");
+    }
+   // Step 7: Read codec ID and capabilities
+uint16_t codec_id = ac97_codec_read(AC97_NAM_RESET);
+PRINT(WHITE, BLACK, "[AC97] Codec ID: 0x");
+print_unsigned(codec_id, 16);
+PRINT(WHITE, BLACK, "\n");
+
+// Diagnostic: Check if codec is actually responding
+if (codec_id == 0x0000) {
+    PRINT(YELLOW, BLACK, "[AC97] WARNING: Codec ID is 0x0000\n");
+    PRINT(WHITE, BLACK, "[AC97] Performing diagnostic checks...\n");
+    
+    // Test 1: Can we write/read another register?
+    PRINT(WHITE, BLACK, "[AC97] Test 1: Register write/read test\n");
+    
+    // Save current master volume
+    uint16_t orig_vol = ac97_codec_read(AC97_NAM_MASTER_VOLUME);
+    PRINT(WHITE, BLACK, "  Original master volume: 0x");
+    print_unsigned(orig_vol, 16);
+    PRINT(WHITE, BLACK, "\n");
+    
+    // Try writing a known value
+    ac97_codec_write(AC97_NAM_MASTER_VOLUME, 0x0808);
+    for (volatile int i = 0; i < 10000; i++);
+    
+    uint16_t test_vol = ac97_codec_read(AC97_NAM_MASTER_VOLUME);
+    PRINT(WHITE, BLACK, "  After writing 0x0808, read: 0x");
+    print_unsigned(test_vol, 16);
+    PRINT(WHITE, BLACK, "\n");
+    
+    // Restore original
+    ac97_codec_write(AC97_NAM_MASTER_VOLUME, orig_vol);
+    
+    if (test_vol == 0x0808 || (test_vol & 0x1F1F) == 0x0808) {
+        PRINT(MAGENTA, BLACK, "   Codec IS responding to writes!\n");
+        PRINT(WHITE, BLACK, "  This is likely an emulated codec (QEMU/VirtualBox)\n");
+        PRINT(WHITE, BLACK, "  Codec ID of 0x0 is acceptable - continuing...\n");
+    } else if (test_vol == 0x0000 || test_vol == 0xFFFF) {
+        PRINT(YELLOW, BLACK, "   Codec NOT responding properly!\n");
+        PRINT(WHITE, BLACK, "  Read back: 0x");
+        print_unsigned(test_vol, 16);
+        PRINT(WHITE, BLACK, "\n");
+        
+        // Check if BARs are valid
+        PRINT(WHITE, BLACK, "[AC97] Test 2: Checking BARs...\n");
+        PRINT(WHITE, BLACK, "  NAM BAR: 0x");
+        print_unsigned(g_ac97_device->nam_bar, 16);
+        PRINT(WHITE, BLACK, "\n");
+        PRINT(WHITE, BLACK, "  NABM BAR: 0x");
+        print_unsigned(g_ac97_device->nabm_bar, 16);
+        PRINT(WHITE, BLACK, "\n");
+        
+        if (g_ac97_device->nam_bar == 0 || g_ac97_device->nabm_bar == 0) {
+            PRINT(YELLOW, BLACK, "   BARs are invalid! Cannot continue.\n");
+            return -1;
+        }
+        
+        // Check codec ready flag one more time
+        uint32_t glob_sta = inl(g_ac97_device->nabm_bar + AC97_GLOB_STA);
+        PRINT(WHITE, BLACK, "  Global Status: 0x");
+        print_unsigned(glob_sta, 16);
+        PRINT(WHITE, BLACK, "\n");
+        
+        if (!(glob_sta & AC97_GLOB_STA_PRI_READY)) {
+            PRINT(YELLOW, BLACK, "   Codec ready bit NOT set!\n");
+            PRINT(YELLOW, BLACK, "  Codec may not be present or initialized.\n");
+            return -1;
+        }
+        
+        PRINT(YELLOW, BLACK, "  Codec ready bit IS set but not responding.\n");
+        PRINT(YELLOW, BLACK, "  This may be a hardware/emulation issue.\n");
+        PRINT(WHITE, BLACK, "  Attempting to continue anyway...\n");
+    } else {
+        PRINT(MAGENTA, BLACK, "  ~ Codec responding but with unexpected value\n");
+        PRINT(WHITE, BLACK, "  Continuing initialization...\n");
+    }
+} else if (codec_id == 0xFFFF) {
+    PRINT(YELLOW, BLACK, "[AC97] ERROR: Codec ID is 0xFFFF (not present)\n");
+    return -1;
+} else {
+    PRINT(MAGENTA, BLACK, "[AC97] Valid Codec ID detected\n");
+}
+
+    // Step 8: Check for extended audio features
     uint16_t ext_id = ac97_codec_read(AC97_NAM_EXT_AUDIO_ID);
+    PRINT(WHITE, BLACK, "[AC97] Extended Audio ID: 0x");
+    print_unsigned(ext_id, 16);
+    PRINT(WHITE, BLACK, "\n");
+    
     g_ac97_device->has_variable_rate = (ext_id & 0x0001) ? 1 : 0;
     g_ac97_device->has_surround = (ext_id & 0x0040) ? 1 : 0;
     
     if (g_ac97_device->has_variable_rate) {
-        PRINT(MAGENTA, BLACK, "[AC97] Variable rate audio supported\n");
+        PRINT(MAGENTA, BLACK, "[AC97] Variable Rate Audio (VRA) supported\n");
         
-        // Enable variable rate
+        // Enable variable rate audio
         uint16_t ext_status = ac97_codec_read(AC97_NAM_EXT_AUDIO_STATUS);
-        ext_status |= 0x0001;
+        ext_status |= 0x0001;  // Enable VRA
         ac97_codec_write(AC97_NAM_EXT_AUDIO_STATUS, ext_status);
         
-        g_ac97_device->max_sample_rate = 48000;
+        PRINT(WHITE, BLACK, "[AC97] VRA enabled\n");
+        
+        // Verify VRA is enabled
+        ext_status = ac97_codec_read(AC97_NAM_EXT_AUDIO_STATUS);
+        if (ext_status & 0x0001) {
+            PRINT(MAGENTA, BLACK, "[AC97] VRA confirmed active\n");
+            g_ac97_device->max_sample_rate = 48000;
+        } else {
+            PRINT(YELLOW, BLACK, "[AC97] VRA enable failed, using 48kHz only\n");
+            g_ac97_device->has_variable_rate = 0;
+            g_ac97_device->max_sample_rate = 48000;
+        }
     } else {
-        PRINT(WHITE, BLACK, "[AC97] Fixed 48kHz only\n");
+        PRINT(WHITE, BLACK, "[AC97] Fixed 48kHz sample rate only\n");
         g_ac97_device->max_sample_rate = 48000;
     }
     
-    // Set default volumes (50%)
-    ac97_set_master_volume(50, 50);
+    if (g_ac97_device->has_surround) {
+        PRINT(MAGENTA, BLACK, "[AC97] Surround sound supported\n");
+    }
+    
+    // Step 9: Set default sample rate
+    if (g_ac97_device->has_variable_rate) {
+        ac97_codec_write(AC97_NAM_PCM_FRONT_DAC_RATE, 48000);
+        uint16_t actual_rate = ac97_codec_read(AC97_NAM_PCM_FRONT_DAC_RATE);
+        PRINT(WHITE, BLACK, "[AC97] PCM Front DAC rate set to: ");
+        print_unsigned(actual_rate, 10);
+        PRINT(WHITE, BLACK, " Hz\n");
+    }
+    
+    // Step 10: Set default volumes (75% / -6dB attenuation)
+    PRINT(WHITE, BLACK, "[AC97] Setting default volumes...\n");
+    
+    // Master volume: 75% = attenuation 8 (about -12dB)
+    ac97_set_master_volume(75, 75);
+    
+    // PCM volume: 100% = attenuation 0 (0dB)
     ac97_set_pcm_volume(100, 100);
     
-    // Unmute
+    // Verify volumes
+    uint8_t left, right;
+    ac97_get_master_volume(&left, &right);
+    PRINT(WHITE, BLACK, "[AC97] Master volume: L=%u%% R=%u%%\n", left, right);
+    
+    ac97_get_pcm_volume(&left, &right);
+    PRINT(WHITE, BLACK, "[AC97] PCM volume: L=%u%% R=%u%%\n", left, right);
+    
+    // Step 11: Unmute everything
+    PRINT(WHITE, BLACK, "[AC97] Unmuting outputs...\n");
+    
     ac97_mute_master(0);
     ac97_mute_pcm(0);
+    
+    // Verify mute status
+    uint16_t master_vol = ac97_codec_read(AC97_NAM_MASTER_VOLUME);
+    uint16_t pcm_vol = ac97_codec_read(AC97_NAM_PCM_OUT_VOLUME);
+    
+    PRINT(WHITE, BLACK, "[AC97] Master mute: %s\n", 
+          (master_vol & 0x8000) ? "YES" : "NO");
+    PRINT(WHITE, BLACK, "[AC97] PCM mute: %s\n", 
+          (pcm_vol & 0x8000) ? "YES" : "NO");
+    
+    // Step 12: Reset all DMA channels
+    PRINT(WHITE, BLACK, "[AC97] Resetting DMA channels...\n");
+    
+    // Reset PCM Out
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
+    for (volatile int i = 0; i < 1000; i++);
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
+    
+    // Reset PCM In
+    outb(g_ac97_device->nabm_bar + AC97_PI_CR, AC97_CR_RR);
+    for (volatile int i = 0; i < 1000; i++);
+    outb(g_ac97_device->nabm_bar + AC97_PI_CR, 0);
+    
+    // Reset Mic In
+    outb(g_ac97_device->nabm_bar + AC97_MC_CR, AC97_CR_RR);
+    for (volatile int i = 0; i < 1000; i++);
+    outb(g_ac97_device->nabm_bar + AC97_MC_CR, 0);
+    
+    // Clear any pending status
+    outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
+    outw(g_ac97_device->nabm_bar + AC97_PI_SR, 0x1E);
+    outw(g_ac97_device->nabm_bar + AC97_MC_SR, 0x1E);
+    
+    PRINT(MAGENTA, BLACK, "[AC97] DMA channels reset\n");
+    
+    // Step 13: Final status check
+    uint32_t glob_sta = inl(g_ac97_device->nabm_bar + AC97_GLOB_STA);
+    PRINT(WHITE, BLACK, "[AC97] Global Status: 0x");
+    print_unsigned(glob_sta, 16);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "[AC97] Primary Codec Ready: %s\n", 
+          (glob_sta & AC97_GLOB_STA_PRI_READY) ? "YES" : "NO");
+    
+    if (glob_sta & 0x200) {
+        PRINT(WHITE, BLACK, "[AC97] Secondary Codec Ready: YES\n");
+    }
+    
+    PRINT(MAGENTA, BLACK, "[AC97] Reset complete!\n\n");
     
     return 0;
 }
 
 int ac97_detect(void) {
     PRINT(WHITE, BLACK, "[AC97] Detecting audio device...\n");
-    
+
     if (ac97_find_device() != 0) {
         PRINT(YELLOW, BLACK, "[AC97] No AC'97 device found\n");
         return -1;
     }
-    
+
     PRINT(MAGENTA, BLACK, "[AC97] Found device: %04X:%04X at %02X:%02X.%X\n",
           g_ac97_device->vendor_id, g_ac97_device->device_id,
           g_ac97_device->bus, g_ac97_device->device, g_ac97_device->function);
-    
-    // Enable PCI bus mastering and I/O space
+
+
     uint32_t command = pci_read_config(g_ac97_device->bus, g_ac97_device->device,
                                        g_ac97_device->function, PCI_COMMAND);
     command |= PCI_COMMAND_IO | PCI_COMMAND_MASTER;
     pci_write_config(g_ac97_device->bus, g_ac97_device->device,
                     g_ac97_device->function, PCI_COMMAND, command);
-    
-    // Read BARs
+
+
     uint32_t bar0 = pci_read_config(g_ac97_device->bus, g_ac97_device->device,
                                      g_ac97_device->function, PCI_BAR0);
     uint32_t bar1 = pci_read_config(g_ac97_device->bus, g_ac97_device->device,
                                      g_ac97_device->function, PCI_BAR1);
-    
-    g_ac97_device->nam_bar = bar0 & 0xFFFE;   // I/O space, mask low bit
+
+    g_ac97_device->nam_bar = bar0 & 0xFFFE;
     g_ac97_device->nabm_bar = bar1 & 0xFFFE;
-    
+
     PRINT(MAGENTA, BLACK, "[AC97] NAM BAR:  0x%04X\n", g_ac97_device->nam_bar);
     PRINT(MAGENTA, BLACK, "[AC97] NABM BAR: 0x%04X\n", g_ac97_device->nabm_bar);
-    
-    // Read IRQ
+
+
     uint32_t irq_reg = pci_read_config(g_ac97_device->bus, g_ac97_device->device,
                                         g_ac97_device->function, PCI_IRQ_LINE);
     g_ac97_device->irq = irq_reg & 0xFF;
     PRINT(MAGENTA, BLACK, "[AC97] IRQ: %u\n", g_ac97_device->irq);
-    
+
     return 0;
 }
 
 int ac97_init(void) {
     PRINT(CYAN, BLACK, "\n=== AC'97 Audio Driver Initialization ===\n");
-    
-    // Allocate device structure
+
+
     g_ac97_device = (ac97_device_t*)kmalloc(sizeof(ac97_device_t));
     if (!g_ac97_device) {
         PRINT(YELLOW, BLACK, "[AC97] Failed to allocate device structure\n");
         return -1;
     }
-    
-    // Clear structure
+
+
     for (int i = 0; i < sizeof(ac97_device_t); i++) {
         ((uint8_t*)g_ac97_device)[i] = 0;
     }
-    
-    // Detect device
+
+
     if (ac97_detect() != 0) {
         kfree(g_ac97_device);
         g_ac97_device = NULL;
         return -1;
     }
-    
-    // Reset and initialize codec
+
+    PRINT(CYAN, BLACK, "\n=== BAR Validation ===\n");
+    PRINT(WHITE, BLACK, "\nNAM BAR: 0x");
+      print_unsigned(g_ac97_device->nam_bar, 16);
+    PRINT(WHITE, BLACK, "\nNABM BAR:0x ");
+    print_unsigned(g_ac97_device->nabm_bar, 16);
+    PRINT(WHITE, BLACK, "\n");
+    if (g_ac97_device->nam_bar == 0 || g_ac97_device->nabm_bar == 0) {
+        PRINT(YELLOW, BLACK, "ERROR: Invalid BARs!\n");
+        return -1;
+    }
+
+
     if (ac97_reset() != 0) {
         PRINT(YELLOW, BLACK, "[AC97] Reset failed\n");
         kfree(g_ac97_device);
         g_ac97_device = NULL;
         return -1;
     }
-    
-    // Initialize playback stream
+
+
     if (ac97_stream_init(&g_ac97_device->playback_stream, 1) != 0) {
         PRINT(YELLOW, BLACK, "[AC97] Failed to initialize playback stream\n");
         kfree(g_ac97_device);
         g_ac97_device = NULL;
         return -1;
     }
-    
-    // Enable global interrupts
+
+
+
     uint32_t glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
     glob_cnt |= AC97_GLOB_CNT_GIE;
     outl(g_ac97_device->nabm_bar + AC97_GLOB_CNT, glob_cnt);
-    
+
     g_ac97_device->initialized = 1;
-    
+
+     if (g_ac97_device->irq > 0) {
+        extern void irq_install_handler(uint8_t irq, void (*handler)(void));
+        irq_install_handler(g_ac97_device->irq, ac97_interrupt_handler);
+        PRINT(MAGENTA, BLACK, "[AC97] IRQ %u handler registered\n", g_ac97_device->irq);
+    }
+
     PRINT(MAGENTA, BLACK, "[AC97] Initialization complete!\n");
     PRINT(CYAN, BLACK, "=========================================\n\n");
-    
+
     return 0;
 }
 
-// ============================================================================
-// High-Level Audio API
-// ============================================================================
 
-int audio_play_pcm(const int16_t *samples, uint32_t sample_count, 
+
+
+
+int audio_play_pcm(const int16_t *samples, uint32_t sample_count,
                    int channels, int sample_rate) {
     if (!g_ac97_device || !g_ac97_device->initialized) {
         return -1;
     }
-    
-    // Determine format
+
+
     ac97_format_t format;
     if (channels == 2) {
         format = AC97_FORMAT_STEREO_16;
     } else {
         format = AC97_FORMAT_MONO_16;
     }
-    
-    // Initialize playback
+
+
     ac97_sample_rate_t ac97_rate = (ac97_sample_rate_t)sample_rate;
     if (ac97_play_init(format, ac97_rate) != 0) {
         return -1;
     }
-    
-    // Start playback
+
+
     ac97_play_start();
-    
-    // Feed data
+
+
     uint32_t bytes_to_write = sample_count * sizeof(int16_t) * channels;
     uint32_t offset = 0;
-    
+
     while (offset < bytes_to_write) {
         ac97_wait_for_buffer();
-        
+
         uint32_t chunk_size = bytes_to_write - offset;
         if (chunk_size > AC97_BUFFER_SIZE) {
             chunk_size = AC97_BUFFER_SIZE;
         }
-        
+
         int written = ac97_play_buffer(((uint8_t*)samples) + offset, chunk_size);
         if (written < 0) {
             break;
         }
-        
+
         offset += written;
     }
-    
+
     return 0;
 }
 
+void ac97_debug_playback(void) {
+    PRINT(CYAN, BLACK, "\n=== AC97 Playback Debug ===\n");
+
+
+    if (!g_ac97_device) {
+        PRINT(YELLOW, BLACK, "Device pointer is NULL!\n");
+        return;
+    }
+
+    if (!g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Device not initialized!\n");
+        return;
+    }
+
+    PRINT(MAGENTA, BLACK, "Device initialized: YES\n");
+
+
+    PRINT(WHITE, BLACK, "NAM BAR: 0x");
+    print_unsigned(g_ac97_device->nam_bar, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+    PRINT(WHITE, BLACK, "NABM BAR: 0x");
+    print_unsigned(g_ac97_device->nabm_bar, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+    if (g_ac97_device->nam_bar == 0 || g_ac97_device->nabm_bar == 0) {
+        PRINT(YELLOW, BLACK, "BARs not set correctly!\n");
+        return;
+    }
+
+
+    uint32_t glob_sta = inl(g_ac97_device->nabm_bar + AC97_GLOB_STA);
+    PRINT(WHITE, BLACK, "Global Status: 0x");
+    print_unsigned(glob_sta, 16);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "Codec Ready: %s\n",
+          (glob_sta & AC97_GLOB_STA_PRI_READY) ? "YES" : "NO");
+
+    if (!(glob_sta & AC97_GLOB_STA_PRI_READY)) {
+        PRINT(YELLOW, BLACK, "Codec not ready!\n");
+        return;
+    }
+
+
+    uint16_t master = ac97_codec_read(AC97_NAM_MASTER_VOLUME);
+    uint16_t pcm = ac97_codec_read(AC97_NAM_PCM_OUT_VOLUME);
+
+    PRINT(WHITE, BLACK, "Master Volume: 0x");
+    print_unsigned(master, 16);
+    PRINT(WHITE, BLACK, " (Muted: %s)\n", (master & 0x8000) ? "YES" : "NO");
+
+    PRINT(WHITE, BLACK, "PCM Volume: 0x");
+    print_unsigned(pcm, 16);
+    PRINT(WHITE, BLACK, " (Muted: %s)\n", (pcm & 0x8000) ? "YES" : "NO");
+
+    if ((master & 0x8000) || (pcm & 0x8000)) {
+        PRINT(YELLOW, BLACK, "Audio is MUTED!\n");
+    }
+
+
+    uint32_t bdbar = inl(g_ac97_device->nabm_bar + AC97_PO_BDBAR);
+    PRINT(WHITE, BLACK, "BDBAR: 0x");
+    print_unsigned(bdbar, 16);
+    PRINT(WHITE, BLACK, "\n");
+
+    if (bdbar == 0) {
+        PRINT(YELLOW, BLACK, "BDBAR not set!\n");
+        return;
+    }
+
+
+    ac97_stream_t *stream = &g_ac97_device->playback_stream;
+    int has_data = 0;
+    for (int i = 0; i < 100; i++) {
+        if (stream->buffers[0][i] != 0) {
+            has_data = 1;
+            break;
+        }
+    }
+    PRINT(WHITE, BLACK, "Buffer has data: %s\n", has_data ? "YES" : "NO");
+
+    PRINT(CYAN, BLACK, "===========================\n\n");
+}
 int audio_beep(uint32_t frequency, uint32_t duration_ms) {
     if (!g_ac97_device || !g_ac97_device->initialized) {
         return -1;
     }
-    
-    // Generate sine wave
+
+    PRINT(CYAN, BLACK, "\n=== BEEP ");
+    print_unsigned(frequency, 10);
+    PRINT(CYAN, BLACK, " Hz for ");
+    print_unsigned(duration_ms, 10);
+    PRINT(CYAN, BLACK, " ms ===\n");
+
     const int sample_rate = 48000;
     const int samples_needed = (sample_rate * duration_ms) / 1000;
-    
+
     int16_t *buffer = (int16_t*)kmalloc(samples_needed * 2 * sizeof(int16_t));
     if (!buffer) return -1;
-    
-    // Simple square wave for beep
+
+    // Generate square wave
     int samples_per_cycle = sample_rate / frequency;
-    int16_t amplitude = 8000;
-    
+    int16_t amplitude = 28000;
+
     for (int i = 0; i < samples_needed; i++) {
-        int16_t value = ((i % samples_per_cycle) < (samples_per_cycle / 2)) ? 
+        int16_t value = ((i % samples_per_cycle) < (samples_per_cycle / 2)) ?
                         amplitude : -amplitude;
-        buffer[i * 2] = value;      // Left
-        buffer[i * 2 + 1] = value;  // Right
+        buffer[i * 2] = value;
+        buffer[i * 2 + 1] = value;
     }
+
+    // Stop any previous playback
+    if (g_ac97_device->playback_stream.running) {
+        PRINT(WHITE, BLACK, "[BEEP] Stopping previous playback...\n");
+        ac97_play_stop();
+        for (volatile int i = 0; i < 100000; i++);
+    }
+
+    // CRITICAL FIX: Proper DMA reset with verification
+    PRINT(WHITE, BLACK, "[BEEP] Resetting DMA channel...\n");
     
-    int result = audio_play_pcm(buffer, samples_needed, 2, sample_rate);
+    // 1. Stop DMA completely
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
+    for (volatile int i = 0; i < 100000; i++);
     
-    // Wait for playback to finish
-    for (volatile int i = 0; i < duration_ms * 10000; i++);
+    // 2. Clear all status bits
+    outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
+    for (volatile int i = 0; i < 50000; i++);
     
+    // 3. Assert reset bit and HOLD IT
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
+    
+    // 4. Wait LONGER for reset to propagate through hardware
+    for (volatile int i = 0; i < 500000; i++);
+    
+    // 5. Clear reset bit
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
+    
+    // 6. Wait for hardware to stabilize after reset
+    for (volatile int i = 0; i < 500000; i++);
+    
+    // 7. Re-program BDBAR after reset
+    ac97_stream_t *stream = &g_ac97_device->playback_stream;
+    outl(g_ac97_device->nabm_bar + AC97_PO_BDBAR, stream->bd_list_phys);
+    for (volatile int i = 0; i < 50000; i++);
+    
+    // 8. CRITICAL: Verify CIV is 0 after reset
+    uint8_t civ_check = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
+    PRINT(WHITE, BLACK, "[BEEP] CIV after reset: ");
+    print_unsigned(civ_check, 10);
+    PRINT(WHITE, BLACK, "\n");
+    
+    // If CIV isn't 0, try one more reset cycle
+    if (civ_check != 0) {
+        PRINT(YELLOW, BLACK, "[BEEP] CIV not 0, attempting second reset...\n");
+        outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
+        for (volatile int i = 0; i < 500000; i++);
+        outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
+        for (volatile int i = 0; i < 500000; i++);
+        outl(g_ac97_device->nabm_bar + AC97_PO_BDBAR, stream->bd_list_phys);
+        for (volatile int i = 0; i < 50000; i++);
+        
+        civ_check = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
+        PRINT(WHITE, BLACK, "[BEEP] CIV after second reset: ");
+        print_unsigned(civ_check, 10);
+        PRINT(WHITE, BLACK, "\n");
+    }
+
+    // Initialize format
+    if (ac97_play_init(AC97_FORMAT_STEREO_16, AC97_RATE_48000) != 0) {
+        kfree(buffer);
+        return -1;
+    }
+
+    // Calculate buffers needed (minimum 2)
+    uint32_t total_bytes = samples_needed * 2 * sizeof(int16_t);
+    int buffers_needed = (total_bytes + AC97_BUFFER_SIZE - 1) / AC97_BUFFER_SIZE;
+    if (buffers_needed < 2) buffers_needed = 2;
+    if (buffers_needed > AC97_BD_COUNT - 1) buffers_needed = AC97_BD_COUNT - 1;
+
+    PRINT(WHITE, BLACK, "[BEEP] Total bytes: ");
+    print_unsigned(total_bytes, 10);
+    PRINT(WHITE, BLACK, ", buffers needed: ");
+    print_unsigned(buffers_needed, 10);
+    PRINT(WHITE, BLACK, "\n");
+
+    // ALWAYS fill from buffer 0 after reset
+    uint32_t offset = 0;
+    for (int i = 0; i < buffers_needed; i++) {
+        uint32_t chunk_size = total_bytes - offset;
+        if (chunk_size > AC97_BUFFER_SIZE) {
+            chunk_size = AC97_BUFFER_SIZE;
+        }
+
+        uint8_t *dest = stream->buffers[i];
+        uint8_t *src = ((uint8_t*)buffer) + offset;
+
+        // Copy data
+        for (uint32_t j = 0; j < chunk_size; j++) {
+            dest[j] = src[j];
+        }
+
+        // Zero remaining bytes
+        for (uint32_t j = chunk_size; j < AC97_BUFFER_SIZE; j++) {
+            dest[j] = 0;
+        }
+
+        PRINT(WHITE, BLACK, "  Buffer ");
+        print_unsigned(i, 10);
+        PRINT(WHITE, BLACK, ": ");
+        print_unsigned(chunk_size, 10);
+        PRINT(WHITE, BLACK, " bytes\n");
+
+        offset += chunk_size;
+        if (offset >= total_bytes) break;
+    }
+
+    // LVI = last buffer index (0-based, so buffers_needed - 1)
+    uint8_t lvi_value = buffers_needed - 1;
+    
+    PRINT(WHITE, BLACK, "[BEEP] Setting LVI to ");
+    print_unsigned(lvi_value, 10);
+    PRINT(WHITE, BLACK, " (playing buffers 0-");
+    print_unsigned(lvi_value, 10);
+    PRINT(WHITE, BLACK, ")\n");
+
+    // Verify first samples
+    int16_t *check = (int16_t*)stream->buffers[0];
+    PRINT(WHITE, BLACK, "[BEEP] First 5 samples in buffer 0: ");
+    for (int i = 0; i < 5; i++) {
+        print_unsigned((uint16_t)check[i], 10);
+        PRINT(WHITE, BLACK, " ");
+    }
+    PRINT(WHITE, BLACK, "\n");
+
+    // Clear status before starting
+    outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
+    for (volatile int i = 0; i < 10000; i++);
+    
+    // Set LVI BEFORE starting DMA
+    outb(g_ac97_device->nabm_bar + AC97_PO_LVI, lvi_value);
+    for (volatile int i = 0; i < 10000; i++);
+    
+    // Verify CIV hasn't changed and LVI is set
+    uint8_t verify_civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
+    uint8_t verify_lvi = inb(g_ac97_device->nabm_bar + AC97_PO_LVI);
+    
+    PRINT(WHITE, BLACK, "[BEEP] Pre-start verification: CIV=");
+    print_unsigned(verify_civ, 10);
+    PRINT(WHITE, BLACK, ", LVI=");
+    print_unsigned(verify_lvi, 10);
+    PRINT(WHITE, BLACK, "\n");
+    
+    // START DMA - NO INTERRUPTS, polling only
+    // Only set RPBM (Run/Pause Bus Master), NOT IOCE
+    uint8_t control = AC97_CR_RPBM;
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, control);
+    
+    // Minimal delay before verification
+    for (volatile int i = 0; i < 5000; i++);
+
+    stream->running = 1;
+
+    // Immediate verification
+    uint8_t final_civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
+    uint8_t final_lvi = inb(g_ac97_device->nabm_bar + AC97_PO_LVI);
+    uint16_t final_sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);
+    uint8_t final_cr = inb(g_ac97_device->nabm_bar + AC97_PO_CR);
+
+    PRINT(WHITE, BLACK, "[BEEP] Post-start status:\n");
+    PRINT(WHITE, BLACK, "  CIV=");
+    print_unsigned(final_civ, 10);
+    PRINT(WHITE, BLACK, ", LVI=");
+    print_unsigned(final_lvi, 10);
+    PRINT(WHITE, BLACK, ", SR=0x");
+    print_unsigned(final_sr, 16);
+    PRINT(WHITE, BLACK, ", CR=0x");
+    print_unsigned(final_cr, 16);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "  DMA Running: %s\n", (final_cr & AC97_CR_RPBM) ? "YES" : "NO");
+    PRINT(WHITE, BLACK, "  DMA Halted: %s\n", (final_sr & 0x01) ? "YES" : "NO");
+
+    // Check for immediate failure conditions
+    if (final_sr & 0x01) {
+        PRINT(YELLOW, BLACK, "[BEEP] ERROR: DMA halted immediately!\n");
+        ac97_play_stop();
+        kfree(buffer);
+        return -1;
+    }
+
+    if (!(final_cr & AC97_CR_RPBM)) {
+        PRINT(YELLOW, BLACK, "[BEEP] ERROR: RPBM not set!\n");
+        ac97_play_stop();
+        kfree(buffer);
+        return -1;
+    }
+
+    // Note: It's OK if CIV has advanced from 0, as long as it hasn't caught up to LVI
+    if (final_civ == final_lvi && buffers_needed > 1) {
+        PRINT(YELLOW, BLACK, "[BEEP] WARNING: CIV caught up to LVI quickly\n");
+        PRINT(WHITE, BLACK, "[BEEP] Audio may be very short or already finished\n");
+    } else {
+        PRINT(MAGENTA, BLACK, "[BEEP] DMA started successfully!\n");
+    }
+
+    // Wait for playback with timeout
+    extern volatile uint64_t timer_ticks;
+    uint64_t start_time = timer_ticks;
+    uint64_t timeout = start_time + duration_ms + 500; // 500ms buffer
+
+    int did_halt = 0;
+    while (timer_ticks < timeout) {
+        uint16_t sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);
+        uint8_t civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
+        
+        if (sr & 0x01) {
+            // DMA halted - playback complete
+            did_halt = 1;
+            PRINT(WHITE, BLACK, "[BEEP] DMA halted (playback complete at CIV=");
+            print_unsigned(civ, 10);
+            PRINT(WHITE, BLACK, ")\n");
+            break;
+        }
+        
+        __asm__ volatile("hlt");
+    }
+
+    if (!did_halt) {
+        PRINT(YELLOW, BLACK, "[BEEP] Timeout waiting for completion\n");
+    }
+
     ac97_play_stop();
-    
     kfree(buffer);
-    
-    return result;
+
+    PRINT(MAGENTA, BLACK, "[BEEP] Done!\n\n");
+    return 0;
 }
 
-// ============================================================================
-// Information Functions
-// ============================================================================
+
 
 const char* ac97_get_device_name(void) {
     if (!g_ac97_device) return "None";
-    
+
     switch (g_ac97_device->device_id) {
         case AC97_DEVICE_ICH:   return "Intel ICH";
         case AC97_DEVICE_ICH0:  return "Intel ICH0";
@@ -816,7 +1599,7 @@ void ac97_print_info(void) {
         PRINT(YELLOW, BLACK, "AC'97: Not initialized\n");
         return;
     }
-    
+
     PRINT(CYAN, BLACK, "\n=== AC'97 Audio Device Information ===\n");
     PRINT(WHITE, BLACK, "Device: %s\n", ac97_get_device_name());
     PRINT(WHITE, BLACK, "Vendor ID: 0x%04X\n", g_ac97_device->vendor_id);
@@ -826,38 +1609,38 @@ void ac97_print_info(void) {
     PRINT(WHITE, BLACK, "IRQ: %u\n", g_ac97_device->irq);
     PRINT(WHITE, BLACK, "NAM BAR: 0x%04X\n", g_ac97_device->nam_bar);
     PRINT(WHITE, BLACK, "NABM BAR: 0x%04X\n", g_ac97_device->nabm_bar);
-    
+
     PRINT(WHITE, BLACK, "\nFeatures:\n");
-    PRINT(WHITE, BLACK, "  Variable Rate: %s\n", 
+    PRINT(WHITE, BLACK, "  Variable Rate: %s\n",
           g_ac97_device->has_variable_rate ? "Yes" : "No");
-    PRINT(WHITE, BLACK, "  Surround: %s\n", 
+    PRINT(WHITE, BLACK, "  Surround: %s\n",
           g_ac97_device->has_surround ? "Yes" : "No");
-    PRINT(WHITE, BLACK, "  Max Sample Rate: %u Hz\n", 
+    PRINT(WHITE, BLACK, "  Max Sample Rate: %u Hz\n",
           g_ac97_device->max_sample_rate);
-    
+
     uint8_t left, right;
     ac97_get_master_volume(&left, &right);
     PRINT(WHITE, BLACK, "\nVolume:\n");
     PRINT(WHITE, BLACK, "  Master: L=%u%% R=%u%%\n", left, right);
-    
+
     ac97_get_pcm_volume(&left, &right);
     PRINT(WHITE, BLACK, "  PCM: L=%u%% R=%u%%\n", left, right);
-    
+
     PRINT(WHITE, BLACK, "\nPlayback Stream:\n");
-    PRINT(WHITE, BLACK, "  Status: %s\n", 
+    PRINT(WHITE, BLACK, "  Status: %s\n",
           g_ac97_device->playback_stream.running ? "Running" : "Stopped");
     PRINT(WHITE, BLACK, "  Format: %d-bit %s\n",
           g_ac97_device->playback_stream.bits_per_sample,
           g_ac97_device->playback_stream.channels == 2 ? "Stereo" : "Mono");
-    PRINT(WHITE, BLACK, "  Sample Rate: %u Hz\n", 
+    PRINT(WHITE, BLACK, "  Sample Rate: %u Hz\n",
           g_ac97_device->playback_stream.sample_rate);
-    PRINT(WHITE, BLACK, "  Buffers: %d x %d bytes\n", 
+    PRINT(WHITE, BLACK, "  Buffers: %d x %d bytes\n",
           AC97_BD_COUNT, AC97_BUFFER_SIZE);
-    
+
     if (g_ac97_device->playback_stream.running) {
         PRINT(WHITE, BLACK, "  Position: %d samples\n", ac97_get_position());
         PRINT(WHITE, BLACK, "  Buffers Filled: %d\n", ac97_get_buffer_status());
     }
-    
+
     PRINT(CYAN, BLACK, "======================================\n\n");
 }
