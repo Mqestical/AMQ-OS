@@ -147,27 +147,27 @@ void ac97_dump_registers(void) {
 
 int ac97_test_buffers(void) {
     PRINT(CYAN, BLACK, "\n=== Testing Buffer Access ===\n");
-    
+
     if (!g_ac97_device) {
         PRINT(YELLOW, BLACK, "Device not initialized\n");
         return -1;
     }
-    
+
     ac97_stream_t *stream = &g_ac97_device->playback_stream;
-    
+
     for (int i = 0; i < 2; i++) {
         PRINT(WHITE, BLACK, "Buffer %d: ", i);
-        
+
         uint8_t *buf = stream->buffers[i];
         if (!buf) {
             PRINT(YELLOW, BLACK, "NULL!\n");
             return -1;
         }
-        
-        // Try to write and read
+
+
         buf[0] = 0xAA;
         buf[1] = 0xBB;
-        
+
         if (buf[0] == 0xAA && buf[1] == 0xBB) {
             PRINT(MAGENTA, BLACK, "OK (virt=0x");
             print_unsigned((uint64_t)buf, 16);
@@ -178,12 +178,12 @@ int ac97_test_buffers(void) {
             PRINT(YELLOW, BLACK, "FAILED - can't write!\n");
             return -1;
         }
-        
-        // Clear test data
+
+
         buf[0] = 0;
         buf[1] = 0;
     }
-    
+
     PRINT(MAGENTA, BLACK, "All buffers accessible!\n\n");
     return 0;
 }
@@ -264,37 +264,37 @@ static void* ac97_alloc_dma_buffer(uint32_t *phys_addr) {
     if (buffers_allocated >= AC97_BD_COUNT) {
         return NULL;
     }
-    
-    // Allocate physical pages (AC97_BUFFER_SIZE is typically 4096 or less)
+
+
     int pages_needed = (AC97_BUFFER_SIZE + 4095) / 4096;
     void *buffer = pmm_alloc_pages(pages_needed);
-    
+
     if (!buffer) {
         PRINT(YELLOW, BLACK, "[AC97] Failed to allocate physical pages\n");
         return NULL;
     }
-    
-    // In your system, assuming identity mapping for low memory
-    // Physical address = virtual address for PMM allocations
+
+
+
     *phys_addr = (uint32_t)(uint64_t)buffer;
-    
-    // Store for later reference
+
+
     dma_buffer_ptrs[buffers_allocated] = (uint8_t*)buffer;
     dma_buffer_phys[buffers_allocated] = *phys_addr;
-    
-    // Zero the buffer
+
+
     uint8_t *ptr = (uint8_t*)buffer;
     for (int i = 0; i < AC97_BUFFER_SIZE; i++) {
         ptr[i] = 0;
     }
-    
+
     buffers_allocated++;
     PRINT(WHITE, BLACK, "[AC97] Allocated DMA buffer %d: virt=0x", buffers_allocated - 1);
     print_unsigned((uint64_t)buffer, 16);
     PRINT(WHITE, BLACK, ", phys=0x");
     print_unsigned(*phys_addr, 16);
     PRINT(WHITE, BLACK, "\n");
-    
+
     return buffer;
 }
 
@@ -814,101 +814,101 @@ void ac97_wait_for_buffer(void) {
 
 int ac97_reset(void) {
     PRINT(WHITE, BLACK, "[AC97] Resetting device...\n");
-    
-    // Step 1: Cold reset - assert reset line
+
+
     uint32_t glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
     PRINT(WHITE, BLACK, "[AC97] Initial Global Control: 0x");
     print_unsigned(glob_cnt, 16);
     PRINT(WHITE, BLACK, "\n");
-    
+
     glob_cnt &= ~AC97_GLOB_CNT_COLD_RESET;
     outl(g_ac97_device->nabm_bar + AC97_GLOB_CNT, glob_cnt);
-    
+
     PRINT(WHITE, BLACK, "[AC97] Cold reset asserted\n");
-    
-    // Wait for reset to take effect (longer delay)
+
+
     for (volatile int i = 0; i < 500000; i++);
-    
-    // Step 2: Release cold reset
+
+
     glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
     glob_cnt |= AC97_GLOB_CNT_COLD_RESET;
     outl(g_ac97_device->nabm_bar + AC97_GLOB_CNT, glob_cnt);
-    
+
     PRINT(WHITE, BLACK, "[AC97] Cold reset released\n");
-    
-    // Wait for codec to come out of reset
+
+
     for (volatile int i = 0; i < 100000; i++);
-    
-    // Step 3: Wait for codec ready signal
+
+
     PRINT(WHITE, BLACK, "[AC97] Waiting for codec ready...\n");
-    
+
     if (ac97_wait_codec_ready() != 0) {
         PRINT(YELLOW, BLACK, "[AC97] Codec ready timeout!\n");
         return -1;
     }
-    
+
     PRINT(MAGENTA, BLACK, "[AC97] Codec ready signal received\n");
-    
-    // Step 4: Enable Global Interrupt Enable (GIE)
+
+
     glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
     glob_cnt |= AC97_GLOB_CNT_GIE;
     outl(g_ac97_device->nabm_bar + AC97_GLOB_CNT, glob_cnt);
-    
+
     PRINT(WHITE, BLACK, "[AC97] GIE enable requested\n");
-    
-    // Give it time to take effect
+
+
     sleep_seconds(1);
-    
-    // Verify GIE status
+
+
     uint32_t verify = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
     PRINT(WHITE, BLACK, "[AC97] Global Control after GIE: 0x");
     print_unsigned(verify, 16);
     PRINT(WHITE, BLACK, "\n");
-    PRINT(WHITE, BLACK, "[AC97] GIE Status: %s\n", 
+    PRINT(WHITE, BLACK, "[AC97] GIE Status: %s\n",
           (verify & AC97_GLOB_CNT_GIE) ? "ENABLED" : "DISABLED");
-    
+
     if (!(verify & AC97_GLOB_CNT_GIE)) {
         PRINT(YELLOW, BLACK, "[AC97] WARNING: GIE not enabled\n");
         PRINT(WHITE, BLACK, "[AC97] This is normal for some devices - will use polling mode\n");
     } else {
         PRINT(MAGENTA, BLACK, "[AC97] GIE successfully enabled\n");
     }
-    
-    // Step 5: Reset codec mixer
+
+
     PRINT(WHITE, BLACK, "[AC97] Resetting codec mixer...\n");
     ac97_codec_write(AC97_NAM_RESET, 0);
-    
-    // Wait for mixer reset to complete
+
+
     for (volatile int i = 0; i < 100000; i++);
-    
-    // Step 6: Power up codec sections (FIXED VERSION)
+
+
     PRINT(WHITE, BLACK, "[AC97] Powering up codec sections...\n");
 
-    // Read initial state
+
     uint16_t power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
     PRINT(WHITE, BLACK, "[AC97] Initial power register: 0x");
     print_unsigned(power, 16);
     PRINT(WHITE, BLACK, "\n");
 
-    // Power up ALL sections (bit=0 means powered UP in AC97)
-    // Write multiple times with delays - some codecs are stubborn
+
+
     for (int attempt = 0; attempt < 3; attempt++) {
         PRINT(WHITE, BLACK, "[AC97] Power-up attempt %d/3...\n", attempt + 1);
         ac97_codec_write(AC97_NAM_POWERDOWN_CTRL, 0x0000);
         for (volatile int i = 0; i < 1000000; i++);
     }
 
-    // Longer delay for hardware to stabilize
+
     PRINT(WHITE, BLACK, "[AC97] Waiting for codec stabilization...\n");
     sleep_seconds(1);
 
-    // Verify power status (but don't fail if it doesn't report correctly)
+
     power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
     PRINT(WHITE, BLACK, "[AC97] Power register after powerup: 0x");
     print_unsigned(power, 16);
     PRINT(WHITE, BLACK, "\n");
 
-    // Check if DAC is powered up
+
     if (power & AC97_PWR_DAC) {
         PRINT(YELLOW, BLACK, "[AC97] WARNING: DAC bit still set (0x");
         print_unsigned(power, 16);
@@ -919,7 +919,7 @@ int ac97_reset(void) {
         PRINT(MAGENTA, BLACK, "[AC97] DAC powered up successfully!\n");
     }
 
-    // Enable external amplifier if needed (clear EAPD bit to enable amp)
+
     power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
     if (power & AC97_PWR_EAPD) {
         PRINT(WHITE, BLACK, "[AC97] Enabling external amplifier (clearing EAPD)...\n");
@@ -928,49 +928,49 @@ int ac97_reset(void) {
         for (volatile int i = 0; i < 500000; i++);
     }
 
-    // Final status
+
     power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
     PRINT(WHITE, BLACK, "[AC97] Final power register: 0x");
     print_unsigned(power, 16);
     PRINT(WHITE, BLACK, "\n");
-    
+
     if (power == 0) {
         PRINT(MAGENTA, BLACK, "[AC97] All sections report powered up!\n");
     } else {
         PRINT(WHITE, BLACK, "[AC97] Some sections may not report correctly, but continuing...\n");
     }
-   // Step 7: Read codec ID and capabilities
+
 uint16_t codec_id = ac97_codec_read(AC97_NAM_RESET);
 PRINT(WHITE, BLACK, "[AC97] Codec ID: 0x");
 print_unsigned(codec_id, 16);
 PRINT(WHITE, BLACK, "\n");
 
-// Diagnostic: Check if codec is actually responding
+
 if (codec_id == 0x0000) {
     PRINT(YELLOW, BLACK, "[AC97] WARNING: Codec ID is 0x0000\n");
     PRINT(WHITE, BLACK, "[AC97] Performing diagnostic checks...\n");
-    
-    // Test 1: Can we write/read another register?
+
+
     PRINT(WHITE, BLACK, "[AC97] Test 1: Register write/read test\n");
-    
-    // Save current master volume
+
+
     uint16_t orig_vol = ac97_codec_read(AC97_NAM_MASTER_VOLUME);
     PRINT(WHITE, BLACK, "  Original master volume: 0x");
     print_unsigned(orig_vol, 16);
     PRINT(WHITE, BLACK, "\n");
-    
-    // Try writing a known value
+
+
     ac97_codec_write(AC97_NAM_MASTER_VOLUME, 0x0808);
     for (volatile int i = 0; i < 10000; i++);
-    
+
     uint16_t test_vol = ac97_codec_read(AC97_NAM_MASTER_VOLUME);
     PRINT(WHITE, BLACK, "  After writing 0x0808, read: 0x");
     print_unsigned(test_vol, 16);
     PRINT(WHITE, BLACK, "\n");
-    
-    // Restore original
+
+
     ac97_codec_write(AC97_NAM_MASTER_VOLUME, orig_vol);
-    
+
     if (test_vol == 0x0808 || (test_vol & 0x1F1F) == 0x0808) {
         PRINT(MAGENTA, BLACK, "   Codec IS responding to writes!\n");
         PRINT(WHITE, BLACK, "  This is likely an emulated codec (QEMU/VirtualBox)\n");
@@ -980,8 +980,8 @@ if (codec_id == 0x0000) {
         PRINT(WHITE, BLACK, "  Read back: 0x");
         print_unsigned(test_vol, 16);
         PRINT(WHITE, BLACK, "\n");
-        
-        // Check if BARs are valid
+
+
         PRINT(WHITE, BLACK, "[AC97] Test 2: Checking BARs...\n");
         PRINT(WHITE, BLACK, "  NAM BAR: 0x");
         print_unsigned(g_ac97_device->nam_bar, 16);
@@ -989,24 +989,24 @@ if (codec_id == 0x0000) {
         PRINT(WHITE, BLACK, "  NABM BAR: 0x");
         print_unsigned(g_ac97_device->nabm_bar, 16);
         PRINT(WHITE, BLACK, "\n");
-        
+
         if (g_ac97_device->nam_bar == 0 || g_ac97_device->nabm_bar == 0) {
             PRINT(YELLOW, BLACK, "   BARs are invalid! Cannot continue.\n");
             return -1;
         }
-        
-        // Check codec ready flag one more time
+
+
         uint32_t glob_sta = inl(g_ac97_device->nabm_bar + AC97_GLOB_STA);
         PRINT(WHITE, BLACK, "  Global Status: 0x");
         print_unsigned(glob_sta, 16);
         PRINT(WHITE, BLACK, "\n");
-        
+
         if (!(glob_sta & AC97_GLOB_STA_PRI_READY)) {
             PRINT(YELLOW, BLACK, "   Codec ready bit NOT set!\n");
             PRINT(YELLOW, BLACK, "  Codec may not be present or initialized.\n");
             return -1;
         }
-        
+
         PRINT(YELLOW, BLACK, "  Codec ready bit IS set but not responding.\n");
         PRINT(YELLOW, BLACK, "  This may be a hardware/emulation issue.\n");
         PRINT(WHITE, BLACK, "  Attempting to continue anyway...\n");
@@ -1021,26 +1021,26 @@ if (codec_id == 0x0000) {
     PRINT(MAGENTA, BLACK, "[AC97] Valid Codec ID detected\n");
 }
 
-    // Step 8: Check for extended audio features
+
     uint16_t ext_id = ac97_codec_read(AC97_NAM_EXT_AUDIO_ID);
     PRINT(WHITE, BLACK, "[AC97] Extended Audio ID: 0x");
     print_unsigned(ext_id, 16);
     PRINT(WHITE, BLACK, "\n");
-    
+
     g_ac97_device->has_variable_rate = (ext_id & 0x0001) ? 1 : 0;
     g_ac97_device->has_surround = (ext_id & 0x0040) ? 1 : 0;
-    
+
     if (g_ac97_device->has_variable_rate) {
         PRINT(MAGENTA, BLACK, "[AC97] Variable Rate Audio (VRA) supported\n");
-        
-        // Enable variable rate audio
+
+
         uint16_t ext_status = ac97_codec_read(AC97_NAM_EXT_AUDIO_STATUS);
-        ext_status |= 0x0001;  // Enable VRA
+        ext_status |= 0x0001;
         ac97_codec_write(AC97_NAM_EXT_AUDIO_STATUS, ext_status);
-        
+
         PRINT(WHITE, BLACK, "[AC97] VRA enabled\n");
-        
-        // Verify VRA is enabled
+
+
         ext_status = ac97_codec_read(AC97_NAM_EXT_AUDIO_STATUS);
         if (ext_status & 0x0001) {
             PRINT(MAGENTA, BLACK, "[AC97] VRA confirmed active\n");
@@ -1054,12 +1054,12 @@ if (codec_id == 0x0000) {
         PRINT(WHITE, BLACK, "[AC97] Fixed 48kHz sample rate only\n");
         g_ac97_device->max_sample_rate = 48000;
     }
-    
+
     if (g_ac97_device->has_surround) {
         PRINT(MAGENTA, BLACK, "[AC97] Surround sound supported\n");
     }
-    
-    // Step 9: Set default sample rate
+
+
     if (g_ac97_device->has_variable_rate) {
         ac97_codec_write(AC97_NAM_PCM_FRONT_DAC_RATE, 48000);
         uint16_t actual_rate = ac97_codec_read(AC97_NAM_PCM_FRONT_DAC_RATE);
@@ -1067,78 +1067,78 @@ if (codec_id == 0x0000) {
         print_unsigned(actual_rate, 10);
         PRINT(WHITE, BLACK, " Hz\n");
     }
-    
-    // Step 10: Set default volumes (75% / -6dB attenuation)
+
+
     PRINT(WHITE, BLACK, "[AC97] Setting default volumes...\n");
-    
-    // Master volume: 75% = attenuation 8 (about -12dB)
+
+
     ac97_set_master_volume(75, 75);
-    
-    // PCM volume: 100% = attenuation 0 (0dB)
+
+
     ac97_set_pcm_volume(100, 100);
-    
-    // Verify volumes
+
+
     uint8_t left, right;
     ac97_get_master_volume(&left, &right);
     PRINT(WHITE, BLACK, "[AC97] Master volume: L=%u%% R=%u%%\n", left, right);
-    
+
     ac97_get_pcm_volume(&left, &right);
     PRINT(WHITE, BLACK, "[AC97] PCM volume: L=%u%% R=%u%%\n", left, right);
-    
-    // Step 11: Unmute everything
+
+
     PRINT(WHITE, BLACK, "[AC97] Unmuting outputs...\n");
-    
+
     ac97_mute_master(0);
     ac97_mute_pcm(0);
-    
-    // Verify mute status
+
+
     uint16_t master_vol = ac97_codec_read(AC97_NAM_MASTER_VOLUME);
     uint16_t pcm_vol = ac97_codec_read(AC97_NAM_PCM_OUT_VOLUME);
-    
-    PRINT(WHITE, BLACK, "[AC97] Master mute: %s\n", 
+
+    PRINT(WHITE, BLACK, "[AC97] Master mute: %s\n",
           (master_vol & 0x8000) ? "YES" : "NO");
-    PRINT(WHITE, BLACK, "[AC97] PCM mute: %s\n", 
+    PRINT(WHITE, BLACK, "[AC97] PCM mute: %s\n",
           (pcm_vol & 0x8000) ? "YES" : "NO");
-    
-    // Step 12: Reset all DMA channels
+
+
     PRINT(WHITE, BLACK, "[AC97] Resetting DMA channels...\n");
-    
-    // Reset PCM Out
+
+
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
     for (volatile int i = 0; i < 1000; i++);
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
-    
-    // Reset PCM In
+
+
     outb(g_ac97_device->nabm_bar + AC97_PI_CR, AC97_CR_RR);
     for (volatile int i = 0; i < 1000; i++);
     outb(g_ac97_device->nabm_bar + AC97_PI_CR, 0);
-    
-    // Reset Mic In
+
+
     outb(g_ac97_device->nabm_bar + AC97_MC_CR, AC97_CR_RR);
     for (volatile int i = 0; i < 1000; i++);
     outb(g_ac97_device->nabm_bar + AC97_MC_CR, 0);
-    
-    // Clear any pending status
+
+
     outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
     outw(g_ac97_device->nabm_bar + AC97_PI_SR, 0x1E);
     outw(g_ac97_device->nabm_bar + AC97_MC_SR, 0x1E);
-    
+
     PRINT(MAGENTA, BLACK, "[AC97] DMA channels reset\n");
-    
-    // Step 13: Final status check
+
+
     uint32_t glob_sta = inl(g_ac97_device->nabm_bar + AC97_GLOB_STA);
     PRINT(WHITE, BLACK, "[AC97] Global Status: 0x");
     print_unsigned(glob_sta, 16);
     PRINT(WHITE, BLACK, "\n");
-    PRINT(WHITE, BLACK, "[AC97] Primary Codec Ready: %s\n", 
+    PRINT(WHITE, BLACK, "[AC97] Primary Codec Ready: %s\n",
           (glob_sta & AC97_GLOB_STA_PRI_READY) ? "YES" : "NO");
-    
+
     if (glob_sta & 0x200) {
         PRINT(WHITE, BLACK, "[AC97] Secondary Codec Ready: YES\n");
     }
-    
+
     PRINT(MAGENTA, BLACK, "[AC97] Reset complete!\n\n");
-    
+
     return 0;
 }
 
@@ -1393,13 +1393,13 @@ void ac97_debug_playback(void) {
     print_unsigned(frequency, 10);
     PRINT(CYAN, BLACK, " Hz ===\n");
 
-    // Stop any playback
+
     if (g_ac97_device->playback_stream.running) {
         ac97_play_stop();
         for (volatile int i = 0; i < 100000; i++);
     }
 
-    // Complete DMA reset
+
     PRINT(WHITE, BLACK, "[BEEP] Resetting DMA...\n");
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
     for (volatile int i = 0; i < 500000; i++);
@@ -1408,45 +1408,45 @@ void ac97_debug_playback(void) {
     outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
     for (volatile int i = 0; i < 100000; i++);
 
-    // Re-init
+
     if (ac97_play_init(AC97_FORMAT_STEREO_16, AC97_RATE_48000) != 0) {
         PRINT(YELLOW, BLACK, "[BEEP] Init failed\n");
         return -1;
     }
 
     ac97_stream_t *stream = &g_ac97_device->playback_stream;
-    
-    // Restore BDBAR after reset
+
+
     outl(g_ac97_device->nabm_bar + AC97_PO_BDBAR, stream->bd_list_phys);
     for (volatile int i = 0; i < 50000; i++);
 
-    // Generate simple square wave DIRECTLY into hardware buffers
+
     const int sample_rate = 48000;
     const int samples_per_cycle = sample_rate / frequency;
     const int16_t amplitude = 20000;
-    
-    // Fill first 2 buffers with beep data
+
+
     int total_samples = (sample_rate * duration_ms) / 1000;
     int samples_written = 0;
-    
+
     for (int buf = 0; buf < 2 && samples_written < total_samples; buf++) {
         int16_t *buffer = (int16_t*)stream->buffers[buf];
-        int samples_in_buffer = AC97_BUFFER_SIZE / 4; // 16-bit stereo
-        
+        int samples_in_buffer = AC97_BUFFER_SIZE / 4;
+
         for (int i = 0; i < samples_in_buffer && samples_written < total_samples; i++) {
-            int16_t value = ((samples_written % samples_per_cycle) < (samples_per_cycle / 2)) 
+            int16_t value = ((samples_written % samples_per_cycle) < (samples_per_cycle / 2))
                             ? amplitude : -amplitude;
-            buffer[i * 2] = value;     // Left
-            buffer[i * 2 + 1] = value; // Right
+            buffer[i * 2] = value;
+            buffer[i * 2 + 1] = value;
             samples_written++;
         }
-        
+
         PRINT(WHITE, BLACK, "[BEEP] Filled buffer ");
         print_unsigned(buf, 10);
         PRINT(WHITE, BLACK, "\n");
     }
 
-    // Verify buffer contents
+
     int16_t *check = (int16_t*)stream->buffers[0];
     PRINT(WHITE, BLACK, "[BEEP] First 4 samples: ");
     for (int i = 0; i < 4; i++) {
@@ -1460,34 +1460,34 @@ void ac97_debug_playback(void) {
     }
     PRINT(WHITE, BLACK, "\n");
 
-    // Set LVI to 1 (play buffers 0 and 1)
+
     outb(g_ac97_device->nabm_bar + AC97_PO_LVI, 1);
     for (volatile int i = 0; i < 10000; i++);
 
-    // Clear status
+
     outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
     for (volatile int i = 0; i < 10000; i++);
 
-    // Start playback - simple polling mode
+
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RPBM);
     stream->running = 1;
 
     PRINT(MAGENTA, BLACK, "[BEEP] Playing...\n");
 
-    // Wait for completion (simple polling)
+
     extern volatile uint64_t timer_ticks;
     uint64_t timeout = timer_ticks + duration_ms + 500;
-    
+
     while (timer_ticks < timeout) {
         uint16_t sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);
-        if (sr & 0x01) {  // DCH - DMA halted
+        if (sr & 0x01) {
             PRINT(WHITE, BLACK, "[BEEP] Completed\n");
             break;
         }
         __asm__ volatile("hlt");
     }
 
-    // Stop
+
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
     stream->running = 0;
 
