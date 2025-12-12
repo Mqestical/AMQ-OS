@@ -36,9 +36,9 @@ static void ac97_setup_bd_list(ac97_stream_t *stream);
 static uint16_t volume_to_ac97(uint8_t volume);
 static uint8_t ac97_to_volume(uint16_t ac97_val);
 
-
-
-
+static uint8_t *dma_buffer_ptrs[AC97_BD_COUNT];
+static uint32_t dma_buffer_phys[AC97_BD_COUNT];
+static int buffers_allocated = 0;
 
 void ac97_dump_registers(void) {
     if (!g_ac97_device) return;
@@ -145,6 +145,49 @@ void ac97_dump_registers(void) {
     PRINT(CYAN, BLACK, "=========================\n\n");
 }
 
+int ac97_test_buffers(void) {
+    PRINT(CYAN, BLACK, "\n=== Testing Buffer Access ===\n");
+    
+    if (!g_ac97_device) {
+        PRINT(YELLOW, BLACK, "Device not initialized\n");
+        return -1;
+    }
+    
+    ac97_stream_t *stream = &g_ac97_device->playback_stream;
+    
+    for (int i = 0; i < 2; i++) {
+        PRINT(WHITE, BLACK, "Buffer %d: ", i);
+        
+        uint8_t *buf = stream->buffers[i];
+        if (!buf) {
+            PRINT(YELLOW, BLACK, "NULL!\n");
+            return -1;
+        }
+        
+        // Try to write and read
+        buf[0] = 0xAA;
+        buf[1] = 0xBB;
+        
+        if (buf[0] == 0xAA && buf[1] == 0xBB) {
+            PRINT(MAGENTA, BLACK, "OK (virt=0x");
+            print_unsigned((uint64_t)buf, 16);
+            PRINT(MAGENTA, BLACK, ", phys=0x");
+            print_unsigned(stream->buffer_phys[i], 16);
+            PRINT(MAGENTA, BLACK, ")\n");
+        } else {
+            PRINT(YELLOW, BLACK, "FAILED - can't write!\n");
+            return -1;
+        }
+        
+        // Clear test data
+        buf[0] = 0;
+        buf[1] = 0;
+    }
+    
+    PRINT(MAGENTA, BLACK, "All buffers accessible!\n\n");
+    return 0;
+}
+
 static uint32_t pci_read_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset) {
     uint32_t address = 0x80000000 | ((uint32_t)bus << 16) |
                        ((uint32_t)device << 11) | ((uint32_t)func << 8) |
@@ -218,22 +261,42 @@ static int ac97_find_device(void) {
 
 
 static void* ac97_alloc_dma_buffer(uint32_t *phys_addr) {
-
-    void *page = pmm_alloc_page();
-    if (!page) return NULL;
-
-
-    *phys_addr = (uint32_t)(uintptr_t)page;
-
-
-    uint8_t *ptr = (uint8_t*)page;
-    for (int i = 0; i < 4096; i++) {
+    if (buffers_allocated >= AC97_BD_COUNT) {
+        return NULL;
+    }
+    
+    // Allocate physical pages (AC97_BUFFER_SIZE is typically 4096 or less)
+    int pages_needed = (AC97_BUFFER_SIZE + 4095) / 4096;
+    void *buffer = pmm_alloc_pages(pages_needed);
+    
+    if (!buffer) {
+        PRINT(YELLOW, BLACK, "[AC97] Failed to allocate physical pages\n");
+        return NULL;
+    }
+    
+    // In your system, assuming identity mapping for low memory
+    // Physical address = virtual address for PMM allocations
+    *phys_addr = (uint32_t)(uint64_t)buffer;
+    
+    // Store for later reference
+    dma_buffer_ptrs[buffers_allocated] = (uint8_t*)buffer;
+    dma_buffer_phys[buffers_allocated] = *phys_addr;
+    
+    // Zero the buffer
+    uint8_t *ptr = (uint8_t*)buffer;
+    for (int i = 0; i < AC97_BUFFER_SIZE; i++) {
         ptr[i] = 0;
     }
-
-    return page;
+    
+    buffers_allocated++;
+    PRINT(WHITE, BLACK, "[AC97] Allocated DMA buffer %d: virt=0x", buffers_allocated - 1);
+    print_unsigned((uint64_t)buffer, 16);
+    PRINT(WHITE, BLACK, ", phys=0x");
+    print_unsigned(*phys_addr, 16);
+    PRINT(WHITE, BLACK, "\n");
+    
+    return buffer;
 }
-
 
 static void ac97_setup_bd_list(ac97_stream_t *stream) {
     uint16_t samples = AC97_BUFFER_SIZE / 4;
@@ -1320,259 +1383,115 @@ void ac97_debug_playback(void) {
     PRINT(WHITE, BLACK, "Buffer has data: %s\n", has_data ? "YES" : "NO");
 
     PRINT(CYAN, BLACK, "===========================\n\n");
-}
-int audio_beep(uint32_t frequency, uint32_t duration_ms) {
+}int audio_beep(uint32_t frequency, uint32_t duration_ms) {
     if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "[BEEP] Device not initialized\n");
         return -1;
     }
 
     PRINT(CYAN, BLACK, "\n=== BEEP ");
     print_unsigned(frequency, 10);
-    PRINT(CYAN, BLACK, " Hz for ");
-    print_unsigned(duration_ms, 10);
-    PRINT(CYAN, BLACK, " ms ===\n");
+    PRINT(CYAN, BLACK, " Hz ===\n");
 
-    const int sample_rate = 48000;
-    const int samples_needed = (sample_rate * duration_ms) / 1000;
-
-    int16_t *buffer = (int16_t*)kmalloc(samples_needed * 2 * sizeof(int16_t));
-    if (!buffer) return -1;
-
-    // Generate square wave
-    int samples_per_cycle = sample_rate / frequency;
-    int16_t amplitude = 28000;
-
-    for (int i = 0; i < samples_needed; i++) {
-        int16_t value = ((i % samples_per_cycle) < (samples_per_cycle / 2)) ?
-                        amplitude : -amplitude;
-        buffer[i * 2] = value;
-        buffer[i * 2 + 1] = value;
-    }
-
-    // Stop any previous playback
+    // Stop any playback
     if (g_ac97_device->playback_stream.running) {
-        PRINT(WHITE, BLACK, "[BEEP] Stopping previous playback...\n");
         ac97_play_stop();
         for (volatile int i = 0; i < 100000; i++);
     }
 
-    // CRITICAL FIX: Proper DMA reset with verification
-    PRINT(WHITE, BLACK, "[BEEP] Resetting DMA channel...\n");
-    
-    // 1. Stop DMA completely
-    outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
-    for (volatile int i = 0; i < 100000; i++);
-    
-    // 2. Clear all status bits
-    outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
-    for (volatile int i = 0; i < 50000; i++);
-    
-    // 3. Assert reset bit and HOLD IT
+    // Complete DMA reset
+    PRINT(WHITE, BLACK, "[BEEP] Resetting DMA...\n");
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
-    
-    // 4. Wait LONGER for reset to propagate through hardware
     for (volatile int i = 0; i < 500000; i++);
-    
-    // 5. Clear reset bit
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
-    
-    // 6. Wait for hardware to stabilize after reset
     for (volatile int i = 0; i < 500000; i++);
-    
-    // 7. Re-program BDBAR after reset
-    ac97_stream_t *stream = &g_ac97_device->playback_stream;
-    outl(g_ac97_device->nabm_bar + AC97_PO_BDBAR, stream->bd_list_phys);
-    for (volatile int i = 0; i < 50000; i++);
-    
-    // 8. CRITICAL: Verify CIV is 0 after reset
-    uint8_t civ_check = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
-    PRINT(WHITE, BLACK, "[BEEP] CIV after reset: ");
-    print_unsigned(civ_check, 10);
-    PRINT(WHITE, BLACK, "\n");
-    
-    // If CIV isn't 0, try one more reset cycle
-    if (civ_check != 0) {
-        PRINT(YELLOW, BLACK, "[BEEP] CIV not 0, attempting second reset...\n");
-        outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
-        for (volatile int i = 0; i < 500000; i++);
-        outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
-        for (volatile int i = 0; i < 500000; i++);
-        outl(g_ac97_device->nabm_bar + AC97_PO_BDBAR, stream->bd_list_phys);
-        for (volatile int i = 0; i < 50000; i++);
-        
-        civ_check = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
-        PRINT(WHITE, BLACK, "[BEEP] CIV after second reset: ");
-        print_unsigned(civ_check, 10);
-        PRINT(WHITE, BLACK, "\n");
-    }
+    outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
+    for (volatile int i = 0; i < 100000; i++);
 
-    // Initialize format
+    // Re-init
     if (ac97_play_init(AC97_FORMAT_STEREO_16, AC97_RATE_48000) != 0) {
-        kfree(buffer);
+        PRINT(YELLOW, BLACK, "[BEEP] Init failed\n");
         return -1;
     }
 
-    // Calculate buffers needed (minimum 2)
-    uint32_t total_bytes = samples_needed * 2 * sizeof(int16_t);
-    int buffers_needed = (total_bytes + AC97_BUFFER_SIZE - 1) / AC97_BUFFER_SIZE;
-    if (buffers_needed < 2) buffers_needed = 2;
-    if (buffers_needed > AC97_BD_COUNT - 1) buffers_needed = AC97_BD_COUNT - 1;
+    ac97_stream_t *stream = &g_ac97_device->playback_stream;
+    
+    // Restore BDBAR after reset
+    outl(g_ac97_device->nabm_bar + AC97_PO_BDBAR, stream->bd_list_phys);
+    for (volatile int i = 0; i < 50000; i++);
 
-    PRINT(WHITE, BLACK, "[BEEP] Total bytes: ");
-    print_unsigned(total_bytes, 10);
-    PRINT(WHITE, BLACK, ", buffers needed: ");
-    print_unsigned(buffers_needed, 10);
-    PRINT(WHITE, BLACK, "\n");
-
-    // ALWAYS fill from buffer 0 after reset
-    uint32_t offset = 0;
-    for (int i = 0; i < buffers_needed; i++) {
-        uint32_t chunk_size = total_bytes - offset;
-        if (chunk_size > AC97_BUFFER_SIZE) {
-            chunk_size = AC97_BUFFER_SIZE;
+    // Generate simple square wave DIRECTLY into hardware buffers
+    const int sample_rate = 48000;
+    const int samples_per_cycle = sample_rate / frequency;
+    const int16_t amplitude = 20000;
+    
+    // Fill first 2 buffers with beep data
+    int total_samples = (sample_rate * duration_ms) / 1000;
+    int samples_written = 0;
+    
+    for (int buf = 0; buf < 2 && samples_written < total_samples; buf++) {
+        int16_t *buffer = (int16_t*)stream->buffers[buf];
+        int samples_in_buffer = AC97_BUFFER_SIZE / 4; // 16-bit stereo
+        
+        for (int i = 0; i < samples_in_buffer && samples_written < total_samples; i++) {
+            int16_t value = ((samples_written % samples_per_cycle) < (samples_per_cycle / 2)) 
+                            ? amplitude : -amplitude;
+            buffer[i * 2] = value;     // Left
+            buffer[i * 2 + 1] = value; // Right
+            samples_written++;
         }
-
-        uint8_t *dest = stream->buffers[i];
-        uint8_t *src = ((uint8_t*)buffer) + offset;
-
-        // Copy data
-        for (uint32_t j = 0; j < chunk_size; j++) {
-            dest[j] = src[j];
-        }
-
-        // Zero remaining bytes
-        for (uint32_t j = chunk_size; j < AC97_BUFFER_SIZE; j++) {
-            dest[j] = 0;
-        }
-
-        PRINT(WHITE, BLACK, "  Buffer ");
-        print_unsigned(i, 10);
-        PRINT(WHITE, BLACK, ": ");
-        print_unsigned(chunk_size, 10);
-        PRINT(WHITE, BLACK, " bytes\n");
-
-        offset += chunk_size;
-        if (offset >= total_bytes) break;
+        
+        PRINT(WHITE, BLACK, "[BEEP] Filled buffer ");
+        print_unsigned(buf, 10);
+        PRINT(WHITE, BLACK, "\n");
     }
 
-    // LVI = last buffer index (0-based, so buffers_needed - 1)
-    uint8_t lvi_value = buffers_needed - 1;
-    
-    PRINT(WHITE, BLACK, "[BEEP] Setting LVI to ");
-    print_unsigned(lvi_value, 10);
-    PRINT(WHITE, BLACK, " (playing buffers 0-");
-    print_unsigned(lvi_value, 10);
-    PRINT(WHITE, BLACK, ")\n");
-
-    // Verify first samples
+    // Verify buffer contents
     int16_t *check = (int16_t*)stream->buffers[0];
-    PRINT(WHITE, BLACK, "[BEEP] First 5 samples in buffer 0: ");
-    for (int i = 0; i < 5; i++) {
-        print_unsigned((uint16_t)check[i], 10);
+    PRINT(WHITE, BLACK, "[BEEP] First 4 samples: ");
+    for (int i = 0; i < 4; i++) {
+        if (check[i] >= 0) {
+            print_unsigned(check[i], 10);
+        } else {
+            PRINT(WHITE, BLACK, "-");
+            print_unsigned(-check[i], 10);
+        }
         PRINT(WHITE, BLACK, " ");
     }
     PRINT(WHITE, BLACK, "\n");
 
-    // Clear status before starting
+    // Set LVI to 1 (play buffers 0 and 1)
+    outb(g_ac97_device->nabm_bar + AC97_PO_LVI, 1);
+    for (volatile int i = 0; i < 10000; i++);
+
+    // Clear status
     outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
     for (volatile int i = 0; i < 10000; i++);
-    
-    // Set LVI BEFORE starting DMA
-    outb(g_ac97_device->nabm_bar + AC97_PO_LVI, lvi_value);
-    for (volatile int i = 0; i < 10000; i++);
-    
-    // Verify CIV hasn't changed and LVI is set
-    uint8_t verify_civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
-    uint8_t verify_lvi = inb(g_ac97_device->nabm_bar + AC97_PO_LVI);
-    
-    PRINT(WHITE, BLACK, "[BEEP] Pre-start verification: CIV=");
-    print_unsigned(verify_civ, 10);
-    PRINT(WHITE, BLACK, ", LVI=");
-    print_unsigned(verify_lvi, 10);
-    PRINT(WHITE, BLACK, "\n");
-    
-    // START DMA - NO INTERRUPTS, polling only
-    // Only set RPBM (Run/Pause Bus Master), NOT IOCE
-    uint8_t control = AC97_CR_RPBM;
-    outb(g_ac97_device->nabm_bar + AC97_PO_CR, control);
-    
-    // Minimal delay before verification
-    for (volatile int i = 0; i < 5000; i++);
 
+    // Start playback - simple polling mode
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RPBM);
     stream->running = 1;
 
-    // Immediate verification
-    uint8_t final_civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
-    uint8_t final_lvi = inb(g_ac97_device->nabm_bar + AC97_PO_LVI);
-    uint16_t final_sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);
-    uint8_t final_cr = inb(g_ac97_device->nabm_bar + AC97_PO_CR);
+    PRINT(MAGENTA, BLACK, "[BEEP] Playing...\n");
 
-    PRINT(WHITE, BLACK, "[BEEP] Post-start status:\n");
-    PRINT(WHITE, BLACK, "  CIV=");
-    print_unsigned(final_civ, 10);
-    PRINT(WHITE, BLACK, ", LVI=");
-    print_unsigned(final_lvi, 10);
-    PRINT(WHITE, BLACK, ", SR=0x");
-    print_unsigned(final_sr, 16);
-    PRINT(WHITE, BLACK, ", CR=0x");
-    print_unsigned(final_cr, 16);
-    PRINT(WHITE, BLACK, "\n");
-    PRINT(WHITE, BLACK, "  DMA Running: %s\n", (final_cr & AC97_CR_RPBM) ? "YES" : "NO");
-    PRINT(WHITE, BLACK, "  DMA Halted: %s\n", (final_sr & 0x01) ? "YES" : "NO");
-
-    // Check for immediate failure conditions
-    if (final_sr & 0x01) {
-        PRINT(YELLOW, BLACK, "[BEEP] ERROR: DMA halted immediately!\n");
-        ac97_play_stop();
-        kfree(buffer);
-        return -1;
-    }
-
-    if (!(final_cr & AC97_CR_RPBM)) {
-        PRINT(YELLOW, BLACK, "[BEEP] ERROR: RPBM not set!\n");
-        ac97_play_stop();
-        kfree(buffer);
-        return -1;
-    }
-
-    // Note: It's OK if CIV has advanced from 0, as long as it hasn't caught up to LVI
-    if (final_civ == final_lvi && buffers_needed > 1) {
-        PRINT(YELLOW, BLACK, "[BEEP] WARNING: CIV caught up to LVI quickly\n");
-        PRINT(WHITE, BLACK, "[BEEP] Audio may be very short or already finished\n");
-    } else {
-        PRINT(MAGENTA, BLACK, "[BEEP] DMA started successfully!\n");
-    }
-
-    // Wait for playback with timeout
+    // Wait for completion (simple polling)
     extern volatile uint64_t timer_ticks;
-    uint64_t start_time = timer_ticks;
-    uint64_t timeout = start_time + duration_ms + 500; // 500ms buffer
-
-    int did_halt = 0;
+    uint64_t timeout = timer_ticks + duration_ms + 500;
+    
     while (timer_ticks < timeout) {
         uint16_t sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);
-        uint8_t civ = inb(g_ac97_device->nabm_bar + AC97_PO_CIV);
-        
-        if (sr & 0x01) {
-            // DMA halted - playback complete
-            did_halt = 1;
-            PRINT(WHITE, BLACK, "[BEEP] DMA halted (playback complete at CIV=");
-            print_unsigned(civ, 10);
-            PRINT(WHITE, BLACK, ")\n");
+        if (sr & 0x01) {  // DCH - DMA halted
+            PRINT(WHITE, BLACK, "[BEEP] Completed\n");
             break;
         }
-        
         __asm__ volatile("hlt");
     }
 
-    if (!did_halt) {
-        PRINT(YELLOW, BLACK, "[BEEP] Timeout waiting for completion\n");
-    }
+    // Stop
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
+    stream->running = 0;
 
-    ac97_play_stop();
-    kfree(buffer);
-
-    PRINT(MAGENTA, BLACK, "[BEEP] Done!\n\n");
+    PRINT(MAGENTA, BLACK, "[BEEP] Done\n\n");
     return 0;
 }
 
