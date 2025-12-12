@@ -124,6 +124,30 @@ VBoxManage controlvm "$VM_NAME" poweroff 2>/dev/null || true
 sleep 1
 VBoxManage storageattach "$VM_NAME" --storagectl "SATA" --port 0 --device 0 --medium none 2>/dev/null || true
 
+# =========[ AUDIO CONFIGURATION ]=========
+echo ""
+echo "--- Configuring AC'97 Audio ---"
+
+# Detect host OS and set appropriate audio driver
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    AUDIO_DRIVER="pulse"  # PulseAudio on Linux
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    AUDIO_DRIVER="coreaudio"  # CoreAudio on macOS
+elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    AUDIO_DRIVER="dsound"  # DirectSound on Windows
+else
+    AUDIO_DRIVER="pulse"  # Default fallback
+fi
+
+# Configure audio settings
+VBoxManage modifyvm "$VM_NAME" --audio $AUDIO_DRIVER --audioin on --audioout on
+VBoxManage modifyvm "$VM_NAME" --audiocontroller ac97
+
+echo "✓ Audio configured: $AUDIO_DRIVER with AC'97 controller"
+echo "  - Audio Input: Enabled"
+echo "  - Audio Output: Enabled"
+echo "  - Controller: Intel ICH AC97"
+
 # Convert raw image to VDI
 TIMESTAMP=$(date +%s)
 VDI="${VDIDIR}/efi_boot_${TIMESTAMP}.vdi"

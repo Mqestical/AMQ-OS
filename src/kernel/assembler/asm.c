@@ -42,9 +42,9 @@ static void asm_emit_bytes(asm_context_t *ctx, const uint8_t *bytes, size_t coun
 
 
 static int parse_register(const char *reg) {
-    // Skip any leading whitespace
+
     while (*reg == ' ' || *reg == '\t') reg++;
-    
+
     if (reg[0] == 'r' && reg[1] == 'a' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 0;
     if (reg[0] == 'r' && reg[1] == 'c' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 1;
     if (reg[0] == 'r' && reg[1] == 'd' && reg[2] == 'x' && (reg[3] == '\0' || reg[3] == ' ' || reg[3] == ',')) return 2;
@@ -71,9 +71,9 @@ static int parse_register(const char *reg) {
 }
 
 static int64_t parse_immediate(const char *str) {
-    // Skip whitespace
+
     while (*str == ' ' || *str == '\t') str++;
-    
+
     int64_t val = 0;
     int neg = 0;
     int i = 0;
@@ -373,10 +373,10 @@ static void asm_shr_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
 int asm_line(asm_context_t *ctx, const char *line) {
     if (ctx->error) return -1;
 
-    // Skip leading whitespace
+
     while (*line == ' ' || *line == '\t') line++;
 
-    // Skip empty lines and comments
+
     if (*line == '\0' || *line == ';' || *line == '#') {
         return 0;
     }
@@ -386,11 +386,11 @@ int asm_line(asm_context_t *ctx, const char *line) {
     char arg2[64];
     int i = 0;
 
-    // Parse mnemonic (instruction name)
+
     while (line[i] && line[i] != ' ' && line[i] != '\t' && i < 31) {
         mnemonic[i] = line[i];
         if (mnemonic[i] >= 'A' && mnemonic[i] <= 'Z') {
-            mnemonic[i] += 32;  // Convert to lowercase
+            mnemonic[i] += 32;
         }
         i++;
     }
@@ -408,10 +408,10 @@ for (int d = 0; d < i; d++) {
     PRINT(WHITE, BLACK, "\n");
 }
 
-    // Skip whitespace after mnemonic
+
     while (line[i] == ' ' || line[i] == '\t') i++;
 
-    // Parse arg1
+
     int j = 0;
     while (line[i] && line[i] != ',' && line[i] != ' ' && line[i] != '\t' &&
            line[i] != ';' && line[i] != '#' && line[i] != '\n' && line[i] != '\r' && j < 63) {
@@ -419,10 +419,10 @@ for (int d = 0; d < i; d++) {
     }
     arg1[j] = '\0';
 
-    // Skip whitespace and comma
+
     while (line[i] == ' ' || line[i] == '\t' || line[i] == ',') i++;
 
-    // Parse arg2
+
     j = 0;
     while (line[i] && line[i] != ' ' && line[i] != '\t' &&
            line[i] != ';' && line[i] != '#' && line[i] != '\n' && line[i] != '\r' && line[i] != ',' && j < 63) {
@@ -430,7 +430,7 @@ for (int d = 0; d < i; d++) {
     }
     arg2[j] = '\0';
 
-    // Handle instructions
+
     if (STRNCMP(mnemonic, "mov", 3)) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);

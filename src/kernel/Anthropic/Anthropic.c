@@ -256,11 +256,11 @@ static void editor_init(editor_state_t* ed, const char* filename) {
 }
 
 static int editor_load_file(editor_state_t* ed) {
-    // Clear all lines first
+
     for (int i = 0; i < MAX_LINES; i++) {
         ed->lines[i][0] = '\0';
     }
-    
+
     char fullpath[256];
     if (ed->filename[0] == '/') {
         STRCPY(fullpath, ed->filename);
@@ -285,7 +285,7 @@ static int editor_load_file(editor_state_t* ed) {
         return 0;
     }
 
-    // Read raw bytes into temporary buffer
+
     uint8_t* buffer = (uint8_t*)kmalloc(MAX_LINES * MAX_LINE_LENGTH);
     if (!buffer) {
         vfs_close(fd);
@@ -308,20 +308,20 @@ static int editor_load_file(editor_state_t* ed) {
     }
 
     buffer[bytes] = '\0';
-    
+
     PRINT(WHITE, BLACK, "[EDITOR] Read %d raw bytes\n", bytes);
 
-    // Parse raw bytes into lines
+
     int line = 0;
     int col = 0;
-    
+
     for (int i = 0; i < bytes && line < MAX_LINES; i++) {
         if (buffer[i] == '\n') {
             ed->lines[line][col] = '\0';
             line++;
             col = 0;
         } else if (buffer[i] == '\r') {
-            // Skip carriage returns
+
             continue;
         } else if (col < MAX_LINE_LENGTH - 1) {
             ed->lines[line][col] = buffer[i];
@@ -329,55 +329,55 @@ static int editor_load_file(editor_state_t* ed) {
         }
     }
 
-    // Handle last line
+
     if (col > 0 || line == 0) {
         ed->lines[line][col] = '\0';
         line++;
     }
 
-    // Free the temporary buffer - we've parsed everything into lines
+
     kfree(buffer);
 
     ed->line_count = line;
     if (ed->line_count == 0) ed->line_count = 1;
-    
+
     ed->cursor_line = 0;
     ed->cursor_col = 0;
     ed->scroll_offset = 0;
     ed->needs_full_redraw = 1;
-    
+
     PRINT(WHITE, BLACK, "[EDITOR] Loaded %d lines\n", ed->line_count);
-    
+
     return 1;
 }
 
 static int editor_save_file(editor_state_t* ed) {
-    // First, convert all lines to raw bytes in a buffer
+
     uint8_t* buffer = (uint8_t*)kmalloc(MAX_LINES * MAX_LINE_LENGTH);
     if (!buffer) {
         return -1;
     }
-    
+
     int buffer_pos = 0;
-    
-    // Convert each line to bytes with newlines
+
+
     for (int i = 0; i < ed->line_count; i++) {
         int line_len = STRLEN(ed->lines[i]);
-        
-        // Copy line content
+
+
         for (int j = 0; j < line_len; j++) {
             buffer[buffer_pos++] = ed->lines[i][j];
         }
-        
-        // Add newline after each line except the last
+
+
         if (i < ed->line_count - 1) {
             buffer[buffer_pos++] = '\n';
         }
     }
-    
+
     PRINT(WHITE, BLACK, "[EDITOR] Converted %d lines to %d bytes\n", ed->line_count, buffer_pos);
-    
-    // Now write the buffer to the actual file
+
+
     char fullpath[256];
     if (ed->filename[0] == '/') {
         STRCPY(fullpath, ed->filename);
@@ -401,18 +401,18 @@ static int editor_save_file(editor_state_t* ed) {
         return -1;
     }
 
-    // Write the entire buffer at once
+
     int written = vfs_write(fd, buffer, buffer_pos);
     vfs_close(fd);
-    
-    // Free the buffer
+
+
     kfree(buffer);
-    
+
     if (written != buffer_pos) {
         PRINT(YELLOW, BLACK, "[EDITOR] Warning: wrote %d bytes, expected %d\n", written, buffer_pos);
         return -1;
     }
-    
+
     ed->modified = 0;
     PRINT(WHITE, BLACK, "[EDITOR] Successfully saved %d bytes\n", written);
     return 0;
@@ -773,7 +773,7 @@ void anthropic_debug(const char* filename) {
     }
 
     PRINT(WHITE, BLACK, "[DEBUG] Opening file: %s\n", fullpath);
-    
+
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
         PRINT(YELLOW, BLACK, "[DEBUG] Failed to open file\n");
@@ -790,10 +790,10 @@ void anthropic_debug(const char* filename) {
     }
 
     buffer[bytes] = '\0';
-    
+
     PRINT(WHITE, BLACK, "[DEBUG] Read %d bytes total\n", bytes);
     PRINT(WHITE, BLACK, "[DEBUG] Raw bytes:\n");
-    
+
     for (int i = 0; i < bytes; i++) {
         if (buffer[i] == '\n') {
             PRINT(GREEN, BLACK, "\\n\n");
@@ -817,7 +817,7 @@ void anthropic_editor(const char* filename) {
 
     editor_init(ed, filename);
     editor_load_file(ed);
-    
+
     int running = 1;
     int last_mouse_button = 0;
 
