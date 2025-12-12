@@ -235,7 +235,7 @@ void cmd_beep(const char *args) {
 
     PRINT(WHITE, BLACK, "Playing %u Hz beep...\n", frequency);
 
-    if (audio_beep(frequency, 5000) == 0) {
+    if (audio_beep(frequency, 1) == 0) {
         PRINT(MAGENTA, BLACK, "Beep complete!\n");
     } else {
         PRINT(YELLOW, BLACK, "Beep failed!\n");
@@ -760,16 +760,6 @@ void process_command(char* cmd) {
         PRINT(BROWN, BLACK, "    nop           - No operation\n");
         PRINT(WHITE, BLACK, "\n  Available Registers:\n");
         PRINT(BROWN, BLACK, "    rax, rbx, rcx, rdx, rsi, rdi, rbp, rsp, r8-r15\n");
-        PRINT(CYAN, BLACK, "\nAssembler Commands:\n");
-        PRINT(WHITE, BLACK, "  ASM <file> <code>   - Assemble inline (use ; for newlines)\n");
-        PRINT(WHITE, BLACK, "  asmfile <src> <out> - Assemble from file\n");
-        PRINT(BROWN, BLACK, "  Supported Instructions:\n");
-        PRINT(BROWN, BLACK, "    Data: mov, push, pop\n");
-        PRINT(BROWN, BLACK, "    Arithmetic: add, sub, inc, dec, neg\n");
-        PRINT(BROWN, BLACK, "    Logic: and, or, xor, not, shl, shr\n");
-        PRINT(BROWN, BLACK, "    Compare: cmp\n");
-        PRINT(BROWN, BLACK, "    Control: syscall, ret, nop\n");
-        PRINT(BROWN, BLACK, "  Registers: rax, rbx, rcx, rdx, rsi, rdi, rbp, rsp, r8-r15\n");
         PRINT(CYAN, BLACK, "\nText Editor:\n");
         PRINT(WHITE, BLACK, "  anthropic <file> - Open graphical text editor\n");
         PRINT(BROWN, BLACK, "    Ctrl+S to save, click X to close\n");
