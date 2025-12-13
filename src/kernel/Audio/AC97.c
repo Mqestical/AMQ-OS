@@ -370,7 +370,7 @@ int ac97_codec_write(uint8_t reg, uint16_t value) {
     outw(g_ac97_device->nam_bar + reg, value);
 
 
-    for (volatile int i = 0; i < 1000; i++);
+   
 
     return 0;
 }
@@ -549,7 +549,7 @@ void ac97_stream_reset(ac97_stream_t *stream, int is_playback) {
     outb(g_ac97_device->nabm_bar + cr_reg, AC97_CR_RR);
 
 
-    for (volatile int i = 0; i < 10000; i++);
+
 
 
     outb(g_ac97_device->nabm_bar + cr_reg, 0);
@@ -582,7 +582,7 @@ void ac97_stream_start(ac97_stream_t *stream, int is_playback, uint8_t buffers_t
     PRINT(WHITE, BLACK, "\n");
 
 
-    for (volatile int i = 0; i < 1000; i++);
+   
 
 
     uint8_t control = AC97_CR_RPBM | AC97_CR_IOCE;
@@ -593,7 +593,7 @@ void ac97_stream_start(ac97_stream_t *stream, int is_playback, uint8_t buffers_t
     PRINT(WHITE, BLACK, "\n");
 
 
-    for (volatile int i = 0; i < 10000; i++);
+
 
     uint8_t cr_check = inb(g_ac97_device->nabm_bar + cr_reg);
     uint16_t sr_check = inw(g_ac97_device->nabm_bar + sr_reg);
@@ -804,7 +804,7 @@ void ac97_wait_for_buffer(void) {
     if (!g_ac97_device) return;
 
     while (ac97_get_buffer_status() >= (AC97_BD_COUNT - 1)) {
-        for (volatile int i = 0; i < 1000; i++);
+       
     }
 }
 
@@ -827,7 +827,7 @@ int ac97_reset(void) {
     PRINT(WHITE, BLACK, "[AC97] Cold reset asserted\n");
 
 
-    for (volatile int i = 0; i < 500000; i++);
+    
 
 
     glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
@@ -837,7 +837,7 @@ int ac97_reset(void) {
     PRINT(WHITE, BLACK, "[AC97] Cold reset released\n");
 
 
-    for (volatile int i = 0; i < 100000; i++);
+    
 
 
     PRINT(WHITE, BLACK, "[AC97] Waiting for codec ready...\n");
@@ -857,7 +857,6 @@ int ac97_reset(void) {
     PRINT(WHITE, BLACK, "[AC97] GIE enable requested\n");
 
 
-    sleep_seconds(1);
 
 
     uint32_t verify = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
@@ -879,7 +878,7 @@ int ac97_reset(void) {
     ac97_codec_write(AC97_NAM_RESET, 0);
 
 
-    for (volatile int i = 0; i < 100000; i++);
+    
 
 
     PRINT(WHITE, BLACK, "[AC97] Powering up codec sections...\n");
@@ -895,12 +894,11 @@ int ac97_reset(void) {
     for (int attempt = 0; attempt < 3; attempt++) {
         PRINT(WHITE, BLACK, "[AC97] Power-up attempt %d/3...\n", attempt + 1);
         ac97_codec_write(AC97_NAM_POWERDOWN_CTRL, 0x0000);
-        for (volatile int i = 0; i < 1000000; i++);
+        
     }
 
 
     PRINT(WHITE, BLACK, "[AC97] Waiting for codec stabilization...\n");
-    sleep_seconds(1);
 
 
     power = ac97_codec_read(AC97_NAM_POWERDOWN_CTRL);
@@ -925,7 +923,7 @@ int ac97_reset(void) {
         PRINT(WHITE, BLACK, "[AC97] Enabling external amplifier (clearing EAPD)...\n");
         power &= ~AC97_PWR_EAPD;
         ac97_codec_write(AC97_NAM_POWERDOWN_CTRL, power);
-        for (volatile int i = 0; i < 500000; i++);
+        
     }
 
 
@@ -961,7 +959,7 @@ if (codec_id == 0x0000) {
 
 
     ac97_codec_write(AC97_NAM_MASTER_VOLUME, 0x0808);
-    for (volatile int i = 0; i < 10000; i++);
+
 
     uint16_t test_vol = ac97_codec_read(AC97_NAM_MASTER_VOLUME);
     PRINT(WHITE, BLACK, "  After writing 0x0808, read: 0x");
@@ -1105,17 +1103,17 @@ if (codec_id == 0x0000) {
 
 
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
-    for (volatile int i = 0; i < 1000; i++);
+   
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
 
 
     outb(g_ac97_device->nabm_bar + AC97_PI_CR, AC97_CR_RR);
-    for (volatile int i = 0; i < 1000; i++);
+   
     outb(g_ac97_device->nabm_bar + AC97_PI_CR, 0);
 
 
     outb(g_ac97_device->nabm_bar + AC97_MC_CR, AC97_CR_RR);
-    for (volatile int i = 0; i < 1000; i++);
+   
     outb(g_ac97_device->nabm_bar + AC97_MC_CR, 0);
 
 
@@ -1138,7 +1136,7 @@ if (codec_id == 0x0000) {
     }
 
     PRINT(MAGENTA, BLACK, "[AC97] Reset complete!\n\n");
-
+    ClearScreen(BLACK);
     return 0;
 }
 
@@ -1396,17 +1394,14 @@ void ac97_debug_playback(void) {
 
     if (g_ac97_device->playback_stream.running) {
         ac97_play_stop();
-        for (volatile int i = 0; i < 100000; i++);
+        
     }
 
 
     PRINT(WHITE, BLACK, "[BEEP] Resetting DMA...\n");
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
-    for (volatile int i = 0; i < 500000; i++);
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
-    for (volatile int i = 0; i < 500000; i++);
     outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
-    for (volatile int i = 0; i < 100000; i++);
 
 
     if (ac97_play_init(AC97_FORMAT_STEREO_16, AC97_RATE_48000) != 0) {
@@ -1418,7 +1413,6 @@ void ac97_debug_playback(void) {
 
 
     outl(g_ac97_device->nabm_bar + AC97_PO_BDBAR, stream->bd_list_phys);
-    for (volatile int i = 0; i < 50000; i++);
 
 
     const int sample_rate = 48000;
@@ -1462,11 +1456,10 @@ void ac97_debug_playback(void) {
 
 
     outb(g_ac97_device->nabm_bar + AC97_PO_LVI, 1);
-    for (volatile int i = 0; i < 10000; i++);
 
 
     outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
-    for (volatile int i = 0; i < 10000; i++);
+
 
 
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RPBM);
@@ -1476,7 +1469,7 @@ void ac97_debug_playback(void) {
 
 
     extern volatile uint64_t timer_ticks;
-    uint64_t timeout = timer_ticks + duration_ms + 500;
+    uint64_t timeout = timer_ticks + duration_ms + 20;
 
     while (timer_ticks < timeout) {
         uint16_t sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);

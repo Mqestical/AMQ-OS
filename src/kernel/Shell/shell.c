@@ -15,6 +15,7 @@
 #include "elf_loader.h"
 #include "elf_test.h"
 #include "asm.h"
+#include "piano_synth.h"
 #include "anthropic.h"
 #include "System_States.h"
 #include "AC97.h"
@@ -365,6 +366,195 @@ void cmd_audiomute(const char *args) {
 void cmd_ac97test(void) {
     PRINT(YELLOW, BLACK, "Comprehensive test suite not included in shell.\n");
     PRINT(WHITE, BLACK, "Use 'audiotest' for basic audio tests.\n");
+}
+
+// Add these includes at the top of shell.c with the other includes
+#include "piano_synth.h"
+
+// Add these command handler functions near the other audio command handlers
+// (around line 450, after cmd_audiomute)
+
+void cmd_piano(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+
+    // Parse arguments: note velocity duration
+    const char *p = args;
+    while (*p == ' ') p++;
+
+    if (*p < '0' || *p > '9') {
+        PRINT(YELLOW, BLACK, "Usage: piano <note> [velocity] [duration_ms]\n");
+        PRINT(WHITE, BLACK, "  note: MIDI note number (21-108)\n");
+        PRINT(WHITE, BLACK, "        Or use note names: C4, A4, etc.\n");
+        PRINT(WHITE, BLACK, "  velocity: 0-127 (default: 64)\n");
+        PRINT(WHITE, BLACK, "  duration: milliseconds (default: 500)\n");
+        PRINT(WHITE, BLACK, "\nExamples:\n");
+        PRINT(WHITE, BLACK, "  piano 60        - Middle C, medium velocity\n");
+        PRINT(WHITE, BLACK, "  piano 60 100    - Middle C, loud\n");
+        PRINT(WHITE, BLACK, "  piano 60 40 300 - Middle C, soft, 300ms\n");
+        return;
+    }
+
+    uint32_t note = parse_number(p);
+    while (*p >= '0' && *p <= '9') p++;
+    while (*p == ' ') p++;
+
+    uint32_t velocity = 64;
+    if (*p >= '0' && *p <= '9') {
+        velocity = parse_number(p);
+        while (*p >= '0' && *p <= '9') p++;
+        while (*p == ' ') p++;
+    }
+
+    uint32_t duration = 500;
+    if (*p >= '0' && *p <= '9') {
+        duration = parse_number(p);
+    }
+
+    if (note < 21 || note > 108) {
+        PRINT(YELLOW, BLACK, "Note must be between 21-108 (A0-C8)\n");
+        return;
+    }
+
+    if (velocity > 127) velocity = 127;
+    if (duration > 5000) duration = 5000;
+
+    PRINT(WHITE, BLACK, "Playing MIDI note %u, velocity %u, duration %ums\n", 
+          note, velocity, duration);
+
+    if (audio_play_piano_note(note, velocity, duration) == 0) {
+        PRINT(GREEN, BLACK, "Complete!\n");
+    } else {
+        PRINT(YELLOW, BLACK, "Playback failed!\n");
+    }
+}
+
+void cmd_pianoscale(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+
+    PRINT(CYAN, BLACK, "\n=== Piano Scale Demo ===\n");
+    PRINT(WHITE, BLACK, "Playing C major scale...\n\n");
+
+    // C major scale: C4, D4, E4, F4, G4, A4, B4, C5
+    uint8_t notes[] = {C4, D4, E4, F4, G4, A4, B4, C5};
+    const char *names[] = {"C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"};
+
+    for (int i = 0; i < 8; i++) {
+        PRINT(WHITE, BLACK, "  %s... ", names[i]);
+        audio_play_piano_note(notes[i], 80, 400);
+        PRINT(GREEN, BLACK, "✓\n");
+        sleep_ms(100);
+    }
+
+    PRINT(GREEN, BLACK, "\nScale complete!\n");
+}
+
+void cmd_pianochord(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+
+    PRINT(CYAN, BLACK, "\n=== Piano Chord Arpeggio ===\n");
+    PRINT(WHITE, BLACK, "Playing C major chord arpeggio...\n\n");
+
+    piano_phrase_note_t arpeggio[] = {
+        {C4, 85, 350, 0},     // C
+        {E4, 80, 350, 50},    // E
+        {G4, 75, 350, 50},    // G
+        {C5, 90, 500, 50}     // High C
+    };
+
+    audio_play_piano_phrase(arpeggio, 4);
+
+    PRINT(GREEN, BLACK, "\nChord complete!\n");
+}
+
+void cmd_pianosong(const char *args) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+
+    PRINT(CYAN, BLACK, "\n=== Piano Song Demo ===\n");
+    PRINT(WHITE, BLACK, "Playing Twinkle Twinkle Little Star...\n\n");
+
+    // Twinkle Twinkle Little Star in C major
+    // Timing: quarter note = 400ms, half note = 800ms
+    piano_phrase_note_t song[] = {
+        // Twinkle twinkle
+        {C4, 70, 400, 0},
+        {C4, 70, 400, 50},
+        {G4, 75, 400, 50},
+        {G4, 75, 400, 50},
+        // little star
+        {A4, 80, 400, 50},
+        {A4, 80, 400, 50},
+        {G4, 75, 800, 50},
+        // How I wonder
+        {F4, 70, 400, 100},
+        {F4, 70, 400, 50},
+        {E4, 70, 400, 50},
+        {E4, 70, 400, 50},
+        // what you are
+        {D4, 65, 400, 50},
+        {D4, 65, 400, 50},
+        {C4, 70, 800, 50}
+    };
+
+    PRINT(WHITE, BLACK, "♪ ♫ ♪ ♫\n");
+    audio_play_piano_phrase(song, 13);
+    PRINT(GREEN, BLACK, "\nSong complete!\n");
+}
+
+void cmd_pianotest(void) {
+    if (!g_ac97_device || !g_ac97_device->initialized) {
+        PRINT(YELLOW, BLACK, "Audio not initialized. Run 'audioinit' first.\n");
+        return;
+    }
+
+    PRINT(CYAN, BLACK, "\n=== Piano Synthesis Test ===\n\n");
+
+    // Test 1: Velocity dynamics
+    PRINT(WHITE, BLACK, "Test 1: Velocity dynamics (soft to loud)\n");
+    uint8_t velocities[] = {30, 50, 70, 90, 110, 127};
+    for (int i = 0; i < 6; i++) {
+        PRINT(WHITE, BLACK, "  Velocity %u... ", velocities[i]);
+        audio_play_piano_note(C4, velocities[i], 300);
+        PRINT(GREEN, BLACK, "✓\n");
+        sleep_ms(200);
+    }
+    PRINT(GREEN, BLACK, "Test 1: Complete\n\n");
+
+    // Test 2: Pitch range
+    PRINT(WHITE, BLACK, "Test 2: Pitch range (low to high)\n");
+    uint8_t pitches[] = {C2, C3, C4, C5, C6};
+    const char *names[] = {"C2", "C3", "C4", "C5", "C6"};
+    for (int i = 0; i < 5; i++) {
+        PRINT(WHITE, BLACK, "  %s... ", names[i]);
+        audio_play_piano_note(pitches[i], 75, 400);
+        PRINT(GREEN, BLACK, "✓\n");
+        sleep_ms(100);
+    }
+    PRINT(GREEN, BLACK, "Test 2: Complete\n\n");
+
+    // Test 3: Duration
+    PRINT(WHITE, BLACK, "Test 3: Note durations\n");
+    uint32_t durations[] = {200, 400, 800, 1200};
+    for (int i = 0; i < 4; i++) {
+        PRINT(WHITE, BLACK, "  %ums... ", durations[i]);
+        audio_play_piano_note(A4, 70, durations[i]);
+        PRINT(GREEN, BLACK, "✓\n");
+        sleep_ms(200);
+    }
+    PRINT(GREEN, BLACK, "Test 3: Complete\n\n");
+
+    PRINT(CYAN, BLACK, "=== Piano Tests Complete ===\n");
 }
 
 void create_elf_from_asm(const char *output_path, const char *asm_code) {
@@ -765,6 +955,12 @@ void process_command(char* cmd) {
         PRINT(CYAN, BLACK, "\nText Editor:\n");
         PRINT(WHITE, BLACK, "  anthropic <file> - Open graphical text editor\n");
         PRINT(BROWN, BLACK, "    Ctrl+S to save, click X to close\n");
+        PRINT(CYAN, BLACK, "\nPiano Commands:\n");
+        PRINT(WHITE, BLACK, "  piano <note> [vel] [dur] - Play piano note\n");
+        PRINT(WHITE, BLACK, "  pianoscale               - Play C major scale\n");
+        PRINT(WHITE, BLACK, "  pianochord               - Play chord arpeggio\n");
+        PRINT(WHITE, BLACK, "  pianosong                - Play demo song\n");
+        PRINT(WHITE, BLACK, "  pianotest                - Test piano synthesis\n");
         PRINT(GREEN, BLACK, "Shutdown commands: \n");
         PRINT(WHITE, BLACK, "  shutdown - Power off the system\n");
         PRINT(WHITE, BLACK, "  reboot   - Reboot the system\n");
@@ -1313,6 +1509,23 @@ else if (STRNCMP(cmd, "audiomute ", 10) == 0) {
 }
 else if (STRNCMP(cmd, "audiomute", 9) == 0) {
     cmd_audiomute(NULL);
+} else if (STRNCMP(cmd, "piano ", 6) == 0) {
+    cmd_piano(cmd + 6);
+}
+else if (STRNCMP(cmd, "piano", 5) == 0) {
+    cmd_piano(NULL);
+}
+else if (STRNCMP(cmd, "pianoscale", 10) == 0) {
+    cmd_pianoscale(NULL);
+}
+else if (STRNCMP(cmd, "pianochord", 10) == 0) {
+    cmd_pianochord(NULL);
+}
+else if (STRNCMP(cmd, "pianosong", 9) == 0) {
+    cmd_pianosong(NULL);
+}
+else if (STRNCMP(cmd, "pianotest", 9) == 0) {
+    cmd_pianotest();
 } else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");
