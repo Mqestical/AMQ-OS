@@ -370,7 +370,7 @@ int ac97_codec_write(uint8_t reg, uint16_t value) {
     outw(g_ac97_device->nam_bar + reg, value);
 
 
-   
+
 
     return 0;
 }
@@ -582,7 +582,7 @@ void ac97_stream_start(ac97_stream_t *stream, int is_playback, uint8_t buffers_t
     PRINT(WHITE, BLACK, "\n");
 
 
-   
+
 
 
     uint8_t control = AC97_CR_RPBM | AC97_CR_IOCE;
@@ -804,7 +804,7 @@ void ac97_wait_for_buffer(void) {
     if (!g_ac97_device) return;
 
     while (ac97_get_buffer_status() >= (AC97_BD_COUNT - 1)) {
-       
+
     }
 }
 
@@ -827,7 +827,7 @@ int ac97_reset(void) {
     PRINT(WHITE, BLACK, "[AC97] Cold reset asserted\n");
 
 
-    
+
 
 
     glob_cnt = inl(g_ac97_device->nabm_bar + AC97_GLOB_CNT);
@@ -837,7 +837,7 @@ int ac97_reset(void) {
     PRINT(WHITE, BLACK, "[AC97] Cold reset released\n");
 
 
-    
+
 
 
     PRINT(WHITE, BLACK, "[AC97] Waiting for codec ready...\n");
@@ -878,7 +878,7 @@ int ac97_reset(void) {
     ac97_codec_write(AC97_NAM_RESET, 0);
 
 
-    
+
 
 
     PRINT(WHITE, BLACK, "[AC97] Powering up codec sections...\n");
@@ -894,7 +894,7 @@ int ac97_reset(void) {
     for (int attempt = 0; attempt < 3; attempt++) {
         PRINT(WHITE, BLACK, "[AC97] Power-up attempt %d/3...\n", attempt + 1);
         ac97_codec_write(AC97_NAM_POWERDOWN_CTRL, 0x0000);
-        
+
     }
 
 
@@ -923,7 +923,7 @@ int ac97_reset(void) {
         PRINT(WHITE, BLACK, "[AC97] Enabling external amplifier (clearing EAPD)...\n");
         power &= ~AC97_PWR_EAPD;
         ac97_codec_write(AC97_NAM_POWERDOWN_CTRL, power);
-        
+
     }
 
 
@@ -1103,17 +1103,17 @@ if (codec_id == 0x0000) {
 
 
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
-   
+
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
 
 
     outb(g_ac97_device->nabm_bar + AC97_PI_CR, AC97_CR_RR);
-   
+
     outb(g_ac97_device->nabm_bar + AC97_PI_CR, 0);
 
 
     outb(g_ac97_device->nabm_bar + AC97_MC_CR, AC97_CR_RR);
-   
+
     outb(g_ac97_device->nabm_bar + AC97_MC_CR, 0);
 
 
@@ -1394,7 +1394,7 @@ void ac97_debug_playback(void) {
 
     if (g_ac97_device->playback_stream.running) {
         ac97_play_stop();
-        
+
     }
 
 
