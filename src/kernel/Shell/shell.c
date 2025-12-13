@@ -368,11 +368,11 @@ void cmd_ac97test(void) {
     PRINT(WHITE, BLACK, "Use 'audiotest' for basic audio tests.\n");
 }
 
-// Add these includes at the top of shell.c with the other includes
+
 #include "piano_synth.h"
 
-// Add these command handler functions near the other audio command handlers
-// (around line 450, after cmd_audiomute)
+
+
 
 void cmd_piano(const char *args) {
     if (!g_ac97_device || !g_ac97_device->initialized) {
@@ -380,7 +380,7 @@ void cmd_piano(const char *args) {
         return;
     }
 
-    // Parse arguments: note velocity duration
+
     const char *p = args;
     while (*p == ' ') p++;
 
@@ -421,7 +421,7 @@ void cmd_piano(const char *args) {
     if (velocity > 127) velocity = 127;
     if (duration > 5000) duration = 5000;
 
-    PRINT(WHITE, BLACK, "Playing MIDI note %u, velocity %u, duration %ums\n", 
+    PRINT(WHITE, BLACK, "Playing MIDI note %u, velocity %u, duration %ums\n",
           note, velocity, duration);
 
     if (audio_play_piano_note(note, velocity, duration) == 0) {
@@ -440,7 +440,7 @@ void cmd_pianoscale(const char *args) {
     PRINT(CYAN, BLACK, "\n=== Piano Scale Demo ===\n");
     PRINT(WHITE, BLACK, "Playing C major scale...\n\n");
 
-    // C major scale: C4, D4, E4, F4, G4, A4, B4, C5
+
     uint8_t notes[] = {C4, D4, E4, F4, G4, A4, B4, C5};
     const char *names[] = {"C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"};
 
@@ -464,10 +464,10 @@ void cmd_pianochord(const char *args) {
     PRINT(WHITE, BLACK, "Playing C major chord arpeggio...\n\n");
 
     piano_phrase_note_t arpeggio[] = {
-        {C4, 85, 350, 0},     // C
-        {E4, 80, 350, 50},    // E
-        {G4, 75, 350, 50},    // G
-        {C5, 90, 500, 50}     // High C
+        {C4, 85, 350, 0},
+        {E4, 80, 350, 50},
+        {G4, 75, 350, 50},
+        {C5, 90, 500, 50}
     };
 
     audio_play_piano_phrase(arpeggio, 4);
@@ -484,24 +484,24 @@ void cmd_pianosong(const char *args) {
     PRINT(CYAN, BLACK, "\n=== Piano Song Demo ===\n");
     PRINT(WHITE, BLACK, "Playing Twinkle Twinkle Little Star...\n\n");
 
-    // Twinkle Twinkle Little Star in C major
-    // Timing: quarter note = 400ms, half note = 800ms
+
+
     piano_phrase_note_t song[] = {
-        // Twinkle twinkle
+
         {C4, 70, 400, 0},
         {C4, 70, 400, 50},
         {G4, 75, 400, 50},
         {G4, 75, 400, 50},
-        // little star
+
         {A4, 80, 400, 50},
         {A4, 80, 400, 50},
         {G4, 75, 800, 50},
-        // How I wonder
+
         {F4, 70, 400, 100},
         {F4, 70, 400, 50},
         {E4, 70, 400, 50},
         {E4, 70, 400, 50},
-        // what you are
+
         {D4, 65, 400, 50},
         {D4, 65, 400, 50},
         {C4, 70, 800, 50}
@@ -520,7 +520,7 @@ void cmd_pianotest(void) {
 
     PRINT(CYAN, BLACK, "\n=== Piano Synthesis Test ===\n\n");
 
-    // Test 1: Velocity dynamics
+
     PRINT(WHITE, BLACK, "Test 1: Velocity dynamics (soft to loud)\n");
     uint8_t velocities[] = {30, 50, 70, 90, 110, 127};
     for (int i = 0; i < 6; i++) {
@@ -531,7 +531,7 @@ void cmd_pianotest(void) {
     }
     PRINT(GREEN, BLACK, "Test 1: Complete\n\n");
 
-    // Test 2: Pitch range
+
     PRINT(WHITE, BLACK, "Test 2: Pitch range (low to high)\n");
     uint8_t pitches[] = {C2, C3, C4, C5, C6};
     const char *names[] = {"C2", "C3", "C4", "C5", "C6"};
@@ -543,7 +543,7 @@ void cmd_pianotest(void) {
     }
     PRINT(GREEN, BLACK, "Test 2: Complete\n\n");
 
-    // Test 3: Duration
+
     PRINT(WHITE, BLACK, "Test 3: Note durations\n");
     uint32_t durations[] = {200, 400, 800, 1200};
     for (int i = 0; i < 4; i++) {
@@ -1535,7 +1535,7 @@ else if (STRNCMP(cmd, "pianotest", 9) == 0) {
 void run_text_demo(void) {
     scheduler_enable();
     PRINT(CYAN, BLACK, "==========================================\n");
-    PRINT(CYAN, BLACK, "    AMQ Operating System v1.2\n");
+    PRINT(CYAN, BLACK, "    AMQ Operating System v1.6\n");
     PRINT(CYAN, BLACK, "==========================================\n");
     PRINT(WHITE, BLACK, "Welcome! Type 'help' for commands.\n\n");
     PRINT(GREEN, BLACK, "%s> ", vfs_get_cwd_path());

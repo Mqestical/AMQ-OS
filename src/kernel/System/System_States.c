@@ -24,7 +24,7 @@ unsigned int system_reboot(void) {
 unsigned int system_shutdown(void) {
     PRINT(WHITE, BLACK, "[SYSTEM] Initiating shutdown sequence...\n");
     PRINT(GREEN, BLACK, "[ADMINISTRATOR] SYSTEM IS SHUTTING DOWN NOW!\n");
-    
+
     EFI_STATUS status = RT->ResetSystem(EfiResetShutdown, EFI_SUCCESS, 0, NULL);
     if (EFI_ERROR(status)) {
         PRINT(RED, BLACK, "[SYSTEM] Shutdown failed with status: 0x");
