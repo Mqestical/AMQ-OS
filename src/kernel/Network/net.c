@@ -1,0 +1,227 @@
+#include "net.h"
+#include "E1000.h"
+#include "arp.h"
+#include "icmp.h"
+#include "udp.h"
+#include "tcp.h"
+#include "print.h"
+#include "string_helpers.h"
+#include "memory.h"
+
+static net_config_t net_config = {0};
+
+void net_init(void) {
+    PRINT(CYAN, BLACK, "\n[NET] Initializing network stack...\n");
+    
+    // Initialize E1000 driver
+    if (e1000_init() != 0) {
+        PRINT(YELLOW, BLACK, "[NET] Failed to initialize network card\n");
+        return;
+    }
+    
+    // Initialize protocols
+    arp_init();
+    icmp_init();
+    udp_init();
+    tcp_init();
+    
+    PRINT(GREEN, BLACK, "[NET] Network stack initialized\n");
+}
+
+void net_register_device(uint8_t *mac) {
+    for (int i = 0; i < 6; i++) {
+        net_config.mac[i] = mac[i];
+    }
+    net_config.configured = 0;
+}
+
+void net_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway) {
+    net_config.ip = ip;
+    net_config.netmask = netmask;
+    net_config.gateway = gateway;
+    net_config.configured = 1;
+    
+    PRINT(GREEN, BLACK, "[NET] Configuration updated:\n");
+    PRINT(WHITE, BLACK, "  IP: ");
+    net_print_ip(ip);
+    PRINT(WHITE, BLACK, "\n  Netmask: ");
+    net_print_ip(netmask);
+    PRINT(WHITE, BLACK, "\n  Gateway: ");
+    net_print_ip(gateway);
+    PRINT(WHITE, BLACK, "\n");
+}
+
+net_config_t* net_get_config(void) {
+    return &net_config;
+}
+
+void net_receive_packet(uint8_t *data, uint16_t length) {
+    if (length < sizeof(eth_frame_t)) return;
+    
+    eth_frame_t *frame = (eth_frame_t*)data;
+    uint16_t ethertype = net_htons(frame->ethertype);
+    
+    switch (ethertype) {
+        case ETH_TYPE_ARP:
+            arp_receive(frame->payload, length - sizeof(eth_frame_t));
+            break;
+            
+        case ETH_TYPE_IPV4:
+            if (length >= sizeof(eth_frame_t) + sizeof(ipv4_header_t)) {
+                ipv4_header_t *ip = (ipv4_header_t*)frame->payload;
+                
+                // Check if packet is for us
+                if (net_config.configured && ip->dest_ip != net_config.ip) {
+                    return;  // Not for us
+                }
+                
+                uint16_t ip_header_len = (ip->version_ihl & 0x0F) * 4;
+                uint8_t *payload = frame->payload + ip_header_len;
+                uint16_t payload_len = net_htons(ip->total_length) - ip_header_len;
+                
+                switch (ip->protocol) {
+                    case IP_PROTO_ICMP:
+                        icmp_receive(ip->src_ip, payload, payload_len);
+                        break;
+                    case IP_PROTO_UDP:
+                        udp_receive(ip->src_ip, payload, payload_len);
+                        break;
+                    case IP_PROTO_TCP:
+                        tcp_receive(ip->src_ip, payload, payload_len);
+                        break;
+                }
+            }
+            break;
+    }
+}
+
+int net_send_ethernet(uint8_t *dest_mac, uint16_t ethertype, 
+                      const void *payload, uint16_t length) {
+    uint16_t total_len = sizeof(eth_frame_t) + length;
+    uint8_t *buffer = (uint8_t*)kmalloc(total_len);
+    
+    eth_frame_t *frame = (eth_frame_t*)buffer;
+    
+    // Fill ethernet header
+    for (int i = 0; i < 6; i++) {
+        frame->dest_mac[i] = dest_mac[i];
+        frame->src_mac[i] = net_config.mac[i];
+    }
+    frame->ethertype = net_htons(ethertype);
+    
+    // Copy payload
+    uint8_t *dest = buffer + sizeof(eth_frame_t);
+    const uint8_t *src = (const uint8_t*)payload;
+    for (uint16_t i = 0; i < length; i++) {
+        dest[i] = src[i];
+    }
+    
+    // Send via E1000
+    int result = e1000_send_packet(buffer, total_len);
+    
+    kfree(buffer);
+    return result;
+}
+
+int net_send_ipv4(uint32_t dest_ip, uint8_t protocol, 
+                  const void *payload, uint16_t length) {
+    if (!net_config.configured) return -1;
+    
+    // Build IP packet
+    uint16_t total_len = sizeof(ipv4_header_t) + length;
+    uint8_t *buffer = (uint8_t*)kmalloc(total_len);
+    
+    ipv4_header_t *ip = (ipv4_header_t*)buffer;
+    ip->version_ihl = 0x45;  // IPv4, 5 DWORDs header
+    ip->dscp_ecn = 0;
+    ip->total_length = net_htons(total_len);
+    ip->identification = 0;
+    ip->flags_fragment = 0;
+    ip->ttl = 64;
+    ip->protocol = protocol;
+    ip->header_checksum = 0;
+    ip->src_ip = net_config.ip;
+    ip->dest_ip = dest_ip;
+    
+    // Calculate checksum
+    ip->header_checksum = net_checksum(ip, sizeof(ipv4_header_t));
+    
+    // Copy payload
+    uint8_t *dest = buffer + sizeof(ipv4_header_t);
+    const uint8_t *src = (const uint8_t*)payload;
+    for (uint16_t i = 0; i < length; i++) {
+        dest[i] = src[i];
+    }
+    
+    // Resolve MAC address via ARP
+    uint8_t dest_mac[6];
+    if (arp_resolve(dest_ip, dest_mac) != 0) {
+        kfree(buffer);
+        return -1;
+    }
+    
+    int result = net_send_ethernet(dest_mac, ETH_TYPE_IPV4, buffer, total_len);
+    
+    kfree(buffer);
+    return result;
+}
+
+uint16_t net_checksum(const void *data, size_t length) {
+    const uint16_t *words = (const uint16_t*)data;
+    uint32_t sum = 0;
+    
+    while (length > 1) {
+        sum += *words++;
+        length -= 2;
+    }
+    
+    if (length == 1) {
+        sum += *(const uint8_t*)words;
+    }
+    
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    
+    return (uint16_t)~sum;
+}
+
+uint16_t net_htons(uint16_t n) {
+    return ((n & 0xFF) << 8) | ((n >> 8) & 0xFF);
+}
+
+uint32_t net_htonl(uint32_t n) {
+    return ((n & 0xFF) << 24) | 
+           ((n & 0xFF00) << 8) |
+           ((n >> 8) & 0xFF00) |
+           ((n >> 24) & 0xFF);
+}
+
+void net_print_ip(uint32_t ip) {
+    PRINT(WHITE, BLACK, "%d.%d.%d.%d",
+          (ip >> 0) & 0xFF,
+          (ip >> 8) & 0xFF,
+          (ip >> 16) & 0xFF,
+          (ip >> 24) & 0xFF);
+}
+
+void net_print_mac(uint8_t *mac) {
+    PRINT(WHITE, BLACK, "%02x:%02x:%02x:%02x:%02x:%02x",
+          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+uint32_t net_parse_ip(const char *str) {
+    uint32_t octets[4] = {0};
+    int idx = 0;
+    
+    for (int i = 0; str[i] && idx < 4; i++) {
+        if (str[i] >= '0' && str[i] <= '9') {
+            octets[idx] = octets[idx] * 10 + (str[i] - '0');
+        } else if (str[i] == '.') {
+            idx++;
+        }
+    }
+    
+    return octets[0] | (octets[1] << 8) | 
+           (octets[2] << 16) | (octets[3] << 24);
+}

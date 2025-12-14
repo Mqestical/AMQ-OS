@@ -19,6 +19,13 @@
 #include "anthropic.h"
 #include "System_States.h"
 #include "AC97.h"
+#include "net.h"
+#include "E1000.h"
+#include "arp.h"
+#include "icmp.h"
+#include "udp.h"
+#include "tcp.h"
+#include "dhcp.h"
 
 #define CURSOR_BLINK_RATE 50000
 
@@ -41,6 +48,15 @@ void shell_command_elftest(void);
 void shell_command_elfcheck(const char *args);
 void shell_command_elfload(const char *args);
 void shell_command_elfinfo(const char *args);
+void cmd_netinit(void);
+void cmd_ifconfig(void);
+void cmd_netconfig(const char *args);
+void cmd_dhcp(void);
+void cmd_ping(const char *args);
+void cmd_arp(void);
+void cmd_nettest(void);
+
+/*test func*/
 void test_syscall_interface(void);
 
 void draw_cursor(int visible) {
@@ -90,7 +106,219 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
 }
 
 
+// ========== Network Commands ==========
 
+void cmd_netinit(void) {
+    PRINT(CYAN, BLACK, "\n=== Network Initialization ===\n");
+    net_init();
+    PRINT(GREEN, BLACK, "Network stack initialized!\n");
+    PRINT(WHITE, BLACK, "Next steps:\n");
+    PRINT(WHITE, BLACK, "  1. Use 'ifconfig' to check interface\n");
+    PRINT(WHITE, BLACK, "  2. Use 'dhcp' for automatic config\n");
+    PRINT(WHITE, BLACK, "  3. Or use 'netconfig' for manual setup\n");
+}
+
+void cmd_ifconfig(void) {
+    net_config_t *config = net_get_config();
+    
+    PRINT(CYAN, BLACK, "\n=== Network Interface ===\n");
+    PRINT(WHITE, BLACK, "MAC Address: ");
+    net_print_mac(config->mac);
+    PRINT(WHITE, BLACK, "\n");
+    
+    if (config->configured) {
+        PRINT(GREEN, BLACK, "Status: Configured\n");
+        PRINT(WHITE, BLACK, "IP Address: ");
+        net_print_ip(config->ip);
+        PRINT(WHITE, BLACK, "\nNetmask: ");
+        net_print_ip(config->netmask);
+        PRINT(WHITE, BLACK, "\nGateway: ");
+        net_print_ip(config->gateway);
+        PRINT(WHITE, BLACK, "\n");
+    } else {
+        PRINT(YELLOW, BLACK, "Status: Not configured\n");
+        PRINT(WHITE, BLACK, "Use 'dhcp' or 'netconfig' to configure\n");
+    }
+    
+    if (e1000_link_status()) {
+        PRINT(GREEN, BLACK, "Link: UP\n");
+    } else {
+        PRINT(YELLOW, BLACK, "Link: DOWN\n");
+    }
+}
+
+void cmd_netconfig(const char *args) {
+    char ip_str[32], netmask_str[32], gateway_str[32];
+    int i = 0, j = 0;
+    
+    while (args[i] == ' ') i++;
+    
+    j = 0;
+    while (args[i] && args[i] != ' ' && j < 31) {
+        ip_str[j++] = args[i++];
+    }
+    ip_str[j] = '\0';
+    
+    while (args[i] == ' ') i++;
+    
+    j = 0;
+    while (args[i] && args[i] != ' ' && j < 31) {
+        netmask_str[j++] = args[i++];
+    }
+    netmask_str[j] = '\0';
+    
+    while (args[i] == ' ') i++;
+    
+    j = 0;
+    while (args[i] && args[i] != ' ' && j < 31) {
+        gateway_str[j++] = args[i++];
+    }
+    gateway_str[j] = '\0';
+    
+    if (ip_str[0] == '\0' || netmask_str[0] == '\0' || gateway_str[0] == '\0') {
+        PRINT(YELLOW, BLACK, "Usage: netconfig <ip> <netmask> <gateway>\n");
+        PRINT(WHITE, BLACK, "Example: netconfig 192.168.1.100 255.255.255.0 192.168.1.1\n");
+        return;
+    }
+    
+    uint32_t ip = net_parse_ip(ip_str);
+    uint32_t netmask = net_parse_ip(netmask_str);
+    uint32_t gateway = net_parse_ip(gateway_str);
+    
+    net_set_config(ip, netmask, gateway);
+    PRINT(GREEN, BLACK, "\nNetwork configured successfully!\n");
+}
+
+void cmd_dhcp(void) {
+    PRINT(CYAN, BLACK, "\n=== DHCP Configuration ===\n");
+    
+    dhcp_init();
+    
+    PRINT(WHITE, BLACK, "Sending DHCP Discover...\n");
+    if (dhcp_discover() != 0) {
+        PRINT(YELLOW, BLACK, "Failed to send DHCP Discover\n");
+        return;
+    }
+    
+    PRINT(WHITE, BLACK, "Waiting for DHCP Offer...\n");
+    for (volatile int i = 0; i < 100000000; i++);
+    
+    PRINT(WHITE, BLACK, "Sending DHCP Request...\n");
+    if (dhcp_request() != 0) {
+        PRINT(YELLOW, BLACK, "Failed to send DHCP Request\n");
+        return;
+    }
+    
+    PRINT(WHITE, BLACK, "Waiting for DHCP ACK...\n");
+    if (dhcp_wait_complete(5000) == 0) {
+        PRINT(GREEN, BLACK, "\n=== DHCP Success! ===\n");
+        cmd_ifconfig();
+    } else {
+        PRINT(YELLOW, BLACK, "\nDHCP timeout - no response from server\n");
+        PRINT(WHITE, BLACK, "Try manual configuration with 'netconfig'\n");
+    }
+}
+
+void cmd_ping(const char *args) {
+    while (*args == ' ') args++;
+    
+    if (*args == '\0') {
+        PRINT(YELLOW, BLACK, "Usage: ping <ip_address>\n");
+        PRINT(WHITE, BLACK, "Example: ping 192.168.1.1\n");
+        return;
+    }
+    
+    net_config_t *config = net_get_config();
+    if (!config->configured) {
+        PRINT(YELLOW, BLACK, "Network not configured. Use 'dhcp' or 'netconfig' first.\n");
+        return;
+    }
+    
+    char ip_str[32];
+    int i = 0;
+    while (args[i] && args[i] != ' ' && i < 31) {
+        ip_str[i] = args[i];
+        i++;
+    }
+    ip_str[i] = '\0';
+    
+    uint32_t dest_ip = net_parse_ip(ip_str);
+    
+    PRINT(WHITE, BLACK, "PING ");
+    net_print_ip(dest_ip);
+    PRINT(WHITE, BLACK, " (%s)\n", ip_str);
+    
+    for (int seq = 0; seq < 4; seq++) {
+        PRINT(WHITE, BLACK, "Sending ping %d... ", seq + 1);
+        
+        if (icmp_send_ping(dest_ip, 0x1234, seq) == 0) {
+            PRINT(GREEN, BLACK, "sent\n");
+        } else {
+            PRINT(YELLOW, BLACK, "failed\n");
+        }
+        
+        for (volatile int j = 0; j < 50000000; j++);
+    }
+    
+    PRINT(WHITE, BLACK, "\nPing complete. Check above for replies.\n");
+}
+
+void cmd_arp(void) {
+    PRINT(CYAN, BLACK, "\n=== ARP Cache ===\n");
+    arp_print_cache();
+}
+
+void cmd_nettest(void) {
+    PRINT(CYAN, BLACK, "\n=== Network Stack Test ===\n");
+    
+    net_config_t *config = net_get_config();
+    
+    PRINT(WHITE, BLACK, "\nTest 1: Network Interface\n");
+    PRINT(WHITE, BLACK, "  MAC: ");
+    net_print_mac(config->mac);
+    if (config->configured) {
+        PRINT(GREEN, BLACK, " ✓ Configured\n");
+    } else {
+        PRINT(YELLOW, BLACK, " ✗ Not configured\n");
+    }
+    
+    PRINT(WHITE, BLACK, "\nTest 2: Link Status\n");
+    if (e1000_link_status()) {
+        PRINT(GREEN, BLACK, "  Link UP ✓\n");
+    } else {
+        PRINT(YELLOW, BLACK, "  Link DOWN ✗\n");
+    }
+    
+    PRINT(WHITE, BLACK, "\nTest 3: IP Parsing\n");
+    uint32_t test_ip = net_parse_ip("192.168.1.1");
+    PRINT(WHITE, BLACK, "  Parsed 192.168.1.1 = ");
+    net_print_ip(test_ip);
+    PRINT(GREEN, BLACK, " ✓\n");
+    
+    PRINT(WHITE, BLACK, "\nTest 4: Byte Order Conversion\n");
+    uint16_t host_val = 0x1234;
+    uint16_t net_val = net_htons(host_val);
+    PRINT(WHITE, BLACK, "  htons(0x%x) = 0x%x", host_val, net_val);
+    if (net_val == 0x3412) {
+        PRINT(GREEN, BLACK, " ✓\n");
+    } else {
+        PRINT(YELLOW, BLACK, " ✗\n");
+    }
+    
+    if (config->configured) {
+        PRINT(WHITE, BLACK, "\nTest 5: Ping Gateway\n");
+        PRINT(WHITE, BLACK, "  Target: ");
+        net_print_ip(config->gateway);
+        PRINT(WHITE, BLACK, "\n");
+        
+        icmp_send_ping(config->gateway, 0xABCD, 1);
+        PRINT(WHITE, BLACK, "  Ping sent - check for reply above\n");
+        
+        for (volatile int i = 0; i < 100000000; i++);
+    }
+    
+    PRINT(CYAN, BLACK, "\n=== Test Complete ===\n");
+}
 
 
 uint32_t parse_number(const char *str) {
@@ -961,6 +1189,14 @@ void process_command(char* cmd) {
         PRINT(WHITE, BLACK, "  pianochord               - Play chord arpeggio\n");
         PRINT(WHITE, BLACK, "  pianosong                - Play demo song\n");
         PRINT(WHITE, BLACK, "  pianotest                - Test piano synthesis\n");
+        PRINT(CYAN, BLACK, "\nNetwork Commands:\n");
+        PRINT(WHITE, BLACK, "  netinit              - Initialize network stack\n");
+        PRINT(WHITE, BLACK, "  ifconfig             - Show network interface info\n");
+        PRINT(WHITE, BLACK, "  dhcp                 - Get IP via DHCP\n");
+        PRINT(WHITE, BLACK, "  netconfig <ip> <nm> <gw> - Manual network config\n");
+        PRINT(WHITE, BLACK, "  ping <ip>            - Send ICMP ping\n");
+        PRINT(WHITE, BLACK, "  arp                  - Show ARP cache\n");
+        PRINT(WHITE, BLACK, "  nettest              - Run network tests\n");
         PRINT(GREEN, BLACK, "Shutdown commands: \n");
         PRINT(WHITE, BLACK, "  shutdown - Power off the system\n");
         PRINT(WHITE, BLACK, "  reboot   - Reboot the system\n");
@@ -1526,6 +1762,26 @@ else if (STRNCMP(cmd, "pianosong", 9) == 0) {
 }
 else if (STRNCMP(cmd, "pianotest", 9) == 0) {
     cmd_pianotest();
+} else if (STRNCMP(cmd, "netinit", 7) == 0) {
+    cmd_netinit();
+}
+else if (STRNCMP(cmd, "ifconfig", 8) == 0) {
+    cmd_ifconfig();
+}
+else if (STRNCMP(cmd, "netconfig ", 10) == 0) {
+    cmd_netconfig(cmd + 10);
+}
+else if (STRNCMP(cmd, "dhcp", 4) == 0) {
+    cmd_dhcp();
+}
+else if (STRNCMP(cmd, "ping ", 5) == 0) {
+    cmd_ping(cmd + 5);
+}
+else if (STRNCMP(cmd, "arp", 3) == 0) {
+    cmd_arp();
+}
+else if (STRNCMP(cmd, "nettest", 7) == 0) {
+    cmd_nettest();
 } else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");
