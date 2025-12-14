@@ -7,13 +7,61 @@
 #include "string_helpers.h"
 #include "memory.h"
 #include "E1000.h"
-
+#include "vfs.h"
 #define HTTP_RESPONSE_MAX 16384
 
 static char http_response_buffer[HTTP_RESPONSE_MAX];
 static volatile int http_response_len = 0;
 static volatile int http_transfer_complete = 0;
 static tcp_socket_t *http_socket = NULL;
+
+
+static void extract_filename_from_url(const char *url, char *filename, int max_len) {
+    const char *ptr = url;
+    
+    // Skip protocol
+    if (STRNCMP(ptr, "http://", 7) == 0) {
+        ptr += 7;
+    } else if (STRNCMP(ptr, "https://", 8) == 0) {
+        ptr += 8;
+    }
+    
+    // Find last slash to get filename
+    const char *last_slash = NULL;
+    while (*ptr) {
+        if (*ptr == '/') {
+            last_slash = ptr;
+        }
+        ptr++;
+    }
+    
+    // If we found a slash and there's content after it
+    if (last_slash && *(last_slash + 1) != '\0') {
+        int i = 0;
+        last_slash++; // Move past the slash
+        
+        // Copy filename (stop at query parameters or fragment)
+        while (*last_slash && *last_slash != '?' && *last_slash != '#' && i < max_len - 1) {
+            filename[i++] = *last_slash++;
+        }
+        filename[i] = '\0';
+        
+        // If we got a valid filename, return
+        if (i > 0) {
+            return;
+        }
+    }
+    
+    // Default filename if we couldn't extract one
+    const char *default_name = "index.html";
+    int i = 0;
+    while (default_name[i] && i < max_len - 1) {
+        filename[i] = default_name[i];
+        i++;
+    }
+    filename[i] = '\0';
+}
+
 
 // Parse URL: http://example.com/path -> host, path, port
 static int parse_url(const char *url, char *host, char *path, uint16_t *port) {
@@ -275,10 +323,11 @@ void http_tcp_data_received(uint8_t *data, int len) {
 
 void cmd_wget(const char *url) {
     if (!url || url[0] == '\0') {
-        PRINT(CYAN, BLACK, "\nUsage: wget <url>\n");
+        PRINT(CYAN, BLACK, "\nUsage: wget <url> [-o output_file]\n");
         PRINT(WHITE, BLACK, "Examples:\n");
         PRINT(WHITE, BLACK, "  wget http://example.com\n");
-        PRINT(WHITE, BLACK, "  wget http://example.com/index.html\n");
+        PRINT(WHITE, BLACK, "  wget http://example.com/page.html\n");
+        PRINT(WHITE, BLACK, "  wget http://example.com -o myfile.html\n");
         PRINT(WHITE, BLACK, "  wget http://httpbin.org/ip\n");
         return;
     }
@@ -291,21 +340,55 @@ void cmd_wget(const char *url) {
         return;
     }
     
+    // Parse arguments to find output filename
+    char url_only[512];
+    char output_filename[256];
+    int has_custom_output = 0;
+    
+    // Extract URL and check for -o flag
+    int i = 0;
+    while (url[i] && url[i] != ' ' && i < 511) {
+        url_only[i] = url[i];
+        i++;
+    }
+    url_only[i] = '\0';
+    
+    // Check for -o flag
+    while (url[i] == ' ') i++;
+    if (url[i] == '-' && url[i+1] == 'o') {
+        i += 2;
+        while (url[i] == ' ') i++;
+        
+        int j = 0;
+        while (url[i] && url[i] != ' ' && j < 255) {
+            output_filename[j++] = url[i++];
+        }
+        output_filename[j] = '\0';
+        
+        if (j > 0) {
+            has_custom_output = 1;
+        }
+    }
+    
+    // If no custom output, extract from URL
+    if (!has_custom_output) {
+        extract_filename_from_url(url_only, output_filename, 256);
+    }
+    
     PRINT(CYAN, BLACK, "\n========================================\n");
     PRINT(CYAN, BLACK, "           WGET\n");
     PRINT(CYAN, BLACK, "========================================\n");
-    PRINT(WHITE, BLACK, "URL: %s\n", url);
+    PRINT(WHITE, BLACK, "URL: %s\n", url_only);
+    PRINT(WHITE, BLACK, "Saving to: %s\n", output_filename);
     PRINT(CYAN, BLACK, "----------------------------------------\n");
     
     char response[8192];
-    int len = http_get(url, response, sizeof(response));
+    int len = http_get(url_only, response, sizeof(response));
     
     if (len > 0) {
-        PRINT(CYAN, BLACK, "========================================\n");
-        PRINT(CYAN, BLACK, "           RESPONSE\n");
-        PRINT(CYAN, BLACK, "========================================\n");
+        PRINT(GREEN, BLACK, "[WGET] Downloaded %d bytes\n\n", len);
         
-        // Find headers/body separator
+        // Find the body (after headers)
         int body_start = 0;
         for (int i = 0; i < len - 3; i++) {
             if (response[i] == '\r' && response[i+1] == '\n' && 
@@ -315,44 +398,113 @@ void cmd_wget(const char *url) {
             }
         }
         
+        // Prepare full path
+        char fullpath[512];
+        const char *cwd = vfs_get_cwd_path();
+        
+        // Build full path
+        int idx = 0;
+        if (output_filename[0] == '/') {
+            // Absolute path
+            while (output_filename[idx] && idx < 511) {
+                fullpath[idx] = output_filename[idx];
+                idx++;
+            }
+        } else {
+            // Relative path - prepend cwd
+            int j = 0;
+            while (cwd[j] && idx < 510) {
+                fullpath[idx++] = cwd[j++];
+            }
+            if (idx > 0 && fullpath[idx-1] != '/') {
+                fullpath[idx++] = '/';
+            }
+            j = 0;
+            while (output_filename[j] && idx < 511) {
+                fullpath[idx++] = output_filename[j++];
+            }
+        }
+        fullpath[idx] = '\0';
+        
+        PRINT(WHITE, BLACK, "[WGET] Saving to: %s\n", fullpath);
+        
+        // Create the file if it doesn't exist
+        int fd = vfs_open(fullpath, FILE_WRITE);
+        if (fd < 0) {
+            PRINT(WHITE, BLACK, "[WGET] Creating file...\n");
+            if (vfs_create(fullpath, FILE_READ | FILE_WRITE) != 0) {
+                PRINT(RED, BLACK, "[WGET] ERROR: Failed to create file\n");
+                goto show_preview;
+            }
+            fd = vfs_open(fullpath, FILE_WRITE);
+        }
+        
+        if (fd >= 0) {
+            // Write content to file
+            int write_len = (body_start > 0) ? (len - body_start) : len;
+            uint8_t *write_data = (body_start > 0) ? 
+                (uint8_t*)(response + body_start) : (uint8_t*)response;
+            
+            int written = vfs_write(fd, write_data, write_len);
+            vfs_close(fd);
+            
+            if (written > 0) {
+                PRINT(GREEN, BLACK, "[WGET] File saved successfully (%d bytes)\n\n", written);
+            } else {
+                PRINT(RED, BLACK, "[WGET] âœ— Write failed\n");
+                goto show_preview;
+            }
+        } else {
+            PRINT(RED, BLACK, "[WGET] ERROR: Cannot open file for writing\n");
+            goto show_preview;
+        }
+        
+show_preview:
+        // Show preview of content
+        PRINT(CYAN, BLACK, "========================================\n");
+        PRINT(CYAN, BLACK, "           PREVIEW\n");
+        PRINT(CYAN, BLACK, "========================================\n");
+        
         if (body_start > 0) {
-            // Show headers in yellow
+            // Show headers
             PRINT(YELLOW, BLACK, "--- Headers ---\n");
-            for (int i = 0; i < body_start - 2; i++) {
+            for (int i = 0; i < body_start - 2 && i < 400; i++) {
                 PRINT(WHITE, BLACK, "%c", response[i]);
             }
             PRINT(WHITE, BLACK, "\n");
             
-            // Show body in white/green
-            PRINT(GREEN, BLACK, "--- Body (%d bytes) ---\n", len - body_start);
+            // Show body preview
+            PRINT(GREEN, BLACK, "--- Body (first 512 bytes) ---\n");
             int body_len = len - body_start;
-            int show_len = body_len < 1024 ? body_len : 1024;
+            int show_len = body_len < 512 ? body_len : 512;
             
             for (int i = 0; i < show_len; i++) {
                 PRINT(WHITE, BLACK, "%c", response[body_start + i]);
             }
             
-            if (body_len > 1024) {
-                PRINT(YELLOW, BLACK, "\n\n... (truncated, showing first 1024 of %d bytes)\n", body_len);
+            if (body_len > 512) {
+                PRINT(YELLOW, BLACK, "\n\n... (truncated, full content saved to file)\n");
             }
         } else {
-            // No clear separation, show everything
-            PRINT(WHITE, BLACK, "--- Response ---\n");
-            int show_len = len < 1024 ? len : 1024;
+            // No clear separation, show first 512 bytes
+            int show_len = len < 512 ? len : 512;
             for (int i = 0; i < show_len; i++) {
                 PRINT(WHITE, BLACK, "%c", response[i]);
             }
-            if (len > 1024) {
-                PRINT(YELLOW, BLACK, "\n\n... (truncated, showing first 1024 of %d bytes)\n", len);
+            if (len > 512) {
+                PRINT(YELLOW, BLACK, "\n\n... (truncated)\n");
             }
         }
         
         PRINT(CYAN, BLACK, "\n========================================\n");
-        PRINT(GREEN, BLACK, "SUCCESS: Retrieved %d bytes\n", len);
+        PRINT(GREEN, BLACK, " Download complete\n");
+        PRINT(WHITE, BLACK, "File: %s (%d bytes)\n", output_filename, 
+              body_start > 0 ? (len - body_start) : len);
         PRINT(CYAN, BLACK, "========================================\n\n");
+        
     } else {
         PRINT(CYAN, BLACK, "========================================\n");
-        PRINT(RED, BLACK, "FAILED: Could not retrieve URL\n");
+        PRINT(RED, BLACK, "âœ— FAILED: Could not retrieve URL\n");
         PRINT(CYAN, BLACK, "========================================\n\n");
     }
 }
