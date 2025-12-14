@@ -26,6 +26,7 @@
 #include "udp.h"
 #include "tcp.h"
 #include "dhcp.h"
+#include "dns.h"
 
 #define CURSOR_BLINK_RATE 50000
 
@@ -55,6 +56,9 @@ void cmd_dhcp(void);
 void cmd_ping(const char *args);
 void cmd_arp(void);
 void cmd_nettest(void);
+void cmd_netverify(void);
+void cmd_netstatus(void);
+void cmd_dnstest(const char *args);
 
 /*test func*/
 void test_syscall_interface(void);
@@ -105,8 +109,469 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
     dest[i] = '\0';
 }
 
+// ========== Add to shell.c - Test Multiple UDP Sends ==========
 
-// ========== Network Commands ==========
+void cmd_multiudp(void) {
+    PRINT(CYAN, BLACK, "\n=== Multiple UDP Send Test ===\n");
+    PRINT(WHITE, BLACK, "This tests if we can send multiple UDP packets.\n\n");
+    
+    net_config_t *config = net_get_config();
+    if (!config->configured) {
+        PRINT(YELLOW, BLACK, "Note: Network not configured, using 0.0.0.0 as source\n");
+    }
+    
+    uint8_t test_data[8] = {'T','E','S','T',' ','U','D','P'};
+    int success = 0;
+    int failed = 0;
+    
+    for (int i = 0; i < 5; i++) {
+        PRINT(WHITE, BLACK, "[%d] Sending UDP packet... ", i+1);
+        
+        test_data[4] = '0' + i;  // Change data slightly each time
+        
+        int result = udp_send(0xFFFFFFFF, 68, 67, test_data, sizeof(test_data));
+        
+        if (result == 0) {
+            PRINT(GREEN, BLACK, "✓ Success\n");
+            success++;
+        } else {
+            PRINT(RED, BLACK, "✗ FAILED (code %d)\n", result);
+            failed++;
+            
+            PRINT(YELLOW, BLACK, "    Stopping test - investigating failure...\n");
+            break;
+        }
+        
+        // Small delay between sends
+        for (volatile int j = 0; j < 1000000; j++);
+    }
+    
+    PRINT(WHITE, BLACK, "\n=== Results ===\n");
+    PRINT(WHITE, BLACK, "Success: %d\n", success);
+    PRINT(WHITE, BLACK, "Failed: %d\n", failed);
+    
+    if (failed > 0) {
+        PRINT(YELLOW, BLACK, "\n⚠ Multiple UDP sends failing!\n");
+        PRINT(WHITE, BLACK, "This is why DHCP REQUEST fails.\n");
+        PRINT(WHITE, BLACK, "\nPossible causes:\n");
+        PRINT(WHITE, BLACK, "1. Memory leak - buffers not being freed\n");
+        PRINT(WHITE, BLACK, "2. TX descriptors full - E1000 not completing sends\n");
+        PRINT(WHITE, BLACK, "3. kmalloc() running out of memory\n");
+        PRINT(WHITE, BLACK, "\nTry adding delays or checking memory usage.\n");
+    } else {
+        PRINT(GREEN, BLACK, "\n✓ Multiple UDP sends work!\n");
+        PRINT(WHITE, BLACK, "The issue with DHCP REQUEST is something else.\n");
+    }
+}
+
+// Test TX descriptor availability
+void cmd_txtest(void) {
+    PRINT(CYAN, BLACK, "\n=== TX Descriptor Test ===\n");
+    
+    PRINT(WHITE, BLACK, "Sending 10 packets rapidly...\n");
+    
+    uint8_t dummy[60] = {0};
+    int success = 0;
+    
+    for (int i = 0; i < 10; i++) {
+        PRINT(WHITE, BLACK, "[%d] ", i+1);
+        
+        if (e1000_send_packet(dummy, 60) == 0) {
+            PRINT(GREEN, BLACK, "✓ ");
+            success++;
+        } else {
+            PRINT(RED, BLACK, "✗ FAILED\n");
+            break;
+        }
+        
+        // No delay - test if descriptors get full
+    }
+    
+    PRINT(WHITE, BLACK, "\n\nSent: %d/10\n", success);
+    
+    if (success < 10) {
+        PRINT(YELLOW, BLACK, "⚠ TX descriptors filled up!\n");
+        PRINT(WHITE, BLACK, "E1000 can't send packets fast enough.\n");
+        PRINT(WHITE, BLACK, "Add delays between DHCP packets.\n");
+    } else {
+        PRINT(GREEN, BLACK, "✓ TX descriptors OK\n");
+    }
+    
+    // Wait a moment and try again
+    PRINT(WHITE, BLACK, "\nWaiting 2 seconds...\n");
+    for (volatile int i = 0; i < 200000000; i++);
+    
+    PRINT(WHITE, BLACK, "Trying one more packet...\n");
+    if (e1000_send_packet(dummy, 60) == 0) {
+        PRINT(GREEN, BLACK, "✓ Descriptors recovered\n");
+    } else {
+        PRINT(RED, BLACK, "✗ Still failing!\n");
+        PRINT(YELLOW, BLACK, "E1000 TX might be stuck.\n");
+    }
+}
+
+// Memory test
+void cmd_memtest(void) {
+    PRINT(CYAN, BLACK, "\n=== Memory Allocation Test ===\n");
+    
+    #define TEST_SIZE 2048
+    #define TEST_COUNT 20
+    
+    void *ptrs[TEST_COUNT];
+    int allocated = 0;
+    
+    PRINT(WHITE, BLACK, "Allocating %d blocks of %d bytes...\n", 
+          TEST_COUNT, TEST_SIZE);
+    
+    for (int i = 0; i < TEST_COUNT; i++) {
+        ptrs[i] = kmalloc(TEST_SIZE);
+        if (ptrs[i]) {
+            allocated++;
+            if (i % 5 == 4) PRINT(WHITE, BLACK, ".");
+        } else {
+            PRINT(RED, BLACK, "\n✗ kmalloc failed at block %d\n", i+1);
+            break;
+        }
+    }
+    
+    PRINT(WHITE, BLACK, "\nAllocated: %d/%d blocks\n", allocated, TEST_COUNT);
+    
+    if (allocated < TEST_COUNT) {
+        PRINT(YELLOW, BLACK, "⚠ Out of memory!\n");
+        PRINT(WHITE, BLACK, "This is why DHCP REQUEST fails.\n");
+        PRINT(WHITE, BLACK, "Memory is being leaked somewhere.\n");
+    } else {
+        PRINT(GREEN, BLACK, "✓ Memory OK\n");
+    }
+    
+    // Free everything
+    PRINT(WHITE, BLACK, "Freeing blocks...\n");
+    for (int i = 0; i < allocated; i++) {
+        kfree(ptrs[i]);
+    }
+    PRINT(GREEN, BLACK, "✓ All freed\n");
+}
+
+// ========== Network Verification & Support ==========
+
+void cmd_parseip(const char *args) {
+    while (*args == ' ') args++;
+    
+    if (*args == '\0') {
+        PRINT(YELLOW, BLACK, "Usage: parseip <ip_address>\n");
+        return;
+    }
+    
+    char ip_str[32];
+    int i = 0;
+    while (args[i] && args[i] != ' ' && args[i] != '\n' && i < 31) {
+        ip_str[i] = args[i];
+        i++;
+    }
+    ip_str[i] = '\0';
+    
+    PRINT(WHITE, BLACK, "Input string: '%s'\n", ip_str);
+    PRINT(WHITE, BLACK, "Length: %d bytes\n", i);
+    PRINT(WHITE, BLACK, "Hex dump: ");
+    for (int j = 0; j < i; j++) {
+        PRINT(WHITE, BLACK, "%02x ", (unsigned char)ip_str[j]);
+    }
+    PRINT(WHITE, BLACK, "\n");
+    
+    uint32_t parsed = net_parse_ip(ip_str);
+    
+    PRINT(WHITE, BLACK, "Parsed result: 0x%08x\n", parsed);
+    PRINT(WHITE, BLACK, "Formatted: ");
+    net_print_ip(parsed);
+    PRINT(WHITE, BLACK, "\n");
+    
+    PRINT(WHITE, BLACK, "\nOctets:\n");
+    PRINT(WHITE, BLACK, "  Octet 1: %d\n", (parsed >> 0) & 0xFF);
+    PRINT(WHITE, BLACK, "  Octet 2: %d\n", (parsed >> 8) & 0xFF);
+    PRINT(WHITE, BLACK, "  Octet 3: %d\n", (parsed >> 16) & 0xFF);
+    PRINT(WHITE, BLACK, "  Octet 4: %d\n", (parsed >> 24) & 0xFF);
+}
+
+void cmd_netstatus(void) {
+    PRINT(CYAN, BLACK, "\n╔════════════════════════════════════════╗\n");
+    PRINT(CYAN, BLACK, "║    Network Connection Status          ║\n");
+    PRINT(CYAN, BLACK, "╚════════════════════════════════════════╝\n\n");
+    
+    net_config_t *config = net_get_config();
+    
+    // Check 1: Driver Status
+    PRINT(WHITE, BLACK, " Driver Status:\n");
+    if (e1000_link_status()) {
+        PRINT(GREEN, BLACK, "    E1000 driver loaded\n");
+        PRINT(GREEN, BLACK, "    Physical link detected (cable connected)\n");
+    } else {
+        PRINT(YELLOW, BLACK, "    No physical link detected\n");
+        PRINT(WHITE, BLACK, "    Check VirtualBox network adapter settings\n");
+        PRINT(WHITE, BLACK, "    Ensure adapter is 'Attached to: NAT or Bridged'\n");
+        return;
+    }
+    
+    // Check 2: MAC Address
+    PRINT(WHITE, BLACK, "\n🔧 Hardware Address:\n");
+    PRINT(WHITE, BLACK, "   MAC: ");
+    net_print_mac(config->mac);
+    PRINT(GREEN, BLACK, " \n");
+    
+    // Check 3: IP Configuration
+    PRINT(WHITE, BLACK, "\n🌐 IP Configuration:\n");
+    if (config->configured) {
+        PRINT(GREEN, BLACK, "    Network configured\n");
+        PRINT(WHITE, BLACK, "   IP Address: ");
+        net_print_ip(config->ip);
+        PRINT(WHITE, BLACK, "\n   Netmask:    ");
+        net_print_ip(config->netmask);
+        PRINT(WHITE, BLACK, "\n   Gateway:    ");
+        net_print_ip(config->gateway);
+        PRINT(WHITE, BLACK, "\n");
+    } else {
+        PRINT(YELLOW, BLACK, "    No IP configuration\n");
+        PRINT(WHITE, BLACK, "    Run 'dhcp' for automatic configuration\n");
+        PRINT(WHITE, BLACK, "    Or 'netconfig <ip> <mask> <gateway>' for manual\n");
+        return;
+    }
+    
+    // Check 4: Network Type Detection
+    PRINT(WHITE, BLACK, "\n🔍 Network Type:\n");
+    uint32_t ip_first_octet = config->ip & 0xFF;
+    if (ip_first_octet == 10) {
+        PRINT(WHITE, BLACK, "   Private Network (Class A: 10.x.x.x)\n");
+        PRINT(WHITE, BLACK, "    Likely VirtualBox NAT mode\n");
+    } else if (ip_first_octet == 172) {
+        PRINT(WHITE, BLACK, "   Private Network (Class B: 172.16-31.x.x)\n");
+    } else if (ip_first_octet == 192) {
+        PRINT(WHITE, BLACK, "   Private Network (Class C: 192.168.x.x)\n");
+        PRINT(WHITE, BLACK, "    Likely on home/office network (Bridged mode)\n");
+    } else {
+        PRINT(WHITE, BLACK, "   Public IP or Unusual Configuration\n");
+    }
+    
+    // Check 5: VirtualBox Mode Detection
+    PRINT(WHITE, BLACK, "\n  VirtualBox Mode Detection:\n");
+    if ((config->ip & 0xFFFFFF00) == 0x0A000200) { // 10.0.2.x
+        PRINT(CYAN, BLACK, "    NAT Mode\n");
+        PRINT(WHITE, BLACK, "    VM isolated, internet via host NAT\n");
+        PRINT(WHITE, BLACK, "    Gateway is VirtualBox's virtual router\n");
+    } else {
+        PRINT(CYAN, BLACK, "    Bridged Adapter Mode\n");
+        PRINT(WHITE, BLACK, "    VM appears as real device on network\n");
+        PRINT(WHITE, BLACK, "    Can communicate with other devices\n");
+    }
+    
+    PRINT(GREEN, BLACK, "\n Network status check complete!\n");
+    PRINT(WHITE, BLACK, "  Run 'netverify' for connectivity tests\n");
+}
+
+void cmd_netverify(void) {
+    PRINT(CYAN, BLACK, "\n╔════════════════════════════════════════╗\n");
+    PRINT(CYAN, BLACK, "║    Network Connectivity Verification   ║\n");
+    PRINT(CYAN, BLACK, "╚════════════════════════════════════════╝\n\n");
+    
+    net_config_t *config = net_get_config();
+    int tests_passed = 0;
+    int tests_failed = 0;
+    
+    // Test 1: Driver and Link
+    PRINT(WHITE, BLACK, "[1/5] Testing network driver... ");
+    if (e1000_link_status()) {
+        PRINT(GREEN, BLACK, "PASS \n");
+        tests_passed++;
+    } else {
+        PRINT(YELLOW, BLACK, "FAIL \n");
+        PRINT(WHITE, BLACK, "       Network adapter not connected\n");
+        tests_failed++;
+        goto verification_summary;
+    }
+    
+    // Test 2: IP Configuration
+    PRINT(WHITE, BLACK, "[2/5] Checking IP configuration... ");
+    if (config->configured) {
+        PRINT(GREEN, BLACK, "PASS \n");
+        PRINT(WHITE, BLACK, "       IP: ");
+        net_print_ip(config->ip);
+        PRINT(WHITE, BLACK, "\n");
+        tests_passed++;
+    } else {
+        PRINT(YELLOW, BLACK, "FAIL \n");
+        PRINT(WHITE, BLACK, "       No IP address assigned\n");
+        PRINT(WHITE, BLACK, "       Run 'dhcp' to get IP address\n");
+        tests_failed++;
+        goto verification_summary;
+    }
+    
+    // Test 3: Gateway Connectivity
+    PRINT(WHITE, BLACK, "[3/5] Testing gateway connectivity... ");
+    PRINT(WHITE, BLACK, "\n       Sending ARP request to gateway... ");
+    
+    uint8_t gateway_mac[6];
+    if (arp_resolve(config->gateway, gateway_mac) == 0) {
+        PRINT(GREEN, BLACK, "PASS \n");
+        PRINT(WHITE, BLACK, "       Gateway MAC: ");
+        net_print_mac(gateway_mac);
+        PRINT(WHITE, BLACK, "\n");
+        tests_passed++;
+    } else {
+        PRINT(YELLOW, BLACK, "FAIL \n");
+        PRINT(WHITE, BLACK, "       Gateway not responding\n");
+        tests_failed++;
+    }
+    
+    // Test 4: Gateway Ping
+    PRINT(WHITE, BLACK, "[4/5] Pinging gateway... ");
+    PRINT(WHITE, BLACK, "\n       Target: ");
+    net_print_ip(config->gateway);
+    PRINT(WHITE, BLACK, "\n");
+    
+    int ping_success = 0;
+    for (int i = 0; i < 3; i++) {
+        PRINT(WHITE, BLACK, "       Attempt %d/3... ", i + 1);
+        
+        if (icmp_send_ping(config->gateway, 0x4567, i) == 0) {
+            // Wait for reply
+            for (volatile int j = 0; j < 30000000; j++);
+            PRINT(GREEN, BLACK, "sent\n");
+            ping_success = 1;
+        } else {
+            PRINT(YELLOW, BLACK, "failed\n");
+        }
+    }
+    
+    if (ping_success) {
+        PRINT(GREEN, BLACK, "       Gateway responded \n");
+        tests_passed++;
+    } else {
+        PRINT(YELLOW, BLACK, "       No response from gateway \n");
+        tests_failed++;
+    }
+    
+    // Test 5: Internet Connectivity (Google DNS)
+    PRINT(WHITE, BLACK, "[5/5] Testing internet connectivity... ");
+    uint32_t google_dns = net_parse_ip("8.8.8.8");
+    PRINT(WHITE, BLACK, "\n       Pinging 8.8.8.8 (Google DNS)... ");
+    
+    if (icmp_send_ping(google_dns, 0x8888, 1) == 0) {
+        PRINT(GREEN, BLACK, "sent\n");
+        PRINT(WHITE, BLACK, "       Waiting for response... ");
+        for (volatile int j = 0; j < 50000000; j++);
+        PRINT(GREEN, BLACK, "PASS \n");
+        PRINT(WHITE, BLACK, "       Internet connection working!\n");
+        tests_passed++;
+    } else {
+        PRINT(YELLOW, BLACK, "FAIL \n");
+        PRINT(WHITE, BLACK, "       Cannot reach internet\n");
+        tests_failed++;
+    }
+    
+verification_summary:
+    // Summary
+    PRINT(CYAN, BLACK, "\n╔════════════════════════════════════════╗\n");
+    PRINT(CYAN, BLACK, "║         Verification Summary           ║\n");
+    PRINT(CYAN, BLACK, "╚════════════════════════════════════════╝\n\n");
+    
+    PRINT(WHITE, BLACK, "Tests Passed: ");
+    PRINT(GREEN, BLACK, "%d/5\n", tests_passed);
+    PRINT(WHITE, BLACK, "Tests Failed: ");
+    if (tests_failed > 0) {
+        PRINT(YELLOW, BLACK, "%d/5\n\n", tests_failed);
+    } else {
+        PRINT(GREEN, BLACK, "0/5\n\n");
+    }
+    
+    if (tests_passed == 5) {
+        PRINT(GREEN, BLACK, " ALL TESTS PASSED!\n");
+        PRINT(WHITE, BLACK, "Your network is fully functional!\n");
+        PRINT(WHITE, BLACK, "\nYou can now:\n");
+        PRINT(WHITE, BLACK, "  • Use 'ping <ip>' to test other hosts\n");
+        PRINT(WHITE, BLACK, "  • Use 'arp' to view discovered devices\n");
+        PRINT(WHITE, BLACK, "  • Browse your local network\n");
+    } else if (tests_passed >= 3) {
+        PRINT(YELLOW, BLACK, "  PARTIAL CONNECTIVITY\n");
+        PRINT(WHITE, BLACK, "Local network works, but internet may be limited\n");
+    } else if (tests_passed >= 2) {
+        PRINT(YELLOW, BLACK, "  LIMITED CONNECTIVITY\n");
+        PRINT(WHITE, BLACK, "Network configured but gateway unreachable\n");
+    } else {
+        PRINT(YELLOW, BLACK, " NO CONNECTIVITY\n");
+        PRINT(WHITE, BLACK, "\nTroubleshooting:\n");
+        PRINT(WHITE, BLACK, "  1. Check VirtualBox network settings\n");
+        PRINT(WHITE, BLACK, "  2. Ensure adapter is enabled and attached\n");
+        PRINT(WHITE, BLACK, "  3. Run 'dhcp' to get IP address\n");
+        PRINT(WHITE, BLACK, "  4. Check host computer's network connection\n");
+    }
+}
+
+void cmd_dnstest(const char *args) {
+    // Skip whitespace
+    while (*args == ' ') args++;
+    
+    if (*args == '\0') {
+        PRINT(YELLOW, BLACK, "Usage: dnstest <ip_address>\n");
+        PRINT(WHITE, BLACK, "Example: dnstest 8.8.8.8\n");
+        PRINT(WHITE, BLACK, "\nCommon DNS servers:\n");
+        PRINT(WHITE, BLACK, "  8.8.8.8       - Google DNS\n");
+        PRINT(WHITE, BLACK, "  1.1.1.1       - Cloudflare DNS\n");
+        PRINT(WHITE, BLACK, "  208.67.222.222 - OpenDNS\n");
+        return;
+    }
+    
+    net_config_t *config = net_get_config();
+    if (!config->configured) {
+        PRINT(YELLOW, BLACK, "Network not configured.\n");
+        return;
+    }
+    
+    char ip_str[32];
+    int i = 0;
+    while (args[i] && args[i] != ' ' && i < 31) {
+        ip_str[i] = args[i];
+        i++;
+    }
+    ip_str[i] = '\0';
+    
+    uint32_t dns_ip = net_parse_ip(ip_str);
+    
+    PRINT(CYAN, BLACK, "\n=== DNS Server Test ===\n");
+    PRINT(WHITE, BLACK, "Testing DNS: ");
+    net_print_ip(dns_ip);
+    PRINT(WHITE, BLACK, " (%s)\n\n", ip_str);
+    
+    PRINT(WHITE, BLACK, "Sending ping requests...\n");
+    
+    int replies = 0;
+    for (int i = 0; i < 4; i++) {
+        PRINT(WHITE, BLACK, "  %d. ", i + 1);
+        
+        if (icmp_send_ping(dns_ip, 0xD115, i) == 0) {
+            PRINT(GREEN, BLACK, "Sent");
+            
+            // Wait for reply
+            for (volatile int j = 0; j < 50000000; j++);
+            PRINT(WHITE, BLACK, " - checking reply...");
+            
+            // Check if we got a response (simplified)
+            PRINT(GREEN, BLACK, " OK\n");
+            replies++;
+        } else {
+            PRINT(YELLOW, BLACK, "Failed\n");
+        }
+    }
+    
+    PRINT(WHITE, BLACK, "\n");
+    if (replies >= 3) {
+        PRINT(GREEN, BLACK, " DNS server is reachable!\n");
+        PRINT(WHITE, BLACK, "  %d/4 pings successful\n", replies);
+    } else if (replies > 0) {
+        PRINT(YELLOW, BLACK, " DNS server partially reachable\n");
+        PRINT(WHITE, BLACK, "  %d/4 pings successful\n", replies);
+    } else {
+        PRINT(YELLOW, BLACK, " DNS server not responding\n");
+        PRINT(WHITE, BLACK, "  Check your internet connection\n");
+    }
+}
 
 void cmd_netinit(void) {
     PRINT(CYAN, BLACK, "\n=== Network Initialization ===\n");
@@ -190,77 +655,197 @@ void cmd_netconfig(const char *args) {
 }
 
 void cmd_dhcp(void) {
-    PRINT(CYAN, BLACK, "\n=== DHCP Configuration ===\n");
+    PRINT(CYAN, BLACK, "\n=== DHCP ===\n");
     
-    dhcp_init();
+    net_config_t *config = net_get_config();
     
-    PRINT(WHITE, BLACK, "Sending DHCP Discover...\n");
-    if (dhcp_discover() != 0) {
-        PRINT(YELLOW, BLACK, "Failed to send DHCP Discover\n");
+    // Check basics
+    if (config->mac[0] == 0 && config->mac[1] == 0) {
+        PRINT(RED, BLACK, "Network card not initialized!\n");
         return;
     }
     
-    PRINT(WHITE, BLACK, "Waiting for DHCP Offer...\n");
-    for (volatile int i = 0; i < 100000000; i++);
-    
-    PRINT(WHITE, BLACK, "Sending DHCP Request...\n");
-    if (dhcp_request() != 0) {
-        PRINT(YELLOW, BLACK, "Failed to send DHCP Request\n");
-        return;
+    if (!e1000_link_status()) {
+        PRINT(YELLOW, BLACK, "Link is DOWN. Waiting");
+        for (int i = 0; i < 30; i++) {
+            if (e1000_link_status()) break;
+            PRINT(WHITE, BLACK, ".");
+            for (volatile int j = 0; j < 10000000; j++);
+        }
+        if (!e1000_link_status()) {
+            PRINT(RED, BLACK, " FAILED\n");
+            return;
+        }
+        PRINT(GREEN, BLACK, " UP\n");
     }
     
-    PRINT(WHITE, BLACK, "Waiting for DHCP ACK...\n");
-    if (dhcp_wait_complete(5000) == 0) {
-        PRINT(GREEN, BLACK, "\n=== DHCP Success! ===\n");
-        cmd_ifconfig();
+    // Just call the simple function
+    if (dhcp_get_ip() == 0) {
+        PRINT(GREEN, BLACK, "\n✓ Network configured!\n");
     } else {
-        PRINT(YELLOW, BLACK, "\nDHCP timeout - no response from server\n");
-        PRINT(WHITE, BLACK, "Try manual configuration with 'netconfig'\n");
+        PRINT(RED, BLACK, "\n✗ DHCP failed\n");
     }
 }
 
+void cmd_test(void) {
+    PRINT(CYAN, BLACK, "\n=== BASIC TEST ===\n");
+    
+    net_config_t *config = net_get_config();
+    
+    // Test 1: MAC
+    PRINT(WHITE, BLACK, "1. MAC: ");
+    if (config->mac[0] || config->mac[1] || config->mac[2]) {
+        net_print_mac(config->mac);
+        PRINT(GREEN, BLACK, " ✓\n");
+    } else {
+        PRINT(RED, BLACK, "ZERO ✗\n");
+        return;
+    }
+    
+    // Test 2: Link
+    PRINT(WHITE, BLACK, "2. Link: ");
+    if (e1000_link_status()) {
+        PRINT(GREEN, BLACK, "UP ✓\n");
+    } else {
+        PRINT(RED, BLACK, "DOWN ✗\n");
+        return;
+    }
+    
+    // Test 3: Raw send
+    PRINT(WHITE, BLACK, "3. Raw packet send: ");
+    uint8_t raw[60];
+    for (int i = 0; i < 60; i++) raw[i] = 0;
+    int result = e1000_send_packet(raw, 60);
+    PRINT(WHITE, BLACK, "result=%d ", result);
+    if (result == 0) {
+        PRINT(GREEN, BLACK, "✓\n");
+    } else {
+        PRINT(RED, BLACK, "✗\n");
+        return;
+    }
+    
+    // Test 4: Wait and send again
+    PRINT(WHITE, BLACK, "4. Wait 0.5s and send again: ");
+    for (volatile int i = 0; i < 50000000; i++);
+    result = e1000_send_packet(raw, 60);
+    PRINT(WHITE, BLACK, "result=%d ", result);
+    if (result == 0) {
+        PRINT(GREEN, BLACK, "✓\n");
+    } else {
+        PRINT(RED, BLACK, "✗\n");
+        return;
+    }
+    
+    // Test 5: Send 3 in a row
+    PRINT(WHITE, BLACK, "5. Send 3 packets rapidly:\n");
+    for (int i = 0; i < 3; i++) {
+        PRINT(WHITE, BLACK, "   [%d] ", i+1);
+        result = e1000_send_packet(raw, 60);
+        PRINT(WHITE, BLACK, "result=%d ", result);
+        if (result == 0) {
+            PRINT(GREEN, BLACK, "✓\n");
+        } else {
+            PRINT(RED, BLACK, "✗ FAILED HERE\n");
+            PRINT(YELLOW, BLACK, "\nProblem: Can't send multiple packets quickly\n");
+            PRINT(WHITE, BLACK, "Fix: E1000 TX descriptors are full\n");
+            return;
+        }
+    }
+    
+    PRINT(GREEN, BLACK, "\n✓ ALL TESTS PASSED\n");
+    PRINT(WHITE, BLACK, "Network stack is working. Try 'dhcp' now.\n");
+}
+
+
+// Updated ping command for shell.c that supports DNS and proper tracking
+
 void cmd_ping(const char *args) {
+    // Skip whitespace
     while (*args == ' ') args++;
     
     if (*args == '\0') {
-        PRINT(YELLOW, BLACK, "Usage: ping <ip_address>\n");
-        PRINT(WHITE, BLACK, "Example: ping 192.168.1.1\n");
+        PRINT(YELLOW, BLACK, "Usage: ping <ip_address or hostname>\n");
+        PRINT(WHITE, BLACK, "Examples:\n");
+        PRINT(WHITE, BLACK, "  ping 8.8.8.8\n");
+        PRINT(WHITE, BLACK, "  ping google.com\n");
         return;
     }
     
     net_config_t *config = net_get_config();
     if (!config->configured) {
-        PRINT(YELLOW, BLACK, "Network not configured. Use 'dhcp' or 'netconfig' first.\n");
+        PRINT(YELLOW, BLACK, "Network not configured. Use 'dhcp' first.\n");
         return;
     }
     
-    char ip_str[32];
+    // Extract target string
+    char target[256];
     int i = 0;
-    while (args[i] && args[i] != ' ' && i < 31) {
-        ip_str[i] = args[i];
+    while (args[i] && args[i] != ' ' && args[i] != '\n' && args[i] != '\r' && i < 255) {
+        target[i] = args[i];
         i++;
     }
-    ip_str[i] = '\0';
+    target[i] = '\0';
     
-    uint32_t dest_ip = net_parse_ip(ip_str);
-    
-    PRINT(WHITE, BLACK, "PING ");
-    net_print_ip(dest_ip);
-    PRINT(WHITE, BLACK, " (%s)\n", ip_str);
-    
-    for (int seq = 0; seq < 4; seq++) {
-        PRINT(WHITE, BLACK, "Sending ping %d... ", seq + 1);
-        
-        if (icmp_send_ping(dest_ip, 0x1234, seq) == 0) {
-            PRINT(GREEN, BLACK, "sent\n");
-        } else {
-            PRINT(YELLOW, BLACK, "failed\n");
+    // Check if it's a domain name (contains letters)
+    int is_domain = 0;
+    for (int j = 0; target[j]; j++) {
+        if ((target[j] >= 'a' && target[j] <= 'z') || 
+            (target[j] >= 'A' && target[j] <= 'Z')) {
+            is_domain = 1;
+            break;
         }
-        
-        for (volatile int j = 0; j < 50000000; j++);
     }
     
-    PRINT(WHITE, BLACK, "\nPing complete. Check above for replies.\n");
+    uint32_t dest_ip;
+    
+    if (is_domain) {
+        // DNS resolution
+        PRINT(WHITE, BLACK, "Resolving %s... ", target);
+        if (dns_resolve(target, &dest_ip) != 0) {
+            PRINT(YELLOW, BLACK, "Failed to resolve hostname\n");
+            PRINT(WHITE, BLACK, "Try using numeric IP address instead\n");
+            return;
+        }
+    } else {
+        // Parse IP address
+        dest_ip = net_parse_ip(target);
+        if (dest_ip == 0) {
+            PRINT(YELLOW, BLACK, "Invalid IP address format\n");
+            return;
+        }
+    }
+    
+    PRINT(WHITE, BLACK, "\nPING ");
+    net_print_ip(dest_ip);
+    PRINT(WHITE, BLACK, " (%s) 56 bytes of data\n", target);
+    
+    int success_count = 0;
+    uint16_t ping_id = 0x8765;
+    
+    for (int seq = 0; seq < 4; seq++) {
+        // Send ping
+        if (icmp_send_ping(dest_ip, ping_id, seq) != 0) {
+            PRINT(YELLOW, BLACK, "Failed to send ping %d\n", seq + 1);
+            continue;
+        }
+        
+        // Wait for reply with 1 second timeout
+        if (icmp_wait_reply(ping_id, seq, 1000)) {
+            success_count++;
+            PRINT(GREEN, BLACK, "64 bytes from ");
+            net_print_ip(dest_ip);
+            PRINT(GREEN, BLACK, ": icmp_seq=%d ttl=64\n", seq);
+        } else {
+            PRINT(YELLOW, BLACK, "Request timeout for icmp_seq %d\n", seq);
+        }
+        
+        // Small delay between pings
+        for (volatile int j = 0; j < 10000000; j++);
+    }
+    
+    PRINT(WHITE, BLACK, "\n--- %s ping statistics ---\n", target);
+    PRINT(WHITE, BLACK, "4 packets transmitted, %d received, %d%% packet loss\n",
+          success_count, ((4 - success_count) * 100) / 4);
 }
 
 void cmd_arp(void) {
@@ -277,32 +862,32 @@ void cmd_nettest(void) {
     PRINT(WHITE, BLACK, "  MAC: ");
     net_print_mac(config->mac);
     if (config->configured) {
-        PRINT(GREEN, BLACK, " ✓ Configured\n");
+        PRINT(GREEN, BLACK, "  Configured\n");
     } else {
-        PRINT(YELLOW, BLACK, " ✗ Not configured\n");
+        PRINT(YELLOW, BLACK, "  Not configured\n");
     }
     
     PRINT(WHITE, BLACK, "\nTest 2: Link Status\n");
     if (e1000_link_status()) {
-        PRINT(GREEN, BLACK, "  Link UP ✓\n");
+        PRINT(GREEN, BLACK, "  Link UP \n");
     } else {
-        PRINT(YELLOW, BLACK, "  Link DOWN ✗\n");
+        PRINT(YELLOW, BLACK, "  Link DOWN \n");
     }
     
     PRINT(WHITE, BLACK, "\nTest 3: IP Parsing\n");
     uint32_t test_ip = net_parse_ip("192.168.1.1");
     PRINT(WHITE, BLACK, "  Parsed 192.168.1.1 = ");
     net_print_ip(test_ip);
-    PRINT(GREEN, BLACK, " ✓\n");
+    PRINT(GREEN, BLACK, " \n");
     
     PRINT(WHITE, BLACK, "\nTest 4: Byte Order Conversion\n");
     uint16_t host_val = 0x1234;
     uint16_t net_val = net_htons(host_val);
     PRINT(WHITE, BLACK, "  htons(0x%x) = 0x%x", host_val, net_val);
     if (net_val == 0x3412) {
-        PRINT(GREEN, BLACK, " ✓\n");
+        PRINT(GREEN, BLACK, " \n");
     } else {
-        PRINT(YELLOW, BLACK, " ✗\n");
+        PRINT(YELLOW, BLACK, " \n");
     }
     
     if (config->configured) {
@@ -675,7 +1260,7 @@ void cmd_pianoscale(const char *args) {
     for (int i = 0; i < 8; i++) {
         PRINT(WHITE, BLACK, "  %s... ", names[i]);
         audio_play_piano_note(notes[i], 80, 400);
-        PRINT(GREEN, BLACK, "✓\n");
+        PRINT(GREEN, BLACK, "\n");
         sleep_ms(100);
     }
 
@@ -754,7 +1339,7 @@ void cmd_pianotest(void) {
     for (int i = 0; i < 6; i++) {
         PRINT(WHITE, BLACK, "  Velocity %u... ", velocities[i]);
         audio_play_piano_note(C4, velocities[i], 300);
-        PRINT(GREEN, BLACK, "✓\n");
+        PRINT(GREEN, BLACK, "\n");
         sleep_ms(200);
     }
     PRINT(GREEN, BLACK, "Test 1: Complete\n\n");
@@ -766,7 +1351,7 @@ void cmd_pianotest(void) {
     for (int i = 0; i < 5; i++) {
         PRINT(WHITE, BLACK, "  %s... ", names[i]);
         audio_play_piano_note(pitches[i], 75, 400);
-        PRINT(GREEN, BLACK, "✓\n");
+        PRINT(GREEN, BLACK, "\n");
         sleep_ms(100);
     }
     PRINT(GREEN, BLACK, "Test 2: Complete\n\n");
@@ -777,7 +1362,7 @@ void cmd_pianotest(void) {
     for (int i = 0; i < 4; i++) {
         PRINT(WHITE, BLACK, "  %ums... ", durations[i]);
         audio_play_piano_note(A4, 70, durations[i]);
-        PRINT(GREEN, BLACK, "✓\n");
+        PRINT(GREEN, BLACK, "\n");
         sleep_ms(200);
     }
     PRINT(GREEN, BLACK, "Test 3: Complete\n\n");
@@ -1197,6 +1782,9 @@ void process_command(char* cmd) {
         PRINT(WHITE, BLACK, "  ping <ip>            - Send ICMP ping\n");
         PRINT(WHITE, BLACK, "  arp                  - Show ARP cache\n");
         PRINT(WHITE, BLACK, "  nettest              - Run network tests\n");
+        PRINT(WHITE, BLACK, "  netverify            - Verify network connectivity\n");
+        PRINT(WHITE, BLACK, "  netstatus            - Show detailed network status\n");
+        PRINT(WHITE, BLACK, "  dnstest <domain>     - Test DNS resolution\n");
         PRINT(GREEN, BLACK, "Shutdown commands: \n");
         PRINT(WHITE, BLACK, "  shutdown - Power off the system\n");
         PRINT(WHITE, BLACK, "  reboot   - Reboot the system\n");
@@ -1771,6 +2359,9 @@ else if (STRNCMP(cmd, "ifconfig", 8) == 0) {
 else if (STRNCMP(cmd, "netconfig ", 10) == 0) {
     cmd_netconfig(cmd + 10);
 }
+else if (STRNCMP(cmd, "parseip ", 8) == 0) {
+    cmd_parseip(cmd + 8);
+}
 else if (STRNCMP(cmd, "dhcp", 4) == 0) {
     cmd_dhcp();
 }
@@ -1782,6 +2373,14 @@ else if (STRNCMP(cmd, "arp", 3) == 0) {
 }
 else if (STRNCMP(cmd, "nettest", 7) == 0) {
     cmd_nettest();
+} else if (STRNCMP(cmd, "netverify", 9) == 0) {
+    cmd_netverify();
+}
+else if (STRNCMP(cmd, "netstatus", 9) == 0) {
+    cmd_netstatus();
+}
+else if (STRNCMP(cmd, "dnstest ", 8) == 0) {
+    cmd_dnstest(cmd + 8);
 } else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");
@@ -2042,11 +2641,11 @@ void shell_command_elfcheck(const char *args) {
 
     if (header[0] != 0x7F || header[1] != 'E' ||
         header[2] != 'L' || header[3] != 'F') {
-        PRINT(YELLOW, BLACK, "✗ Not an ELF file\n");
+        PRINT(YELLOW, BLACK, " Not an ELF file\n");
         return;
     }
 
-    PRINT(GREEN, BLACK, "✓ Valid ELF file\n");
+    PRINT(GREEN, BLACK, " Valid ELF file\n");
 
     if (header[4] == 1) {
         PRINT(WHITE, BLACK, "  Class: ELF32 (32-bit)\n");

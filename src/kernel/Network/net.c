@@ -7,6 +7,7 @@
 #include "print.h"
 #include "string_helpers.h"
 #include "memory.h"
+#include "dns.h"
 
 static net_config_t net_config = {0};
 
@@ -24,7 +25,8 @@ void net_init(void) {
     icmp_init();
     udp_init();
     tcp_init();
-    
+    dns_init();
+
     PRINT(GREEN, BLACK, "[NET] Network stack initialized\n");
 }
 
@@ -70,8 +72,10 @@ void net_receive_packet(uint8_t *data, uint16_t length) {
             if (length >= sizeof(eth_frame_t) + sizeof(ipv4_header_t)) {
                 ipv4_header_t *ip = (ipv4_header_t*)frame->payload;
                 
-                // Check if packet is for us
-                if (net_config.configured && ip->dest_ip != net_config.ip) {
+                // Check if packet is for us (or broadcast)
+                if (net_config.configured && 
+                    ip->dest_ip != net_config.ip && 
+                    ip->dest_ip != 0xFFFFFFFF) {
                     return;  // Not for us
                 }
                 
@@ -125,7 +129,8 @@ int net_send_ethernet(uint8_t *dest_mac, uint16_t ethertype,
 
 int net_send_ipv4(uint32_t dest_ip, uint8_t protocol, 
                   const void *payload, uint16_t length) {
-    if (!net_config.configured) return -1;
+    // Allow sending even when not configured (for DHCP broadcast)
+    uint32_t src_ip = net_config.configured ? net_config.ip : 0x00000000;
     
     // Build IP packet
     uint16_t total_len = sizeof(ipv4_header_t) + length;
@@ -140,7 +145,7 @@ int net_send_ipv4(uint32_t dest_ip, uint8_t protocol,
     ip->ttl = 64;
     ip->protocol = protocol;
     ip->header_checksum = 0;
-    ip->src_ip = net_config.ip;
+    ip->src_ip = src_ip;  // Use 0.0.0.0 if not configured (DHCP)
     ip->dest_ip = dest_ip;
     
     // Calculate checksum
@@ -153,9 +158,14 @@ int net_send_ipv4(uint32_t dest_ip, uint8_t protocol,
         dest[i] = src[i];
     }
     
-    // Resolve MAC address via ARP
+    // Resolve MAC address via ARP (or use broadcast for 255.255.255.255)
     uint8_t dest_mac[6];
-    if (arp_resolve(dest_ip, dest_mac) != 0) {
+    if (dest_ip == 0xFFFFFFFF) {
+        // Broadcast MAC for DHCP
+        for (int i = 0; i < 6; i++) {
+            dest_mac[i] = 0xFF;
+        }
+    } else if (arp_resolve(dest_ip, dest_mac) != 0) {
         kfree(buffer);
         return -1;
     }

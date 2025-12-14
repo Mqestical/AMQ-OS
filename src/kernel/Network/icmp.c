@@ -1,4 +1,4 @@
-// ========== icmp.c ==========
+// ========== icmp.c (VirtualBox Compatible) ==========
 #include "icmp.h"
 #include "net.h"
 #include "print.h"
@@ -6,13 +6,23 @@
 #include "memory.h"
 
 #define ICMP_PING_DATA_SIZE 56
+#define MAX_REPLIES 16
 
 static uint16_t ping_id = 0;
 static uint16_t ping_seq = 0;
+static icmp_reply_t replies[MAX_REPLIES];
+static int reply_count = 0;
+static volatile int waiting_for_reply = 0;
+static volatile uint16_t expected_id = 0;
+static volatile uint16_t expected_seq = 0;
+static volatile int reply_received = 0;
 
 void icmp_init(void) {
     ping_id = 0x1234;
     ping_seq = 0;
+    reply_count = 0;
+    waiting_for_reply = 0;
+    reply_received = 0;
 }
 
 void icmp_receive(uint32_t src_ip, uint8_t *data, uint16_t length) {
@@ -58,10 +68,26 @@ void icmp_receive(uint32_t src_ip, uint8_t *data, uint16_t length) {
         PRINT(WHITE, BLACK, "\n");
     }
     else if (icmp->type == ICMP_TYPE_ECHO_REPLY) {
-        PRINT(GREEN, BLACK, "[ICMP] Ping reply from ");
+        uint16_t recv_id = net_htons(icmp->id);
+        uint16_t recv_seq = net_htons(icmp->sequence);
+        
+        PRINT(GREEN, BLACK, "[ICMP] Reply from ");
         net_print_ip(src_ip);
-        PRINT(WHITE, BLACK, ": id=%d seq=%d\n", 
-              net_htons(icmp->id), net_htons(icmp->sequence));
+        PRINT(WHITE, BLACK, ": id=0x%04x seq=%d\n", recv_id, recv_seq);
+        
+        // Store reply
+        if (reply_count < MAX_REPLIES) {
+            replies[reply_count].src_ip = src_ip;
+            replies[reply_count].id = recv_id;
+            replies[reply_count].sequence = recv_seq;
+            replies[reply_count].timestamp = 0;
+            reply_count++;
+        }
+        
+        // Check if this is the reply we're waiting for
+        if (waiting_for_reply && recv_id == expected_id && recv_seq == expected_seq) {
+            reply_received = 1;
+        }
     }
 }
 
@@ -89,4 +115,30 @@ int icmp_send_ping(uint32_t dest_ip, uint16_t id, uint16_t seq) {
     
     kfree(buffer);
     return result;
+}
+
+int icmp_wait_reply(uint16_t id, uint16_t seq, int timeout_ms) {
+    expected_id = id;
+    expected_seq = seq;
+    waiting_for_reply = 1;
+    reply_received = 0;
+    
+    int iterations = timeout_ms / 10;
+    for (int i = 0; i < iterations; i++) {
+        if (reply_received) {
+            waiting_for_reply = 0;
+            return 1;
+        }
+        for (volatile int j = 0; j < 100000; j++);
+    }
+    
+    waiting_for_reply = 0;
+    return 0;
+}
+
+icmp_reply_t* icmp_get_last_reply(void) {
+    if (reply_count > 0) {
+        return &replies[reply_count - 1];
+    }
+    return NULL;
 }

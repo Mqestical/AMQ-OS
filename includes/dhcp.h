@@ -1,14 +1,14 @@
-
-// ========== dhcp.h ==========
+// ========== dhcp.h - SIMPLE VERSION ==========
 #ifndef DHCP_H
 #define DHCP_H
 
 #include <stdint.h>
 
-#define DHCP_DISCOVER   1
-#define DHCP_OFFER      2
-#define DHCP_REQUEST    3
-#define DHCP_ACK        5
+#define DHCP_DISCOVER 1
+#define DHCP_OFFER    2
+#define DHCP_REQUEST  3
+#define DHCP_ACK      5
+#define DHCP_NAK      6
 
 typedef struct {
     uint8_t  op;
@@ -26,10 +26,16 @@ typedef struct {
     uint8_t  sname[64];
     uint8_t  file[128];
     uint32_t magic;
-    uint8_t  options[308];
+    uint8_t  options[312];
 } __attribute__((packed)) dhcp_packet_t;
 
+// Initialize DHCP
 void dhcp_init(void);
+
+// Simple all-in-one function
+int dhcp_get_ip(void);
+
+// Legacy functions (for compatibility)
 int dhcp_discover(void);
 int dhcp_request(void);
 int dhcp_wait_complete(int timeout_ms);

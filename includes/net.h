@@ -111,8 +111,6 @@ void net_register_device(uint8_t *mac);
 void net_receive_packet(uint8_t *data, uint16_t length);
 int net_send_ethernet(uint8_t *dest_mac, uint16_t ethertype, 
                       const void *payload, uint16_t length);
-int net_send_ipv4(uint32_t dest_ip, uint8_t protocol, 
-                  const void *payload, uint16_t length);
 
 // Configuration
 void net_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
@@ -125,5 +123,7 @@ uint32_t net_htonl(uint32_t n);
 void net_print_ip(uint32_t ip);
 void net_print_mac(uint8_t *mac);
 uint32_t net_parse_ip(const char *str);
+int net_send_ipv4(uint32_t dest_ip, uint8_t protocol, const void *payload, uint16_t length);
+
 
 #endif // NET_H
