@@ -2,6 +2,7 @@
 #include "udp.h"
 #include "net.h"
 #include "memory.h"
+#include "print.h"
 #include "string_helpers.h"
 
 #define MAX_UDP_HANDLERS 8
@@ -31,22 +32,39 @@ void udp_register_handler(uint16_t port, udp_handler_t handler) {
 }
 
 void udp_receive(uint32_t src_ip, uint8_t *data, uint16_t length) {
-    if (length < sizeof(udp_header_t)) return;
+    if (length < sizeof(udp_header_t)) {
+        PRINT(RED, BLACK, "[UDP] Packet too short: %d\n", length);
+        return;
+    }
     
     udp_header_t *udp = (udp_header_t*)data;
     uint16_t dest_port = net_htons(udp->dest_port);
     uint16_t src_port = net_htons(udp->src_port);
+    uint16_t udp_len = net_htons(udp->length);
+    
+    PRINT(CYAN, BLACK, "[UDP] ");
+    net_print_ip(src_ip);
+    PRINT(WHITE, BLACK, ":%d -> :%d (len=%d)\n", src_port, dest_port, udp_len);
     
     uint8_t *payload = data + sizeof(udp_header_t);
-    uint16_t payload_len = net_htons(udp->length) - sizeof(udp_header_t);
+    uint16_t payload_len = udp_len - sizeof(udp_header_t);
+    
+    // Sanity check
+    if (payload_len > length - sizeof(udp_header_t)) {
+        PRINT(RED, BLACK, "[UDP] Invalid length field\n");
+        return;
+    }
     
     // Find handler
     for (int i = 0; i < MAX_UDP_HANDLERS; i++) {
         if (udp_handlers[i].port == dest_port && udp_handlers[i].handler) {
+            PRINT(GREEN, BLACK, "[UDP] Dispatching to handler for port %d\n", dest_port);
             udp_handlers[i].handler(src_ip, src_port, payload, payload_len);
             return;
         }
     }
+    
+    PRINT(YELLOW, BLACK, "[UDP] No handler for port %d\n", dest_port);
 }
 
 int udp_send(uint32_t dest_ip, uint16_t src_port, uint16_t dest_port,

@@ -1,4 +1,5 @@
-// ========== arp.c ==========
+// ========== arp.c - FIXED ==========
+#include "E1000.h"
 #include "arp.h"
 #include "net.h"
 #include "print.h"
@@ -6,6 +7,7 @@
 #include "memory.h"
 
 #define ARP_CACHE_SIZE 32
+#define ARP_CACHE_TTL 300  // 5 minutes in seconds
 
 typedef struct {
     uint32_t ip;
@@ -24,12 +26,24 @@ void arp_init(void) {
 }
 
 static void arp_cache_add(uint32_t ip, uint8_t *mac) {
+    // Check if already exists
+    for (int i = 0; i < ARP_CACHE_SIZE; i++) {
+        if (arp_cache[i].valid && arp_cache[i].ip == ip) {
+            // Update existing entry
+            for (int j = 0; j < 6; j++) {
+                arp_cache[i].mac[j] = mac[j];
+            }
+            arp_cache[i].timestamp = arp_time++;
+            return;
+        }
+    }
+    
     // Find empty or oldest entry
     int idx = -1;
     uint32_t oldest = 0xFFFFFFFF;
     
     for (int i = 0; i < ARP_CACHE_SIZE; i++) {
-        if (!arp_cache[i].valid || arp_cache[i].ip == ip) {
+        if (!arp_cache[i].valid) {
             idx = i;
             break;
         }
@@ -69,7 +83,7 @@ void arp_receive(uint8_t *data, uint16_t length) {
     
     net_config_t *config = net_get_config();
     
-    // Add sender to cache
+    // Add sender to cache (ALWAYS cache, even if not for us)
     arp_cache_add(arp->sender_proto_addr, arp->sender_hw_addr);
     
     if (op == ARP_REQUEST && arp->target_proto_addr == config->ip) {
@@ -92,9 +106,10 @@ void arp_receive(uint8_t *data, uint16_t length) {
                          &reply, sizeof(reply));
     }
     else if (op == ARP_REPLY) {
-        PRINT(GREEN, BLACK, "[ARP] Received reply: ");
+        // Already cached above, just log quietly
+        PRINT(GREEN, BLACK, "[ARP] Reply: ");
         net_print_ip(arp->sender_proto_addr);
-        PRINT(WHITE, BLACK, " is at ");
+        PRINT(WHITE, BLACK, " -> ");
         net_print_mac(arp->sender_hw_addr);
         PRINT(WHITE, BLACK, "\n");
     }
@@ -124,22 +139,47 @@ void arp_send_request(uint32_t target_ip) {
 int arp_resolve(uint32_t ip, uint8_t *mac) {
     // Check cache first
     if (arp_cache_lookup(ip, mac) == 0) {
+        // Cache hit - no spam
         return 0;
     }
     
-    // Send ARP request
-    arp_send_request(ip);
+    PRINT(YELLOW, BLACK, "[ARP] Resolving ");
+    net_print_ip(ip);
+    PRINT(WHITE, BLACK, "...\n");
     
-    // Wait for reply (with timeout)
-    for (int i = 0; i < 100; i++) {
-        for (volatile int j = 0; j < 100000; j++);
+    // Send ARP request with retries
+    for (int retry = 0; retry < 3; retry++) {
+        arp_send_request(ip);
         
-        if (arp_cache_lookup(ip, mac) == 0) {
-            return 0;
+        // Wait for reply with aggressive polling
+        for (int i = 0; i < 500; i++) {
+            // Poll many times per iteration
+            for (int p = 0; p < 20; p++) {
+                e1000_interrupt_handler();
+            }
+            
+            if (arp_cache_lookup(ip, mac) == 0) {
+                PRINT(GREEN, BLACK, "[ARP] Resolved ");
+                net_print_ip(ip);
+                PRINT(WHITE, BLACK, " -> ");
+                net_print_mac(mac);
+                PRINT(WHITE, BLACK, "\n");
+                return 0;
+            }
+            
+            // Small delay
+            for (volatile int j = 0; j < 1000; j++);
+        }
+        
+        if (retry < 2) {
+            PRINT(YELLOW, BLACK, "[ARP] Retry %d/3\n", retry + 2);
         }
     }
     
-    return -1;  // Timeout
+    PRINT(RED, BLACK, "[ARP] Failed to resolve ");
+    net_print_ip(ip);
+    PRINT(WHITE, BLACK, "\n");
+    return -1;
 }
 
 void arp_print_cache(void) {

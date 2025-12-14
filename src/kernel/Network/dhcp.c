@@ -1,284 +1,214 @@
-// ========== dhcp.c (VirtualBox NAT Compatible - FIXED) ==========
+// ========== dhcp.c - SIMPLE RELIABLE VERSION ==========
 #include "dhcp.h"
 #include "udp.h"
 #include "net.h"
 #include "print.h"
 #include "string_helpers.h"
 #include "memory.h"
-#include "E1000.h"  // Need this for polling
+#include "E1000.h"
 
-#define DHCP_MAGIC 0x63825363
-#define DHCP_BOOTP_MIN_SIZE 300
+static uint32_t xid = 0x12345678;
+static volatile int got_offer = 0;
+static volatile int got_ack = 0;
+static uint32_t offer_ip = 0;
+static uint32_t server_ip = 0;
+static uint32_t mask = 0;
+static uint32_t gw = 0;
+static uint32_t dns = 0;
 
-static uint32_t dhcp_xid = 0x12345678;
-static uint32_t dhcp_offered_ip = 0;
-static uint32_t dhcp_server_ip = 0;
-static uint32_t dhcp_netmask = 0;
-static uint32_t dhcp_gateway = 0;
-static uint32_t dhcp_dns = 0;
-static volatile int dhcp_state = 0;
+extern void dns_set_server(uint32_t server_ip);
 
-static void dhcp_handler(uint32_t src_ip, uint16_t src_port,
-                        uint8_t *data, uint16_t length) {
-    if (length < sizeof(dhcp_packet_t)) return;
+static void dhcp_rx(uint32_t src_ip, uint16_t src_port, uint8_t *data, uint16_t len) {
+    if (len < 244) return;
+    if (data[0] != 2) return;
     
-    dhcp_packet_t *dhcp = (dhcp_packet_t*)data;
+    // Check XID
+    uint32_t pkt_xid = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
+    if (pkt_xid != xid) return;
     
-    if (dhcp->op != 2) return;
-    if (net_htonl(dhcp->xid) != dhcp_xid) return;
-    if (net_htonl(dhcp->magic) != DHCP_MAGIC) return;
+    // Get offered IP
+    offer_ip = data[16] | (data[17] << 8) | (data[18] << 16) | (data[19] << 24);
     
+    // Check magic cookie
+    if (data[236] != 0x63 || data[237] != 0x82 || data[238] != 0x53 || data[239] != 0x63) return;
+    
+    // Parse options
     uint8_t msg_type = 0;
-    uint8_t *opt = dhcp->options;
-    uint8_t *end = data + length;
+    int i = 240;
     
-    while (opt < end - 2 && *opt != 0xFF) {
-        if (*opt == 0) {
-            opt++;
-            continue;
+    while (i < len - 2 && data[i] != 0xFF) {
+        if (data[i] == 0) { i++; continue; }
+        
+        uint8_t opt = data[i];
+        uint8_t olen = data[i + 1];
+        
+        if (i + 2 + olen > len) break;
+        
+        if (opt == 53 && olen == 1) {
+            msg_type = data[i + 2];
+        }
+        else if (opt == 54 && olen == 4) {
+            server_ip = data[i+2] | (data[i+3] << 8) | (data[i+4] << 16) | (data[i+5] << 24);
+        }
+        else if (opt == 1 && olen == 4) {
+            mask = data[i+2] | (data[i+3] << 8) | (data[i+4] << 16) | (data[i+5] << 24);
+        }
+        else if (opt == 3 && olen >= 4) {
+            gw = data[i+2] | (data[i+3] << 8) | (data[i+4] << 16) | (data[i+5] << 24);
+        }
+        else if (opt == 6 && olen >= 4) {
+            dns = data[i+2] | (data[i+3] << 8) | (data[i+4] << 16) | (data[i+5] << 24);
         }
         
-        if (opt + 1 + opt[1] >= end) break;
-        
-        if (*opt == 53 && opt[1] == 1) {
-            msg_type = opt[2];
-        }
-        else if (*opt == 1 && opt[1] == 4) {
-            dhcp_netmask = *(uint32_t*)&opt[2];
-        }
-        else if (*opt == 3 && opt[1] >= 4) {
-            dhcp_gateway = *(uint32_t*)&opt[2];
-        }
-        else if (*opt == 6 && opt[1] >= 4) {
-            dhcp_dns = *(uint32_t*)&opt[2];
-        }
-        else if (*opt == 54 && opt[1] == 4) {
-            dhcp_server_ip = *(uint32_t*)&opt[2];
-        }
-        
-        opt += 2 + opt[1];
+        i += 2 + olen;
     }
     
-    if (msg_type == DHCP_OFFER) {
-        dhcp_offered_ip = dhcp->yiaddr;
-        dhcp_state = 1;
-        
-        PRINT(GREEN, BLACK, "[DHCP] Received OFFER: ");
-        net_print_ip(dhcp_offered_ip);
-        PRINT(WHITE, BLACK, " from ");
-        net_print_ip(dhcp_server_ip);
-        PRINT(WHITE, BLACK, "\n");
-        PRINT(WHITE, BLACK, "  Netmask: ");
-        net_print_ip(dhcp_netmask);
-        PRINT(WHITE, BLACK, "\n  Gateway: ");
-        net_print_ip(dhcp_gateway);
-        PRINT(WHITE, BLACK, "\n");
-    }
-    else if (msg_type == DHCP_ACK) {
-        dhcp_state = 2;
-        PRINT(GREEN, BLACK, "[DHCP] Received ACK!\n");
-        net_set_config(dhcp_offered_ip, dhcp_netmask, dhcp_gateway);
-    }
-    else if (msg_type == DHCP_NAK) {
-        PRINT(RED, BLACK, "[DHCP] Received NAK\n");
-        dhcp_state = 0;
-    }
+    if (msg_type == 2) got_offer = 1;
+    else if (msg_type == 5) got_ack = 1;
 }
 
 void dhcp_init(void) {
-    udp_register_handler(68, dhcp_handler);
-    PRINT(CYAN, BLACK, "[DHCP] Handler registered on port 68\n");
-}
-
-static void dhcp_build_packet(dhcp_packet_t *packet, uint8_t msg_type, 
-                             uint32_t requested_ip, uint32_t server_ip) {
-    net_config_t *config = net_get_config();
-    
-    for (int i = 0; i < sizeof(dhcp_packet_t); i++) {
-        ((uint8_t*)packet)[i] = 0;
-    }
-    
-    packet->op = 1;
-    packet->htype = 1;
-    packet->hlen = 6;
-    packet->hops = 0;
-    packet->xid = net_htonl(dhcp_xid);
-    packet->secs = 0;
-    packet->flags = net_htons(0x8000);  // Broadcast
-    packet->ciaddr = 0;
-    packet->yiaddr = 0;
-    packet->siaddr = 0;
-    packet->giaddr = 0;
-    
-    for (int i = 0; i < 6; i++) {
-        packet->chaddr[i] = config->mac[i];
-    }
-    
-    packet->magic = net_htonl(DHCP_MAGIC);
-    
-    uint8_t *opt = packet->options;
-    
-    // Message Type
-    *opt++ = 53;
-    *opt++ = 1;
-    *opt++ = msg_type;
-    
-    if (msg_type == DHCP_REQUEST) {
-        if (requested_ip != 0) {
-            *opt++ = 50;
-            *opt++ = 4;
-            *(uint32_t*)opt = requested_ip;
-            opt += 4;
-        }
-        
-        if (server_ip != 0) {
-            *opt++ = 54;
-            *opt++ = 4;
-            *(uint32_t*)opt = server_ip;
-            opt += 4;
-        }
-    }
-    
-    // Parameter Request List
-    *opt++ = 55;
-    *opt++ = 4;
-    *opt++ = 1;   // Subnet Mask
-    *opt++ = 3;   // Router
-    *opt++ = 6;   // DNS
-    *opt++ = 15;  // Domain Name
-    
-    // Client Identifier
-    *opt++ = 61;
-    *opt++ = 7;
-    *opt++ = 1;
-    for (int i = 0; i < 6; i++) {
-        *opt++ = config->mac[i];
-    }
-    
-    *opt++ = 255;  // End
+    udp_register_handler(68, dhcp_rx);
 }
 
 int dhcp_get_ip(void) {
-    dhcp_packet_t *packet = (dhcp_packet_t*)kmalloc(sizeof(dhcp_packet_t));
-    if (!packet) {
-        PRINT(RED, BLACK, "[DHCP] Failed to allocate buffer\n");
-        return -1;
-    }
+    PRINT(CYAN, BLACK, "\n=== DHCP ===\n");
     
-    dhcp_offered_ip = 0;
-    dhcp_server_ip = 0;
-    dhcp_netmask = 0;
-    dhcp_gateway = 0;
-    dhcp_dns = 0;
-    dhcp_state = 0;
+    // Clear state
+    got_offer = 0;
+    got_ack = 0;
+    offer_ip = 0;
+    server_ip = 0;
+    mask = 0;
+    gw = 0;
+    dns = 0;
+    xid++;
     
-    dhcp_xid = 0x12340000 | ((uint32_t)&packet & 0xFFFF);
+    uint8_t *buf = (uint8_t*)kmalloc(548);
+    for (int i = 0; i < 548; i++) buf[i] = 0;
     
-    PRINT(CYAN, BLACK, "\n=== DHCP Client Starting ===\n");
-    PRINT(WHITE, BLACK, "[DHCP] XID: 0x%08x\n", dhcp_xid);
+    net_config_t *cfg = net_get_config();
     
-    // Wait a bit after link up before starting DHCP
-    PRINT(WHITE, BLACK, "[DHCP] Waiting for network to settle...\n");
-    for (volatile int i = 0; i < 100; i++) {
-        e1000_interrupt_handler();  // Poll for packets
-        for (volatile int j = 0; j < 100000; j++);
-    }
+    // Build DISCOVER
+    buf[0] = 1;
+    buf[1] = 1;
+    buf[2] = 6;
+    buf[4] = (xid >> 24) & 0xFF;
+    buf[5] = (xid >> 16) & 0xFF;
+    buf[6] = (xid >> 8) & 0xFF;
+    buf[7] = xid & 0xFF;
+    buf[10] = 0x80;
     
-    // ===== DISCOVER =====
-    PRINT(WHITE, BLACK, "[DHCP] Sending DISCOVER...\n");
+    for (int i = 0; i < 6; i++) buf[28 + i] = cfg->mac[i];
     
-    dhcp_build_packet(packet, DHCP_DISCOVER, 0, 0);
+    buf[236] = 0x63;
+    buf[237] = 0x82;
+    buf[238] = 0x53;
+    buf[239] = 0x63;
     
-    if (udp_send(0xFFFFFFFF, 68, 67, packet, sizeof(dhcp_packet_t)) != 0) {
-        PRINT(RED, BLACK, "[DHCP] Failed to send DISCOVER\n");
-        kfree(packet);
-        return -1;
-    }
+    int opt = 240;
+    buf[opt++] = 53; buf[opt++] = 1; buf[opt++] = 1;
+    buf[opt++] = 55; buf[opt++] = 4; buf[opt++] = 1; buf[opt++] = 3; buf[opt++] = 6; buf[opt++] = 15;
+    buf[opt++] = 255;
     
-    // Wait for OFFER with active polling
-    PRINT(WHITE, BLACK, "[DHCP] Waiting for OFFER");
-    int timeout = 1000;  // 10 seconds
-    for (int i = 0; i < timeout; i++) {
-        // CRITICAL: Poll E1000 for received packets!
-        e1000_interrupt_handler();
+    PRINT(WHITE, BLACK, "Sending DISCOVER...\n");
+    
+    // Send DISCOVER
+    for (int retry = 0; retry < 3; retry++) {
+        udp_send(0xFFFFFFFF, 68, 67, buf, 548);
         
-        if (dhcp_state == 1) {
-            PRINT(WHITE, BLACK, " OK\n");
-            break;
+        for (int i = 0; i < 2000; i++) {
+            for (int p = 0; p < 50; p++) e1000_interrupt_handler();
+            if (got_offer) goto send_request;
+            for (volatile int j = 0; j < 5000; j++);
         }
-        if (i % 100 == 0) PRINT(WHITE, BLACK, ".");
-        for (volatile int j = 0; j < 100000; j++);
     }
     
-    if (dhcp_state != 1) {
-        PRINT(RED, BLACK, " TIMEOUT\n");
-        PRINT(YELLOW, BLACK, "[DHCP] Troubleshooting:\n");
-        PRINT(YELLOW, BLACK, "  - Check VirtualBox NAT is enabled\n");
-        PRINT(YELLOW, BLACK, "  - Check 'Cable Connected' is checked\n");
-        PRINT(YELLOW, BLACK, "  - Link status: %s\n", 
-              e1000_link_status() ? "UP" : "DOWN");
-        kfree(packet);
-        return -1;
-    }
+    PRINT(RED, BLACK, "No OFFER received\n");
+    kfree(buf);
+    return -1;
     
-    // Delay before REQUEST
-    PRINT(WHITE, BLACK, "[DHCP] Preparing REQUEST...\n");
-    for (volatile int i = 0; i < 100; i++) {
-        e1000_interrupt_handler();
-        for (volatile int j = 0; j < 100000; j++);
-    }
-    
-    // ===== REQUEST =====
-    PRINT(WHITE, BLACK, "[DHCP] Sending REQUEST for ");
-    net_print_ip(dhcp_offered_ip);
+send_request:
+    PRINT(GREEN, BLACK, "Got OFFER: ");
+    net_print_ip(offer_ip);
     PRINT(WHITE, BLACK, "\n");
     
-    dhcp_state = 0;
-    dhcp_build_packet(packet, DHCP_REQUEST, dhcp_offered_ip, dhcp_server_ip);
-    
-    if (udp_send(0xFFFFFFFF, 68, 67, packet, sizeof(dhcp_packet_t)) != 0) {
-        PRINT(RED, BLACK, "[DHCP] Failed to send REQUEST\n");
-        kfree(packet);
-        return -1;
-    }
-    
-    // Wait for ACK with active polling
-    PRINT(WHITE, BLACK, "[DHCP] Waiting for ACK");
-    timeout = 1000;
-    for (int i = 0; i < timeout; i++) {
-        // CRITICAL: Poll E1000 for received packets!
+    // Wait
+    for (int i = 0; i < 100; i++) {
         e1000_interrupt_handler();
+        for (volatile int j = 0; j < 10000; j++);
+    }
+    
+    // Build REQUEST
+    for (int i = 0; i < 548; i++) buf[i] = 0;
+    
+    buf[0] = 1;
+    buf[1] = 1;
+    buf[2] = 6;
+    buf[4] = (xid >> 24) & 0xFF;
+    buf[5] = (xid >> 16) & 0xFF;
+    buf[6] = (xid >> 8) & 0xFF;
+    buf[7] = xid & 0xFF;
+    buf[10] = 0x80;
+    
+    for (int i = 0; i < 6; i++) buf[28 + i] = cfg->mac[i];
+    
+    buf[236] = 0x63;
+    buf[237] = 0x82;
+    buf[238] = 0x53;
+    buf[239] = 0x63;
+    
+    opt = 240;
+    buf[opt++] = 53; buf[opt++] = 1; buf[opt++] = 3;
+    buf[opt++] = 50; buf[opt++] = 4;
+    buf[opt++] = offer_ip & 0xFF;
+    buf[opt++] = (offer_ip >> 8) & 0xFF;
+    buf[opt++] = (offer_ip >> 16) & 0xFF;
+    buf[opt++] = (offer_ip >> 24) & 0xFF;
+    buf[opt++] = 54; buf[opt++] = 4;
+    buf[opt++] = server_ip & 0xFF;
+    buf[opt++] = (server_ip >> 8) & 0xFF;
+    buf[opt++] = (server_ip >> 16) & 0xFF;
+    buf[opt++] = (server_ip >> 24) & 0xFF;
+    buf[opt++] = 55; buf[opt++] = 4; buf[opt++] = 1; buf[opt++] = 3; buf[opt++] = 6; buf[opt++] = 15;
+    buf[opt++] = 255;
+    
+    PRINT(WHITE, BLACK, "Sending REQUEST...\n");
+    
+    // Send REQUEST
+    for (int retry = 0; retry < 3; retry++) {
+        udp_send(0xFFFFFFFF, 68, 67, buf, 548);
         
-        if (dhcp_state == 2) {
-            PRINT(WHITE, BLACK, " OK\n");
-            break;
+        for (int i = 0; i < 2000; i++) {
+            for (int p = 0; p < 50; p++) e1000_interrupt_handler();
+            if (got_ack) goto done;
+            for (volatile int j = 0; j < 5000; j++);
         }
-        if (i % 100 == 0) PRINT(WHITE, BLACK, ".");
-        for (volatile int j = 0; j < 100000; j++);
     }
     
-    kfree(packet);
+    PRINT(RED, BLACK, "No ACK received\n");
+    kfree(buf);
+    return -1;
     
-    if (dhcp_state != 2) {
-        PRINT(RED, BLACK, " TIMEOUT\n");
-        return -1;
+done:
+    kfree(buf);
+    
+    PRINT(GREEN, BLACK, "Got ACK!\n\n");
+    
+    // Apply config
+    net_set_config(offer_ip, mask, gw);
+    
+    // Set DNS
+    if (dns != 0) {
+        dns_set_server(dns);
+    } else {
+        dns_set_server(gw);
     }
     
-    PRINT(GREEN, BLACK, "\n=== DHCP Complete ===\n");
-    net_config_t *config = net_get_config();
-    PRINT(WHITE, BLACK, "  IP:      ");
-    net_print_ip(config->ip);
-    PRINT(WHITE, BLACK, "\n  Netmask: ");
-    net_print_ip(config->netmask);
-    PRINT(WHITE, BLACK, "\n  Gateway: ");
-    net_print_ip(config->gateway);
-    PRINT(WHITE, BLACK, "\n");
-    
-    if (dhcp_dns != 0) {
-        PRINT(WHITE, BLACK, "  DNS:     ");
-        net_print_ip(dhcp_dns);
-        PRINT(WHITE, BLACK, "\n");
-    }
+    PRINT(GREEN, BLACK, "=== SUCCESS ===\n");
+    PRINT(WHITE, BLACK, "IP:      "); net_print_ip(offer_ip); PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "Gateway: "); net_print_ip(gw); PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "DNS:     "); net_print_ip(dns != 0 ? dns : gw); PRINT(WHITE, BLACK, "\n\n");
     
     return 0;
 }

@@ -1,4 +1,5 @@
-// ========== dns.c ==========
+// ========== dns.c - FIXED DNS PARSER ==========
+#include "E1000.h"
 #include "dns.h"
 #include "udp.h"
 #include "net.h"
@@ -6,98 +7,181 @@
 #include "string_helpers.h"
 #include "memory.h"
 
-static uint32_t dns_server = 0x08080808;  // 8.8.8.8 (Google DNS)
+#define DNS_CLIENT_PORT 53535
+
+static uint32_t dns_server = 0;
 static uint32_t dns_resolved_ip = 0;
-static int dns_waiting = 0;
+static volatile int dns_waiting = 0;
 static uint16_t dns_query_id = 0x1234;
 
-static void dns_handler(uint32_t src_ip, uint16_t src_port,
-                        uint8_t *data, uint16_t length) {
-    if (length < sizeof(dns_header_t)) return;
+static void dns_handler(uint32_t src_ip, uint16_t src_port, uint8_t *data, uint16_t length) {
+    PRINT(CYAN, BLACK, "[DNS] Got response, length=%d\n", length);
     
-    dns_header_t *header = (dns_header_t*)data;
-    uint16_t id = net_htons(header->id);
-    uint16_t flags = net_htons(header->flags);
-    uint16_t answers = net_htons(header->answers);
-    
-    // Check if this is a response to our query
-    if (id != dns_query_id || !(flags & DNS_FLAG_QR)) {
+    if (length < 12) {
+        PRINT(RED, BLACK, "[DNS] Packet too short\n");
         return;
     }
     
-    // Check for errors
-    if ((flags & DNS_FLAG_RCODE) != 0) {
-        PRINT(YELLOW, BLACK, "[DNS] Query failed (error code: %d)\n", 
-              flags & DNS_FLAG_RCODE);
+    // Debug: Show first 32 bytes of packet
+    PRINT(WHITE, BLACK, "[DNS] First 32 bytes: ");
+    for (int i = 0; i < 32 && i < length; i++) {
+        if (i > 0 && i % 8 == 0) PRINT(WHITE, BLACK, " ");
+        print_unsigned(data[i],16);
+    }
+    PRINT(WHITE, BLACK, "\n");
+    
+    // Parse header - DNS uses network byte order (big endian)
+    uint16_t id = (data[0] << 8) | data[1];
+    uint16_t flags = (data[2] << 8) | data[3];
+    uint16_t qdcount = (data[4] << 8) | data[5];
+    uint16_t ancount = (data[6] << 8) | data[7];
+    uint16_t nscount = (data[8] << 8) | data[9];
+    uint16_t arcount = (data[10] << 8) | data[11];
+    
+    PRINT(WHITE, BLACK, "[DNS] ID=0x%04x Flags=0x%04x QD=%d AN=%d NS=%d AR=%d\n", 
+          id, flags, qdcount, ancount, nscount, arcount);
+    
+    // Check if this is our query
+    if (id != dns_query_id) {
+        PRINT(YELLOW, BLACK, "[DNS] Not our query (expected 0x%04x)\n", dns_query_id);
+        return;
+    }
+    
+    // Check for errors (rcode in lower 4 bits of flags)
+    int rcode = flags & 0x000F;
+    if (rcode != 0) {
+        PRINT(RED, BLACK, "[DNS] Server error code: %d\n", rcode);
         dns_waiting = 0;
         return;
     }
     
-    if (answers == 0) {
-        PRINT(YELLOW, BLACK, "[DNS] No answers received\n");
+    // Check if response bit is set
+    if (!(flags & 0x8000)) {
+        PRINT(YELLOW, BLACK, "[DNS] Not a response\n");
+        return;
+    }
+    
+    if (ancount == 0) {
+        PRINT(YELLOW, BLACK, "[DNS] No answers\n");
         dns_waiting = 0;
         return;
     }
     
-    // Skip question section
-    uint8_t *ptr = data + sizeof(dns_header_t);
+    PRINT(GREEN, BLACK, "[DNS] Valid response with %d answer(s)\n", ancount);
+    
+    // Skip to answers (parse question section first)
+    uint8_t *ptr = data + 12;
     uint8_t *end = data + length;
     
-    // Skip question name
-    while (ptr < end && *ptr != 0) {
-        if ((*ptr & 0xC0) == 0xC0) {  // Compressed name
-            ptr += 2;
-            break;
-        }
-        ptr += *ptr + 1;
-    }
-    if (ptr < end && *ptr == 0) ptr++;  // Skip null terminator
-    ptr += 4;  // Skip QTYPE and QCLASS
-    
-    // Parse answers
-    for (int i = 0; i < answers && ptr < end; i++) {
-        // Skip answer name
+    // Skip all questions
+    for (int q = 0; q < qdcount && ptr < end; q++) {
+        // Skip question name
         while (ptr < end && *ptr != 0) {
-            if ((*ptr & 0xC0) == 0xC0) {  // Compressed name
+            if ((*ptr & 0xC0) == 0xC0) {
+                // Compressed name - 2 byte pointer
                 ptr += 2;
                 break;
+            } else {
+                // Regular label - skip length + label
+                ptr += *ptr + 1;
             }
-            ptr += *ptr + 1;
         }
+        
+        // Skip null terminator if we hit it
         if (ptr < end && *ptr == 0) ptr++;
         
-        if (ptr + 10 > end) break;
-        
-        uint16_t type = (ptr[0] << 8) | ptr[1];
-        uint16_t data_len = (ptr[8] << 8) | ptr[9];
-        ptr += 10;
-        
-        if (ptr + data_len > end) break;
-        
-        if (type == DNS_TYPE_A && data_len == 4) {
-            // Found IPv4 address
-            dns_resolved_ip = *(uint32_t*)ptr;
-            dns_waiting = 0;
-            
-            PRINT(GREEN, BLACK, "[DNS] Resolved to ");
-            net_print_ip(dns_resolved_ip);
-            PRINT(WHITE, BLACK, "\n");
-            return;
-        }
-        
-        ptr += data_len;
+        // Skip QTYPE (2) and QCLASS (2)
+        ptr += 4;
     }
     
-    dns_waiting = 0;
+    if (ptr >= end) {
+        PRINT(RED, BLACK, "[DNS] Malformed packet (questions overflow)\n");
+        dns_waiting = 0;
+        return;
+    }
+    
+    PRINT(WHITE, BLACK, "[DNS] Parsing answers at offset %d\n", (int)(ptr - data));
+    
+    // Parse answers
+    for (int a = 0; a < ancount && ptr < end; a++) {
+        PRINT(WHITE, BLACK, "[DNS] Answer #%d at offset %d\n", a + 1, (int)(ptr - data));
+        
+        // Skip answer name (compressed or not)
+        if ((*ptr & 0xC0) == 0xC0) {
+            PRINT(WHITE, BLACK, "[DNS]   Name: compressed pointer\n");
+            ptr += 2;
+        } else {
+            PRINT(WHITE, BLACK, "[DNS]   Name: ");
+            while (ptr < end && *ptr != 0) {
+                if ((*ptr & 0xC0) == 0xC0) {
+                    ptr += 2;
+                    break;
+                }
+                int len = *ptr++;
+                for (int i = 0; i < len && ptr < end; i++) {
+                    PRINT(WHITE, BLACK, "%c", *ptr++);
+                }
+                if (ptr < end && *ptr != 0) {
+                    PRINT(WHITE, BLACK, ".");
+                }
+            }
+            PRINT(WHITE, BLACK, "\n");
+            
+            if (ptr < end && *ptr == 0) ptr++;
+        }
+        
+        // Check we have room for answer fields
+        if (ptr + 10 > end) {
+            PRINT(RED, BLACK, "[DNS] Not enough data for answer fields\n");
+            break;
+        }
+        
+        // Parse answer fields
+        uint16_t type = (ptr[0] << 8) | ptr[1];
+        uint16_t class = (ptr[2] << 8) | ptr[3];
+        uint32_t ttl = (ptr[4] << 24) | (ptr[5] << 16) | (ptr[6] << 8) | ptr[7];
+        uint16_t rdlen = (ptr[8] << 8) | ptr[9];
+        ptr += 10;
+        
+        PRINT(WHITE, BLACK, "[DNS]   Type=%d Class=%d TTL=%d DataLen=%d\n", 
+              type, class, ttl, rdlen);
+        
+        // Check we have the data
+        if (ptr + rdlen > end) {
+            PRINT(RED, BLACK, "[DNS] Not enough data for rdata\n");
+            break;
+        }
+        
+        // Type 1 = A record (IPv4)
+        if (type == 1 && rdlen == 4) {
+            dns_resolved_ip = ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
+            
+            PRINT(GREEN, BLACK, "[DNS] *** Found A record: ");
+            net_print_ip(dns_resolved_ip);
+            PRINT(WHITE, BLACK, " ***\n");
+            
+            dns_waiting = 0;
+            return;  // We got what we need
+        }
+        
+        // Skip rdata
+        ptr += rdlen;
+    }
+    
+    if (dns_resolved_ip == 0) {
+        PRINT(YELLOW, BLACK, "[DNS] No A records found\n");
+        dns_waiting = 0;
+    }
 }
 
 void dns_init(void) {
-    udp_register_handler(DNS_PORT, dns_handler);
+    udp_register_handler(DNS_CLIENT_PORT, dns_handler);
+    PRINT(GREEN, BLACK, "[DNS] Initialized on port %d\n", DNS_CLIENT_PORT);
 }
 
 void dns_set_server(uint32_t server_ip) {
     dns_server = server_ip;
-    PRINT(WHITE, BLACK, "[DNS] Server set to ");
+    PRINT(GREEN, BLACK, "[DNS] Server set to ");
     net_print_ip(server_ip);
     PRINT(WHITE, BLACK, "\n");
 }
@@ -109,87 +193,152 @@ static int dns_encode_name(const char *hostname, uint8_t *buffer) {
     while (*ptr) {
         uint8_t *len_ptr = buffer++;
         uint8_t len = 0;
-        
         while (*ptr && *ptr != '.') {
             *buffer++ = *ptr++;
             len++;
         }
-        
         *len_ptr = len;
-        
         if (*ptr == '.') ptr++;
     }
-    
-    *buffer++ = 0;  // Null terminator
+    *buffer++ = 0;
     return buffer - start;
 }
 
+// Check if string is a valid IP address
+static int is_ip_address(const char *str) {
+    int dots = 0;
+    int digits = 0;
+    
+    for (const char *p = str; *p; p++) {
+        if (*p == '.') {
+            if (digits == 0 || digits > 3) return 0;
+            dots++;
+            digits = 0;
+        } else if (*p >= '0' && *p <= '9') {
+            digits++;
+        } else {
+            return 0;
+        }
+    }
+    
+    return (dots == 3 && digits > 0 && digits <= 3);
+}
+
 int dns_resolve(const char *hostname, uint32_t *ip_out) {
-    if (!hostname || !ip_out) return -1;
+    if (!hostname || !ip_out) {
+        PRINT(RED, BLACK, "[DNS] Invalid parameters\n");
+        return -1;
+    }
     
-    PRINT(CYAN, BLACK, "[DNS] Resolving '%s'...\n", hostname);
+    PRINT(CYAN, BLACK, "[DNS] Resolving '%s'\n", hostname);
     
-    // Build DNS query
-    uint16_t buffer_size = sizeof(dns_header_t) + DNS_MAX_NAME + 16;
-    uint8_t *buffer = (uint8_t*)kmalloc(buffer_size);
+    // Check if it's already an IP address
+    if (is_ip_address(hostname)) {
+        *ip_out = net_parse_ip(hostname);
+        PRINT(GREEN, BLACK, "[DNS] Already an IP: ");
+        net_print_ip(*ip_out);
+        PRINT(WHITE, BLACK, "\n");
+        return 0;
+    }
     
-    // Build header
-    dns_header_t *header = (dns_header_t*)buffer;
-    dns_query_id = (dns_query_id + 1) & 0xFFFF;
-    header->id = net_htons(dns_query_id);
-    header->flags = net_htons(DNS_FLAG_RD);  // Recursion desired
-    header->questions = net_htons(1);
-    header->answers = 0;
-    header->authority = 0;
-    header->additional = 0;
+    // Check if we have a DNS server configured
+    if (dns_server == 0) {
+        PRINT(YELLOW, BLACK, "[DNS] No server, using 8.8.8.8\n");
+        dns_server = 0x08080808;  // 8.8.8.8
+    }
     
-    // Encode hostname
-    uint8_t *ptr = buffer + sizeof(dns_header_t);
-    int name_len = dns_encode_name(hostname, ptr);
-    ptr += name_len;
-    
-    // Add QTYPE (A record) and QCLASS (IN)
-    *ptr++ = 0;
-    *ptr++ = DNS_TYPE_A;
-    *ptr++ = 0;
-    *ptr++ = DNS_CLASS_IN;
-    
-    uint16_t total_len = ptr - buffer;
-    
-    // Reset state
-    dns_resolved_ip = 0;
-    dns_waiting = 1;
-    
-    // Send DNS query
-    PRINT(WHITE, BLACK, "[DNS] Sending query to ");
+    PRINT(WHITE, BLACK, "[DNS] Using server ");
     net_print_ip(dns_server);
     PRINT(WHITE, BLACK, "\n");
     
-    int result = udp_send(dns_server, DNS_PORT, DNS_PORT, buffer, total_len);
-    kfree(buffer);
+    // Build DNS query
+    uint8_t buffer[512];
     
-    if (result != 0) {
-        PRINT(YELLOW, BLACK, "[DNS] Failed to send query\n");
-        return -1;
+    // DNS Header
+    dns_query_id++;
+    buffer[0] = (dns_query_id >> 8) & 0xFF;
+    buffer[1] = dns_query_id & 0xFF;
+    buffer[2] = 0x01;  // Standard query with recursion desired
+    buffer[3] = 0x00;
+    buffer[4] = 0x00;  // QDCOUNT = 1
+    buffer[5] = 0x01;
+    buffer[6] = 0x00;  // ANCOUNT = 0
+    buffer[7] = 0x00;
+    buffer[8] = 0x00;  // NSCOUNT = 0
+    buffer[9] = 0x00;
+    buffer[10] = 0x00; // ARCOUNT = 0
+    buffer[11] = 0x00;
+    
+    // Question section
+    int name_len = dns_encode_name(hostname, buffer + 12);
+    uint8_t *ptr = buffer + 12 + name_len;
+    
+    // QTYPE: A (1)
+    *ptr++ = 0x00;
+    *ptr++ = 0x01;
+    
+    // QCLASS: IN (1)
+    *ptr++ = 0x00;
+    *ptr++ = 0x01;
+    
+    uint16_t total_len = ptr - buffer;
+    
+    PRINT(WHITE, BLACK, "[DNS] Query packet: %d bytes, ID=0x%04x\n", total_len, dns_query_id);
+    
+    dns_resolved_ip = 0;
+    dns_waiting = 1;
+    
+    // Try up to 3 times
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+            PRINT(YELLOW, BLACK, "[DNS] Retry %d/3\n", attempt + 1);
+        }
+        
+        // Send query
+        PRINT(WHITE, BLACK, "[DNS] Sending query to ");
+        net_print_ip(dns_server);
+        PRINT(WHITE, BLACK, ":53\n");
+        
+        udp_send(dns_server, DNS_CLIENT_PORT, 53, buffer, total_len);
+        
+        // Wait for response
+        int timeout = 2000;  // 2 seconds per attempt
+        
+        PRINT(WHITE, BLACK, "[DNS] Waiting for response");
+        
+        for (int i = 0; i < timeout && dns_waiting; i++) {
+            // Poll network aggressively
+            for (int p = 0; p < 100; p++) {
+                e1000_interrupt_handler();
+                if (!dns_waiting) {
+                    PRINT(WHITE, BLACK, "\n");
+                    goto done;
+                }
+            }
+            
+            // Small delay
+            for (volatile int j = 0; j < 100; j++);
+            
+            // Progress dot
+            if (i % 200 == 0) {
+                PRINT(WHITE, BLACK, ".");
+            }
+        }
+        
+        PRINT(WHITE, BLACK, "\n");
+        
+        if (!dns_waiting) goto done;
     }
     
-    // Wait for response
-    int timeout = DNS_TIMEOUT_MS / 10;
-    for (int i = 0; i < timeout && dns_waiting; i++) {
-        for (volatile int j = 0; j < 100000; j++);
-    }
-    
-    if (dns_waiting) {
-        PRINT(YELLOW, BLACK, "[DNS] Timeout waiting for response\n");
-        dns_waiting = 0;
-        return -1;
-    }
-    
+done:
     if (dns_resolved_ip == 0) {
-        PRINT(YELLOW, BLACK, "[DNS] Resolution failed\n");
+        PRINT(RED, BLACK, "[DNS] Failed after 3 attempts\n");
         return -1;
     }
     
     *ip_out = dns_resolved_ip;
+    PRINT(GREEN, BLACK, "[DNS] Success: ");
+    net_print_ip(dns_resolved_ip);
+    PRINT(WHITE, BLACK, "\n");
     return 0;
 }

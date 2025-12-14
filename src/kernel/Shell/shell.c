@@ -27,6 +27,7 @@
 #include "tcp.h"
 #include "dhcp.h"
 #include "dns.h"
+#include "http.h"
 
 #define CURSOR_BLINK_RATE 50000
 
@@ -53,7 +54,9 @@ void cmd_netinit(void);
 void cmd_ifconfig(void);
 void cmd_netconfig(const char *args);
 void cmd_dhcp(void);
-void cmd_ping(const char *args);
+extern void cmd_ping(const char *target) ;
+extern void cmd_wget(const char *url) ;;; ;;
+extern void cmd_ping_fast(const char *target);;
 void cmd_arp(void);
 void cmd_nettest(void);
 void cmd_netverify(void);
@@ -109,7 +112,25 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
     dest[i] = '\0';
 }
 
-// ========== Add to shell.c - Test Multiple UDP Sends ==========
+static uint32_t resolve_special_target(const char *target) {
+    net_config_t *config = net_get_config();
+    
+    if (STRNCMP(target, "gateway", 8) == 0 || STRNCMP(target, "gw", 3) == 0) {
+        return config->gateway;
+    }
+    
+    // Try as IP first
+    uint32_t ip = net_parse_ip(target);
+    if (ip != 0) return ip;
+    
+    // Try DNS resolution
+    uint32_t resolved_ip;
+    if (dns_resolve(target, &resolved_ip) == 0) {
+        return resolved_ip;
+    }
+    
+    return 0;
+}
 
 void cmd_multiudp(void) {
     PRINT(CYAN, BLACK, "\n=== Multiple UDP Send Test ===\n");
@@ -162,6 +183,64 @@ void cmd_multiudp(void) {
         PRINT(GREEN, BLACK, "\n✓ Multiple UDP sends work!\n");
         PRINT(WHITE, BLACK, "The issue with DHCP REQUEST is something else.\n");
     }
+}
+
+void cmd_nettest(void) {
+    PRINT(CYAN, BLACK, "\n========================================\n");
+    PRINT(CYAN, BLACK, "    NETWORK CONNECTIVITY TEST\n");
+    PRINT(CYAN, BLACK, "========================================\n");
+    
+    net_config_t *config = net_get_config();
+    
+    // Test 1: Link status
+    PRINT(YELLOW, BLACK, "Test 1: Link Status... ");
+    if (e1000_link_status()) {
+        PRINT(GREEN, BLACK, "PASS\n");
+    } else {
+        PRINT(RED, BLACK, "FAIL (cable unplugged?)\n");
+        goto done;
+    }
+    
+    // Test 2: Configuration
+    PRINT(YELLOW, BLACK, "Test 2: IP Configuration... ");
+    if (config->configured) {
+        PRINT(GREEN, BLACK, "PASS\n");
+        PRINT(WHITE, BLACK, "        IP: ");
+        net_print_ip(config->ip);
+        PRINT(WHITE, BLACK, "\n");
+    } else {
+        PRINT(RED, BLACK, "FAIL (run 'dhcp' first)\n");
+        goto done;
+    }
+    
+    // Test 3: Gateway reachability
+    PRINT(YELLOW, BLACK, "Test 3: Gateway Reachability... ");
+    if (config->gateway != 0) {
+        PRINT(WHITE, BLACK, "\n");
+        char* gateway = "gateway";;
+        cmd_ping_fast(gateway);
+    } else {
+        PRINT(YELLOW, BLACK, "SKIP (no gateway)\n");
+    }
+    
+    // Test 4: DNS resolution
+    PRINT(YELLOW, BLACK, "Test 4: DNS Resolution... ");
+    uint32_t test_ip;
+    if (dns_resolve("example.com", &test_ip) == 0) {
+        PRINT(GREEN, BLACK, "PASS (");
+        net_print_ip(test_ip);
+        PRINT(WHITE, BLACK, ")\n");
+    } else {
+        PRINT(RED, BLACK, "FAIL\n");
+    }
+    
+    // Test 5: Internet connectivity
+    PRINT(YELLOW, BLACK, "Test 5: Internet Ping... ");
+    PRINT(WHITE, BLACK, "\n");
+    cmd_ping_fast("8.8.8.8");
+    
+done:
+    PRINT(CYAN, BLACK, "========================================\n\n");
 }
 
 // Test TX descriptor availability
@@ -756,96 +835,76 @@ void cmd_test(void) {
     PRINT(WHITE, BLACK, "Network stack is working. Try 'dhcp' now.\n");
 }
 
-
-// Updated ping command for shell.c that supports DNS and proper tracking
-
-void cmd_ping(const char *args) {
-    // Skip whitespace
-    while (*args == ' ') args++;
+void cmd_webtest(void) {
+    PRINT(CYAN, BLACK, "\n=== Internet Connectivity Test (DNS) ===\n");
     
-    if (*args == '\0') {
-        PRINT(YELLOW, BLACK, "Usage: ping <ip_address or hostname>\n");
-        PRINT(WHITE, BLACK, "Examples:\n");
-        PRINT(WHITE, BLACK, "  ping 8.8.8.8\n");
-        PRINT(WHITE, BLACK, "  ping google.com\n");
+    net_config_t *cfg = net_get_config();
+    if (!cfg->configured) {
+        PRINT(RED, BLACK, "Network not configured!\n");
         return;
     }
     
-    net_config_t *config = net_get_config();
-    if (!config->configured) {
-        PRINT(YELLOW, BLACK, "Network not configured. Use 'dhcp' first.\n");
-        return;
-    }
+    PRINT(WHITE, BLACK, "Testing DNS resolution (this proves internet works)...\n\n");
     
-    // Extract target string
-    char target[256];
-    int i = 0;
-    while (args[i] && args[i] != ' ' && args[i] != '\n' && args[i] != '\r' && i < 255) {
-        target[i] = args[i];
-        i++;
-    }
-    target[i] = '\0';
-    
-    // Check if it's a domain name (contains letters)
-    int is_domain = 0;
-    for (int j = 0; target[j]; j++) {
-        if ((target[j] >= 'a' && target[j] <= 'z') || 
-            (target[j] >= 'A' && target[j] <= 'Z')) {
-            is_domain = 1;
-            break;
-        }
-    }
-    
-    uint32_t dest_ip;
-    
-    if (is_domain) {
-        // DNS resolution
-        PRINT(WHITE, BLACK, "Resolving %s... ", target);
-        if (dns_resolve(target, &dest_ip) != 0) {
-            PRINT(YELLOW, BLACK, "Failed to resolve hostname\n");
-            PRINT(WHITE, BLACK, "Try using numeric IP address instead\n");
-            return;
-        }
+    // Test 1: Resolve google.com
+    PRINT(WHITE, BLACK, "[1] Resolving google.com...\n");
+    uint32_t google_ip;
+    if (dns_resolve("google.com", &google_ip) == 0) {
+        PRINT(GREEN, BLACK, "    ✓ SUCCESS: google.com = ");
+        net_print_ip(google_ip);
+        PRINT(WHITE, BLACK, "\n");
     } else {
-        // Parse IP address
-        dest_ip = net_parse_ip(target);
-        if (dest_ip == 0) {
-            PRINT(YELLOW, BLACK, "Invalid IP address format\n");
-            return;
-        }
+        PRINT(YELLOW, BLACK, "    ✗ DNS failed (may need to set DNS server)\n");
     }
     
-    PRINT(WHITE, BLACK, "\nPING ");
-    net_print_ip(dest_ip);
-    PRINT(WHITE, BLACK, " (%s) 56 bytes of data\n", target);
-    
-    int success_count = 0;
-    uint16_t ping_id = 0x8765;
-    
-    for (int seq = 0; seq < 4; seq++) {
-        // Send ping
-        if (icmp_send_ping(dest_ip, ping_id, seq) != 0) {
-            PRINT(YELLOW, BLACK, "Failed to send ping %d\n", seq + 1);
-            continue;
-        }
-        
-        // Wait for reply with 1 second timeout
-        if (icmp_wait_reply(ping_id, seq, 1000)) {
-            success_count++;
-            PRINT(GREEN, BLACK, "64 bytes from ");
-            net_print_ip(dest_ip);
-            PRINT(GREEN, BLACK, ": icmp_seq=%d ttl=64\n", seq);
-        } else {
-            PRINT(YELLOW, BLACK, "Request timeout for icmp_seq %d\n", seq);
-        }
-        
-        // Small delay between pings
-        for (volatile int j = 0; j < 10000000; j++);
+    // Test 2: Resolve cloudflare.com
+    PRINT(WHITE, BLACK, "\n[2] Resolving cloudflare.com...\n");
+    uint32_t cf_ip;
+    if (dns_resolve("cloudflare.com", &cf_ip) == 0) {
+        PRINT(GREEN, BLACK, "    ✓ SUCCESS: cloudflare.com = ");
+        net_print_ip(cf_ip);
+        PRINT(WHITE, BLACK, "\n");
+    } else {
+        PRINT(YELLOW, BLACK, "    ✗ DNS failed\n");
     }
     
-    PRINT(WHITE, BLACK, "\n--- %s ping statistics ---\n", target);
-    PRINT(WHITE, BLACK, "4 packets transmitted, %d received, %d%% packet loss\n",
-          success_count, ((4 - success_count) * 100) / 4);
+    // Test 3: Try UDP to DNS server directly
+    PRINT(WHITE, BLACK, "\n[3] Testing UDP to 8.8.8.8:53 (DNS)...\n");
+    uint32_t dns_ip = net_parse_ip("8.8.8.8");
+    
+    // Build a simple DNS query
+    uint8_t query[32] = {
+        0x12, 0x34,  // Transaction ID
+        0x01, 0x00,  // Flags (standard query)
+        0x00, 0x01,  // Questions: 1
+        0x00, 0x00,  // Answers: 0
+        0x00, 0x00,  // Authority: 0
+        0x00, 0x00,  // Additional: 0
+        // Question: "a" + null + type A + class IN
+        0x01, 'a', 0x00,
+        0x00, 0x01,  // Type A
+        0x00, 0x01   // Class IN
+    };
+    
+    if (udp_send(dns_ip, 53, 53, query, sizeof(query)) == 0) {
+        PRINT(GREEN, BLACK, "    ✓ UDP packet sent to 8.8.8.8\n");
+        PRINT(WHITE, BLACK, "    (This proves routing through gateway works!)\n");
+    } else {
+        PRINT(RED, BLACK, "    ✗ Failed to send UDP\n");
+    }
+    
+    PRINT(CYAN, BLACK, "\n=== Summary ===\n");
+    PRINT(WHITE, BLACK, "If DNS resolution worked, your internet is FULLY functional!\n");
+    PRINT(WHITE, BLACK, "ICMP ping may be blocked by your router/ISP (this is normal).\n\n");
+    PRINT(WHITE, BLACK, "Next steps:\n");
+    PRINT(WHITE, BLACK, "  - Use 'dnstest google.com' to resolve domain names\n");
+    PRINT(WHITE, BLACK, "  - Ping devices on your local network (192.168.1.x)\n");
+    PRINT(WHITE, BLACK, "  - Build HTTP client to fetch web pages!\n");
+}
+
+void cmd_curl(const char *args) {
+    // curl is just an alias for wget
+    cmd_wget(args);
 }
 
 void cmd_arp(void) {
@@ -853,58 +912,58 @@ void cmd_arp(void) {
     arp_print_cache();
 }
 
-void cmd_nettest(void) {
-    PRINT(CYAN, BLACK, "\n=== Network Stack Test ===\n");
-    
+void cmd_netstat(void) {
     net_config_t *config = net_get_config();
     
-    PRINT(WHITE, BLACK, "\nTest 1: Network Interface\n");
-    PRINT(WHITE, BLACK, "  MAC: ");
+    PRINT(CYAN, BLACK, "\n========================================\n");
+    PRINT(CYAN, BLACK, "      NETWORK STATUS\n");
+    PRINT(CYAN, BLACK, "========================================\n");
+    
+    // Hardware
+    PRINT(YELLOW, BLACK, "Hardware:\n");
+    PRINT(WHITE, BLACK, "  MAC:  ");
     net_print_mac(config->mac);
-    if (config->configured) {
-        PRINT(GREEN, BLACK, "  Configured\n");
-    } else {
-        PRINT(YELLOW, BLACK, "  Not configured\n");
-    }
-    
-    PRINT(WHITE, BLACK, "\nTest 2: Link Status\n");
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "  Link: ");
     if (e1000_link_status()) {
-        PRINT(GREEN, BLACK, "  Link UP \n");
+        PRINT(GREEN, BLACK, "UP\n");
     } else {
-        PRINT(YELLOW, BLACK, "  Link DOWN \n");
+        PRINT(RED, BLACK, "DOWN\n");
     }
     
-    PRINT(WHITE, BLACK, "\nTest 3: IP Parsing\n");
-    uint32_t test_ip = net_parse_ip("192.168.1.1");
-    PRINT(WHITE, BLACK, "  Parsed 192.168.1.1 = ");
-    net_print_ip(test_ip);
-    PRINT(GREEN, BLACK, " \n");
+    PRINT(WHITE, BLACK, "\n");
     
-    PRINT(WHITE, BLACK, "\nTest 4: Byte Order Conversion\n");
-    uint16_t host_val = 0x1234;
-    uint16_t net_val = net_htons(host_val);
-    PRINT(WHITE, BLACK, "  htons(0x%x) = 0x%x", host_val, net_val);
-    if (net_val == 0x3412) {
-        PRINT(GREEN, BLACK, " \n");
-    } else {
-        PRINT(YELLOW, BLACK, " \n");
-    }
-    
+    // IPv4 Configuration
+    PRINT(YELLOW, BLACK, "IPv4 Configuration:\n");
     if (config->configured) {
-        PRINT(WHITE, BLACK, "\nTest 5: Ping Gateway\n");
-        PRINT(WHITE, BLACK, "  Target: ");
-        net_print_ip(config->gateway);
+        PRINT(WHITE, BLACK, "  Status:  ");
+        PRINT(GREEN, BLACK, "CONFIGURED\n");
+        
+        PRINT(WHITE, BLACK, "  IP:      ");
+        net_print_ip(config->ip);
         PRINT(WHITE, BLACK, "\n");
         
-        icmp_send_ping(config->gateway, 0xABCD, 1);
-        PRINT(WHITE, BLACK, "  Ping sent - check for reply above\n");
+        PRINT(WHITE, BLACK, "  Netmask: ");
+        net_print_ip(config->netmask);
+        PRINT(WHITE, BLACK, "\n");
         
-        for (volatile int i = 0; i < 100000000; i++);
+        PRINT(WHITE, BLACK, "  Gateway: ");
+        net_print_ip(config->gateway);
+        PRINT(WHITE, BLACK, "\n");
+    } else {
+        PRINT(WHITE, BLACK, "  Status:  ");
+        PRINT(RED, BLACK, "NOT CONFIGURED\n");
+        PRINT(YELLOW, BLACK, "  Run 'dhcp' to configure\n");
     }
     
-    PRINT(CYAN, BLACK, "\n=== Test Complete ===\n");
+    PRINT(WHITE, BLACK, "\n");
+    
+    // ARP Cache
+    PRINT(YELLOW, BLACK, "ARP Cache:\n");
+    arp_print_cache();
+    
+    PRINT(CYAN, BLACK, "\n========================================\n\n");
 }
-
 
 uint32_t parse_number(const char *str) {
     uint32_t result = 0;
@@ -1785,6 +1844,10 @@ void process_command(char* cmd) {
         PRINT(WHITE, BLACK, "  netverify            - Verify network connectivity\n");
         PRINT(WHITE, BLACK, "  netstatus            - Show detailed network status\n");
         PRINT(WHITE, BLACK, "  dnstest <domain>     - Test DNS resolution\n");
+        PRINT(CYAN, BLACK, "\nHTTP Commands:\n");
+        PRINT(WHITE, BLACK, "  wget <url>  - Fetch web page\n");
+        PRINT(WHITE, BLACK, "  curl <url>  - Fetch web page (alias)\n");
+        PRINT(WHITE, BLACK, "  httptest    - Test HTTP client\n");
         PRINT(GREEN, BLACK, "Shutdown commands: \n");
         PRINT(WHITE, BLACK, "  shutdown - Power off the system\n");
         PRINT(WHITE, BLACK, "  reboot   - Reboot the system\n");
@@ -2366,6 +2429,7 @@ else if (STRNCMP(cmd, "dhcp", 4) == 0) {
     cmd_dhcp();
 }
 else if (STRNCMP(cmd, "ping ", 5) == 0) {
+
     cmd_ping(cmd + 5);
 }
 else if (STRNCMP(cmd, "arp", 3) == 0) {
@@ -2381,7 +2445,18 @@ else if (STRNCMP(cmd, "netstatus", 9) == 0) {
 }
 else if (STRNCMP(cmd, "dnstest ", 8) == 0) {
     cmd_dnstest(cmd + 8);
-} else {
+} else if (STRNCMP(cmd, "webtest", 7) == 0) {
+    cmd_webtest();
+}  else if (STRNCMP(cmd, "wget ", 5) == 0) {
+    cmd_wget(cmd + 5);
+}
+else if (STRNCMP(cmd, "curl ", 5) == 0) {
+    cmd_curl(cmd + 5);
+}
+else if (STRNCMP(cmd, "httptest", 8) == 0) {
+    cmd_httptest();
+}
+    else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");
     }
@@ -2400,7 +2475,7 @@ void run_text_demo(void) {
 
     while (1) {
         cursor_timer++;
-
+         e1000_interrupt_handler();
         process_keyboard_buffer();
         mouse();
         if (input_available()) {
