@@ -6,8 +6,8 @@
 #include "mouse.h"
 #include "IO.h"
 
-#define MAX_LINES 1000
-#define MAX_LINE_LENGTH 200
+#define MAX_LINES 250
+#define MAX_LINE_LENGTH 80
 #define EDITOR_BG 0x1E3A8A
 #define EDITOR_TEXT 0xFFFFFF
 #define LINE_NUM_COLOR 0x60A5FA
@@ -575,20 +575,40 @@ static int editor_show_save_prompt(editor_state_t* ed) {
     return result;
 }
 
+
 static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_held) {
     if (scancode & 0x80) return;
 
+    // ENTER key - split line
     if (scancode == 0x1C) {
         if (ed->line_count >= MAX_LINES) return;
 
         char remaining[MAX_LINE_LENGTH];
-        STRCPY(remaining, &ed->lines[ed->cursor_line][ed->cursor_col]);
+        
+        // CRITICAL FIX: Bounds check before copying
+        int current_len = STRLEN(ed->lines[ed->cursor_line]);
+        
+        // Make sure cursor_col is within valid range
+        if (ed->cursor_col > current_len) {
+            ed->cursor_col = current_len;
+        }
+        
+        // Copy the remaining part of the line (from cursor to end)
+        if (ed->cursor_col < current_len) {
+            STRCPY(remaining, &ed->lines[ed->cursor_line][ed->cursor_col]);
+        } else {
+            remaining[0] = '\0';  // No remaining text
+        }
+        
+        // Terminate current line at cursor position
         ed->lines[ed->cursor_line][ed->cursor_col] = '\0';
 
+        // Shift lines down to make room for new line
         for (int i = ed->line_count; i > ed->cursor_line + 1; i--) {
             STRCPY(ed->lines[i], ed->lines[i-1]);
         }
 
+        // Put remaining text on new line
         STRCPY(ed->lines[ed->cursor_line + 1], remaining);
         ed->line_count++;
         ed->cursor_line++;
@@ -602,20 +622,35 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
         return;
     }
 
+    // BACKSPACE key
     if (scancode == 0x0E) {
         if (ed->cursor_col > 0) {
             int len = STRLEN(ed->lines[ed->cursor_line]);
-            for (int i = ed->cursor_col - 1; i < len; i++) {
-                ed->lines[ed->cursor_line][i] = ed->lines[ed->cursor_line][i + 1];
+            
+            // CRITICAL FIX: Bounds check
+            if (ed->cursor_col > len) {
+                ed->cursor_col = len;
             }
-            ed->cursor_col--;
-            ed->modified = 1;
-            ed->needs_full_redraw = 1;
+            
+            if (ed->cursor_col > 0) {
+                // Shift characters left
+                for (int i = ed->cursor_col - 1; i < len; i++) {
+                    ed->lines[ed->cursor_line][i] = ed->lines[ed->cursor_line][i + 1];
+                }
+                ed->cursor_col--;
+                ed->modified = 1;
+                ed->needs_full_redraw = 1;
+            }
         } else if (ed->cursor_line > 0) {
+            // Backspace at start of line - merge with previous line
             int prev_len = STRLEN(ed->lines[ed->cursor_line - 1]);
-            if (prev_len + STRLEN(ed->lines[ed->cursor_line]) < MAX_LINE_LENGTH - 1) {
+            int curr_len = STRLEN(ed->lines[ed->cursor_line]);
+            
+            // Check if merge is possible
+            if (prev_len + curr_len < MAX_LINE_LENGTH - 1) {
                 STRCAT(ed->lines[ed->cursor_line - 1], ed->lines[ed->cursor_line]);
 
+                // Shift lines up
                 for (int i = ed->cursor_line; i < ed->line_count - 1; i++) {
                     STRCPY(ed->lines[i], ed->lines[i + 1]);
                 }
@@ -633,6 +668,7 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
         return;
     }
 
+    // UP arrow
     if (scancode == 0x48) {
         if (ed->cursor_line > 0) {
             ed->cursor_line--;
@@ -645,6 +681,7 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
         return;
     }
 
+    // DOWN arrow
     if (scancode == 0x50) {
         if (ed->cursor_line < ed->line_count - 1) {
             ed->cursor_line++;
@@ -657,6 +694,7 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
         return;
     }
 
+    // LEFT arrow
     if (scancode == 0x4B) {
         if (ed->cursor_col > 0) {
             ed->cursor_col--;
@@ -670,6 +708,7 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
         return;
     }
 
+    // RIGHT arrow
     if (scancode == 0x4D) {
         int len = STRLEN(ed->lines[ed->cursor_line]);
         if (ed->cursor_col < len) {
@@ -684,6 +723,7 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
         return;
     }
 
+    // Character input
     char ch = 0;
     switch (scancode) {
         case 0x02: ch = shift_held ? '!' : '1'; break;
@@ -742,10 +782,18 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
 
     if (ch) {
         int len = STRLEN(ed->lines[ed->cursor_line]);
+        
+        // CRITICAL FIX: Bounds check cursor position
+        if (ed->cursor_col > len) {
+            ed->cursor_col = len;
+        }
+        
         if (len < MAX_LINE_LENGTH - 1) {
+            // Shift characters right to make room
             for (int i = len; i > ed->cursor_col; i--) {
                 ed->lines[ed->cursor_line][i] = ed->lines[ed->cursor_line][i - 1];
             }
+            // Insert new character
             ed->lines[ed->cursor_line][ed->cursor_col] = ch;
             ed->lines[ed->cursor_line][len + 1] = '\0';
             ed->cursor_col++;
@@ -754,6 +802,7 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
         }
     }
 }
+
 
 void anthropic_editor(const char* filename);
 

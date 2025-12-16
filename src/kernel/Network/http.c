@@ -1,4 +1,22 @@
-// ========== http.c - FIXED WGET (Real-world Behavior) ==========
+// ========== HTTP REQUEST DEBUGGER AND FIXED IMPLEMENTATION ==========
+
+/*
+ * APACHE 400 BAD REQUEST DIAGNOSIS
+ * 
+ * Apache returns "error 0x190" (hex for 400) when:
+ * 1. Request line is malformed (missing space, invalid HTTP version)
+ * 2. Headers contain invalid characters or formatting
+ * 3. Request doesn't end with \r\n\r\n
+ * 4. There are NUL bytes in the request
+ * 5. Host header is missing or malformed (HTTP/1.1)
+ * 
+ * Common causes in embedded systems:
+ * - Using \n instead of \r\n
+ * - Path contains NUL byte or is empty
+ * - Extra spaces in request line
+ * - Missing space between method and path
+ */
+
 #include "http.h"
 #include "tcp.h"
 #include "dns.h"
@@ -8,6 +26,7 @@
 #include "memory.h"
 #include "E1000.h"
 #include "vfs.h"
+
 #define HTTP_RESPONSE_MAX 16384
 
 static char http_response_buffer[HTTP_RESPONSE_MAX];
@@ -15,18 +34,153 @@ static volatile int http_response_len = 0;
 static volatile int http_transfer_complete = 0;
 static tcp_socket_t *http_socket = NULL;
 
+// Hex dump for debugging
+static void hex_dump(const char *label, const uint8_t *data, int len) {
+    PRINT(CYAN, BLACK, "[DEBUG] %s (%d bytes):\n", label, len);
+    
+    for (int i = 0; i < len; i++) {
+        // Print offset
+        if (i % 16 == 0) {
+            PRINT(YELLOW, BLACK, "%04x: ", i);
+        }
+        
+        // Print hex
+        PRINT(WHITE, BLACK, "%02x ", data[i]);
+        
+        // Print ASCII representation at end of line
+        if (i % 16 == 15 || i == len - 1) {
+            // Pad if necessary
+            for (int j = i % 16; j < 15; j++) {
+                PRINT(WHITE, BLACK, "   ");
+            }
+            
+            PRINT(WHITE, BLACK, " | ");
+            
+            // Print ASCII
+            int start = i - (i % 16);
+            int end = (i % 16 == 15) ? i + 1 : i + 1;
+            
+            for (int j = start; j < end; j++) {
+                if (data[j] >= 32 && data[j] <= 126) {
+                    PRINT(WHITE, BLACK, "%c", data[j]);
+                } else if (data[j] == '\r') {
+                    PRINT(MAGENTA, BLACK, "\\r");
+                } else if (data[j] == '\n') {
+                    PRINT(MAGENTA, BLACK, "\\n");
+                } else {
+                    PRINT(YELLOW, BLACK, ".");
+                }
+            }
+            PRINT(WHITE, BLACK, "\n");
+        }
+    }
+}
+
+// Validate HTTP request before sending
+static int validate_http_request(const char *request, int len) {
+    PRINT(CYAN, BLACK, "\n[VALIDATION] Checking HTTP request...\n");
+    
+    int errors = 0;
+    
+    // Check 1: Must start with valid method
+    if (len < 4 || !(request[0] == 'G' && request[1] == 'E' && request[2] == 'T' && request[3] == ' ')) {
+        PRINT(RED, BLACK, "[VALIDATION] ✗ Doesn't start with 'GET '\n");
+        errors++;
+    } else {
+        PRINT(GREEN, BLACK, "[VALIDATION] ✓ Starts with 'GET '\n");
+    }
+    
+    // Check 2: Find request line end
+    int req_line_end = -1;
+    for (int i = 0; i < len - 1; i++) {
+        if (request[i] == '\r' && request[i+1] == '\n') {
+            req_line_end = i;
+            break;
+        }
+    }
+    
+    if (req_line_end == -1) {
+        PRINT(RED, BLACK, "[VALIDATION] ✗ No \\r\\n found in request line\n");
+        errors++;
+    } else {
+        PRINT(GREEN, BLACK, "[VALIDATION] ✓ Request line ends at byte %d\n", req_line_end);
+        
+        // Extract and display request line
+        PRINT(WHITE, BLACK, "[VALIDATION] Request line: '");
+        for (int i = 0; i < req_line_end; i++) {
+            PRINT(WHITE, BLACK, "%c", request[i]);
+        }
+        PRINT(WHITE, BLACK, "'\n");
+        
+        // Check for HTTP version
+        if (req_line_end > 8) {
+            int has_http = 0;
+            for (int i = 0; i <= req_line_end - 8; i++) {
+                if (request[i] == 'H' && request[i+1] == 'T' && request[i+2] == 'T' && request[i+3] == 'P') {
+                    has_http = 1;
+                    PRINT(GREEN, BLACK, "[VALIDATION] ✓ Found 'HTTP' at position %d\n", i);
+                    break;
+                }
+            }
+            if (!has_http) {
+                PRINT(RED, BLACK, "[VALIDATION] ✗ No 'HTTP' found in request line\n");
+                errors++;
+            }
+        }
+    }
+    
+    // Check 3: Must end with \r\n\r\n
+    if (len >= 4) {
+        if (request[len-4] == '\r' && request[len-3] == '\n' && 
+            request[len-2] == '\r' && request[len-1] == '\n') {
+            PRINT(GREEN, BLACK, "[VALIDATION] ✓ Ends with \\r\\n\\r\\n\n");
+        } else {
+            PRINT(RED, BLACK, "[VALIDATION] ✗ Doesn't end with \\r\\n\\r\\n\n");
+            PRINT(YELLOW, BLACK, "[VALIDATION] Last 4 bytes: 0x%02x 0x%02x 0x%02x 0x%02x\n",
+                  (uint8_t)request[len-4], (uint8_t)request[len-3], 
+                  (uint8_t)request[len-2], (uint8_t)request[len-1]);
+            errors++;
+        }
+    }
+    
+    // Check 4: Look for Host header (required for HTTP/1.1)
+    int has_host = 0;
+    for (int i = 0; i < len - 5; i++) {
+        if ((request[i] == '\r' && request[i+1] == '\n' && 
+             request[i+2] == 'H' && request[i+3] == 'o' && request[i+4] == 's' && request[i+5] == 't') ||
+            (i == 0 && request[i] == 'H' && request[i+1] == 'o' && request[i+2] == 's' && request[i+3] == 't')) {
+            has_host = 1;
+            PRINT(GREEN, BLACK, "[VALIDATION] ✓ Found Host header at position %d\n", i);
+            break;
+        }
+    }
+    
+    if (!has_host) {
+        PRINT(YELLOW, BLACK, "[VALIDATION] ⚠ No Host header found (required for HTTP/1.1)\n");
+    }
+    
+    // Check 5: Check for NUL bytes
+    for (int i = 0; i < len - 1; i++) {  // -1 because last byte might be intentional NUL
+        if (request[i] == '\0') {
+            PRINT(RED, BLACK, "[VALIDATION] ✗ NUL byte found at position %d\n", i);
+            errors++;
+            break;
+        }
+    }
+    
+    PRINT(CYAN, BLACK, "\n[VALIDATION] Summary: %d error(s) found\n\n", errors);
+    return errors;
+}
 
 static void extract_filename_from_url(const char *url, char *filename, int max_len) {
     const char *ptr = url;
     
-    // Skip protocol
     if (STRNCMP(ptr, "http://", 7) == 0) {
         ptr += 7;
     } else if (STRNCMP(ptr, "https://", 8) == 0) {
         ptr += 8;
     }
     
-    // Find last slash to get filename
     const char *last_slash = NULL;
     while (*ptr) {
         if (*ptr == '/') {
@@ -35,24 +189,20 @@ static void extract_filename_from_url(const char *url, char *filename, int max_l
         ptr++;
     }
     
-    // If we found a slash and there's content after it
     if (last_slash && *(last_slash + 1) != '\0') {
         int i = 0;
-        last_slash++; // Move past the slash
+        last_slash++;
         
-        // Copy filename (stop at query parameters or fragment)
         while (*last_slash && *last_slash != '?' && *last_slash != '#' && i < max_len - 1) {
             filename[i++] = *last_slash++;
         }
         filename[i] = '\0';
         
-        // If we got a valid filename, return
         if (i > 0) {
             return;
         }
     }
     
-    // Default filename if we couldn't extract one
     const char *default_name = "index.html";
     int i = 0;
     while (default_name[i] && i < max_len - 1) {
@@ -62,16 +212,13 @@ static void extract_filename_from_url(const char *url, char *filename, int max_l
     filename[i] = '\0';
 }
 
-
-// Parse URL: http://example.com/path -> host, path, port
 static int parse_url(const char *url, char *host, char *path, uint16_t *port) {
     const char *ptr = url;
     
-    // Skip http:// or https://
     if (STRNCMP(ptr, "http://", 7) == 0) {
         ptr += 7;
     } else if (STRNCMP(ptr, "https://", 8) == 0) {
-        PRINT(YELLOW, BLACK, "[WGET] Warning: HTTPS not supported, attempting HTTP\n");
+        PRINT(YELLOW, BLACK, "[WGET] Warning: HTTPS not supported\n");
         ptr += 8;
     }
     
@@ -83,12 +230,12 @@ static int parse_url(const char *url, char *host, char *path, uint16_t *port) {
     host[i] = '\0';
     
     if (i == 0) {
-        PRINT(RED, BLACK, "[WGET] Error: No hostname in URL\n");
+        PRINT(RED, BLACK, "[WGET] Error: No hostname\n");
         return -1;
     }
     
-    // Check for port
-    *port = 80;  // default
+    // Port
+    *port = 80;
     if (*ptr == ':') {
         ptr++;
         *port = 0;
@@ -102,16 +249,30 @@ static int parse_url(const char *url, char *host, char *path, uint16_t *port) {
         }
     }
     
-    // Extract path
-    if (*ptr == '/' && *(ptr + 1) != '\0') {
+    // Path - CRITICAL: ALWAYS set to "/" if empty
+    if (*ptr == '\0') {
+        // No path at all - use "/"
+        path[0] = '/';
+        path[1] = '\0';
+        PRINT(WHITE, BLACK, "[PARSE] No path in URL, using '/'\n");
+    } else if (*ptr == '/' && *(ptr + 1) == '\0') {
+        // Just "/" - use it
+        path[0] = '/';
+        path[1] = '\0';
+        PRINT(WHITE, BLACK, "[PARSE] URL ends with '/', using '/'\n");
+    } else if (*ptr == '/') {
+        // Path exists - copy it
         i = 0;
         while (*ptr && i < 255) {
             path[i++] = *ptr++;
         }
         path[i] = '\0';
+        PRINT(WHITE, BLACK, "[PARSE] Extracted path: '%s'\n", path);
     } else {
+        // Shouldn't happen, but be safe
         path[0] = '/';
         path[1] = '\0';
+        PRINT(YELLOW, BLACK, "[PARSE] Unexpected format, defaulting to '/'\n");
     }
     
     return 0;
@@ -122,26 +283,18 @@ int http_get(const char *url, char *output, int max_len) {
     char path[256];
     uint16_t port;
     
-    PRINT(CYAN, BLACK, "[WGET] Parsing URL...\n");
+    PRINT(CYAN, BLACK, "\n[WGET] Starting request for: %s\n", url);
     
-    // Parse URL
     if (parse_url(url, host, path, &port) != 0) {
         return -1;
     }
     
-    PRINT(WHITE, BLACK, "[WGET] Host: %s\n", host);
-    PRINT(WHITE, BLACK, "[WGET] Path: %s\n", path);
-    PRINT(WHITE, BLACK, "[WGET] Port: %d\n", port);
+    PRINT(WHITE, BLACK, "[WGET] Parsed - Host: '%s', Path: '%s', Port: %d\n", host, path, port);
     
-    // Resolve hostname
-    PRINT(CYAN, BLACK, "[WGET] Resolving %s...\n", host);
+    // Resolve
     uint32_t ip;
     if (dns_resolve(host, &ip) != 0) {
-        PRINT(RED, BLACK, "[WGET] ERROR: DNS resolution failed\n");
-        PRINT(YELLOW, BLACK, "[WGET] Possible causes:\n");
-        PRINT(WHITE, BLACK, "  - DNS server not configured (run 'dhcp' first)\n");
-        PRINT(WHITE, BLACK, "  - Hostname doesn't exist\n");
-        PRINT(WHITE, BLACK, "  - Network connectivity issue\n");
+        PRINT(RED, BLACK, "[WGET] DNS failed\n");
         return -1;
     }
     
@@ -150,168 +303,195 @@ int http_get(const char *url, char *output, int max_len) {
     PRINT(WHITE, BLACK, "\n");
     
     // Create socket
-    PRINT(CYAN, BLACK, "[WGET] Creating TCP socket...\n");
     http_socket = tcp_socket();
     if (!http_socket) {
-        PRINT(RED, BLACK, "[WGET] ERROR: Failed to create socket\n");
+        PRINT(RED, BLACK, "[WGET] Socket creation failed\n");
         return -1;
     }
-    PRINT(GREEN, BLACK, "[WGET] Socket created\n");
     
-    // Reset state
     http_response_len = 0;
     http_transfer_complete = 0;
     
     // Connect
-    PRINT(CYAN, BLACK, "[WGET] Connecting to ");
-    net_print_ip(ip);
-    PRINT(WHITE, BLACK, ":%d...\n", port);
-    
     if (tcp_connect(http_socket, ip, port) != 0) {
-        PRINT(RED, BLACK, "[WGET] ERROR: Connection failed\n");
-        PRINT(YELLOW, BLACK, "[WGET] Possible causes:\n");
-        PRINT(WHITE, BLACK, "  - Host unreachable\n");
-        PRINT(WHITE, BLACK, "  - Port blocked or closed\n");
-        PRINT(WHITE, BLACK, "  - Gateway not configured\n");
+        PRINT(RED, BLACK, "[WGET] Connection failed\n");
         http_socket = NULL;
         return -1;
     }
     
-    PRINT(GREEN, BLACK, "[WGET] Connected!\n");
+    PRINT(GREEN, BLACK, "[WGET] Connected!\n\n");
     
-    // Build HTTP/1.0 request (like real wget)
+    // Build request - ULTRA CAREFUL VERSION
     char request[1024];
-    int req_len = 0;
+    int pos = 0;
     
-    // GET /path HTTP/1.0\r\n
-    const char *get = "GET ";
-    while (*get) request[req_len++] = *get++;
+    // Method
+    request[pos++] = 'G';
+    request[pos++] = 'E';
+    request[pos++] = 'T';
+    request[pos++] = ' ';
     
-    const char *p = path;
-    while (*p) request[req_len++] = *p++;
+    // Path (already validated to not be empty)
+    for (int i = 0; path[i] != '\0' && pos < 1000; i++) {
+        request[pos++] = path[i];
+    }
     
-    const char *http10 = " HTTP/1.0\r\n";
-    while (*http10) request[req_len++] = *http10++;
+    // Space
+    request[pos++] = ' ';
     
-    // Host: hostname\r\n
-    const char *host_hdr = "Host: ";
-    while (*host_hdr) request[req_len++] = *host_hdr++;
+    // HTTP version
+    request[pos++] = 'H';
+    request[pos++] = 'T';
+    request[pos++] = 'T';
+    request[pos++] = 'P';
+    request[pos++] = '/';
+    request[pos++] = '1';
+    request[pos++] = '.';
+    request[pos++] = '1';
     
-    const char *h = host;
-    while (*h) request[req_len++] = *h++;
+    // CRLF
+    request[pos++] = '\r';
+    request[pos++] = '\n';
     
-    const char *crlf = "\r\n";
-    while (*crlf) request[req_len++] = *crlf++;
+    // Host header
+    request[pos++] = 'H';
+    request[pos++] = 'o';
+    request[pos++] = 's';
+    request[pos++] = 't';
+    request[pos++] = ':';
+    request[pos++] = ' ';
     
-    // User-Agent: wget/1.0 (like real wget includes this)
-    const char *ua = "User-Agent: wget/1.0\r\n";
-    while (*ua) request[req_len++] = *ua++;
+    for (int i = 0; host[i] != '\0' && pos < 1000; i++) {
+        request[pos++] = host[i];
+    }
     
-    // Connection: close\r\n
+    request[pos++] = '\r';
+    request[pos++] = '\n';
+    
+    // User-Agent header
+    const char *ua = "User-Agent: CustomOS/1.0\r\n";
+    for (int i = 0; ua[i] != '\0' && pos < 1000; i++) {
+        request[pos++] = ua[i];
+    }
+    
+    // Accept header
+    const char *accept = "Accept: */*\r\n";
+    for (int i = 0; accept[i] != '\0' && pos < 1000; i++) {
+        request[pos++] = accept[i];
+    }
+    
+    // Connection header
     const char *conn = "Connection: close\r\n";
-    while (*conn) request[req_len++] = *conn++;
+    for (int i = 0; conn[i] != '\0' && pos < 1000; i++) {
+        request[pos++] = conn[i];
+    }
     
-    // Empty line to end headers
-    request[req_len++] = '\r';
-    request[req_len++] = '\n';
-    request[req_len] = '\0';
+    // Final CRLF (end of headers)
+    request[pos++] = '\r';
+    request[pos++] = '\n';
     
-    PRINT(CYAN, BLACK, "[WGET] Sending HTTP request (%d bytes)...\n", req_len);
-    PRINT(YELLOW, BLACK, "[WGET] Request:\n%s", request);
+    // DON'T add null terminator - HTTP is binary safe
     
-    if (tcp_send(http_socket, request, req_len) != 0) {
-        PRINT(RED, BLACK, "[WGET] ERROR: Failed to send request\n");
+    PRINT(CYAN, BLACK, "========================================\n");
+    PRINT(CYAN, BLACK, "  HTTP REQUEST DEBUG\n");
+    PRINT(CYAN, BLACK, "========================================\n");
+    PRINT(WHITE, BLACK, "Request length: %d bytes\n\n", pos);
+    
+    // Show human-readable version
+    PRINT(YELLOW, BLACK, "Human-readable (with markers):\n");
+    PRINT(WHITE, BLACK, "---\n");
+    for (int i = 0; i < pos; i++) {
+        if (request[i] == '\r') {
+            PRINT(MAGENTA, BLACK, "[CR]");
+        } else if (request[i] == '\n') {
+            PRINT(MAGENTA, BLACK, "[LF]\n");
+        } else {
+            PRINT(WHITE, BLACK, "%c", request[i]);
+        }
+    }
+    PRINT(WHITE, BLACK, "---\n\n");
+    
+    // Show hex dump
+    hex_dump("HTTP Request", (uint8_t*)request, pos);
+    
+    // Validate
+    validate_http_request(request, pos);
+    
+    PRINT(CYAN, BLACK, "========================================\n\n");
+    
+    // Send
+    if (tcp_send(http_socket, request, pos) != 0) {
+        PRINT(RED, BLACK, "[WGET] Send failed\n");
         tcp_close(http_socket);
         http_socket = NULL;
         return -1;
     }
     
     PRINT(GREEN, BLACK, "[WGET] Request sent!\n");
+    PRINT(CYAN, BLACK, "[WGET] Waiting for response");
     
-    // Wait for response (like real wget with progress)
-    PRINT(CYAN, BLACK, "[WGET] Receiving response");
-    
-    int timeout = 10000;  // 10 seconds total timeout
+    // Wait for response
+    int timeout = 10000;
     int no_data_count = 0;
     int last_len = 0;
-    int dots_printed = 0;
     
     for (int i = 0; i < timeout; i++) {
-        // Aggressive network polling
         for (int p = 0; p < 50; p++) {
             e1000_interrupt_handler();
         }
         
-        // Check if we got new data
         if (http_response_len > last_len) {
             last_len = http_response_len;
             no_data_count = 0;
             
-            // Print progress dots
-            if ((i % 100) == 0 && dots_printed < 50) {
+            if ((http_response_len / 100) > (last_len / 100)) {
                 PRINT(WHITE, BLACK, ".");
-                dots_printed++;
             }
         } else {
             no_data_count++;
-        }
-        
-        // Check if connection closed
-        int state = tcp_get_state(http_socket);
-        if (state == TCP_STATE_CLOSED) {
-            if (http_response_len > 0) {
-                PRINT(WHITE, BLACK, " done\n");
-                PRINT(GREEN, BLACK, "[WGET] Transfer complete (connection closed)\n");
+            
+            if (no_data_count > 1000 && http_response_len > 0) {
+                http_transfer_complete = 1;
                 break;
-            } else {
-                PRINT(WHITE, BLACK, " failed\n");
-                PRINT(RED, BLACK, "[WGET] ERROR: Connection closed without data\n");
-                tcp_close(http_socket);
-                http_socket = NULL;
-                return -1;
             }
         }
         
-        // If we have data and no new data for a while, consider it complete
-        if (http_response_len > 0 && no_data_count > 500) {
-            PRINT(WHITE, BLACK, " done\n");
-            PRINT(YELLOW, BLACK, "[WGET] Transfer appears complete (no new data)\n");
+        if (http_transfer_complete) {
             break;
         }
         
-        // Small delay
-        for (volatile int j = 0; j < 5000; j++);
+        for (volatile int j = 0; j < 100; j++);
     }
     
-    // Clean up
+    PRINT(WHITE, BLACK, "\n");
+    
     tcp_close(http_socket);
     http_socket = NULL;
     
     if (http_response_len == 0) {
-        PRINT(RED, BLACK, "[WGET] ERROR: No data received\n");
+        PRINT(RED, BLACK, "[WGET] No response received\n");
         return -1;
     }
     
-    // Copy to output buffer
-    int copy_len = (http_response_len < max_len - 1) ? http_response_len : (max_len - 1);
+    int copy_len = (http_response_len < max_len) ? http_response_len : max_len;
     for (int i = 0; i < copy_len; i++) {
         output[i] = http_response_buffer[i];
     }
-    output[copy_len] = '\0';
     
-    PRINT(GREEN, BLACK, "[WGET] Received %d bytes total\n", http_response_len);
+    if (copy_len < max_len) {
+        output[copy_len] = '\0';
+    }
     
-    return http_response_len;
+    return copy_len;
 }
 
-// Called by TCP layer when data arrives
 void http_tcp_data_received(uint8_t *data, int len) {
     if (http_response_len + len < HTTP_RESPONSE_MAX) {
         for (int i = 0; i < len; i++) {
             http_response_buffer[http_response_len++] = data[i];
         }
     } else {
-        PRINT(YELLOW, BLACK, "[WGET] Warning: Response buffer full, truncating\n");
+        PRINT(YELLOW, BLACK, "[WGET] Buffer full\n");
         int remaining = HTTP_RESPONSE_MAX - http_response_len;
         for (int i = 0; i < remaining; i++) {
             http_response_buffer[http_response_len++] = data[i];
@@ -319,33 +499,24 @@ void http_tcp_data_received(uint8_t *data, int len) {
     }
 }
 
-// ========== WGET COMMAND (Like Real Wget) ==========
 
 void cmd_wget(const char *url) {
     if (!url || url[0] == '\0') {
-        PRINT(CYAN, BLACK, "\nUsage: wget <url> [-o output_file]\n");
-        PRINT(WHITE, BLACK, "Examples:\n");
-        PRINT(WHITE, BLACK, "  wget http://example.com\n");
-        PRINT(WHITE, BLACK, "  wget http://example.com/page.html\n");
-        PRINT(WHITE, BLACK, "  wget http://example.com -o myfile.html\n");
-        PRINT(WHITE, BLACK, "  wget http://httpbin.org/ip\n");
+        PRINT(CYAN, BLACK, "\nUsage: wget <url> [-o filename]\n");
         return;
     }
     
-    // Check if network is configured
     net_config_t *config = net_get_config();
     if (!config->configured) {
-        PRINT(RED, BLACK, "\n[WGET] ERROR: Network not configured!\n");
-        PRINT(YELLOW, BLACK, "[WGET] Run 'dhcp' first to configure network\n");
+        PRINT(RED, BLACK, "\nNetwork not configured!\n");
         return;
     }
     
-    // Parse arguments to find output filename
+    // Parse: get URL and optional filename
     char url_only[512];
-    char output_filename[256];
-    int has_custom_output = 0;
+    char filename[256];
+    int has_filename = 0;
     
-    // Extract URL and check for -o flag
     int i = 0;
     while (url[i] && url[i] != ' ' && i < 511) {
         url_only[i] = url[i];
@@ -358,197 +529,98 @@ void cmd_wget(const char *url) {
     if (url[i] == '-' && url[i+1] == 'o') {
         i += 2;
         while (url[i] == ' ') i++;
-        
         int j = 0;
-        while (url[i] && url[i] != ' ' && j < 255) {
-            output_filename[j++] = url[i++];
+        while (url[i] && url[i] != ' ' && j < 254) {
+            filename[j++] = url[i++];
         }
-        output_filename[j] = '\0';
-        
-        if (j > 0) {
-            has_custom_output = 1;
-        }
+        filename[j] = '\0';
+        has_filename = (j > 0);
     }
     
-    // If no custom output, extract from URL
-    if (!has_custom_output) {
-        extract_filename_from_url(url_only, output_filename, 256);
+    // Default filename if not specified
+    if (!has_filename) {
+        extract_filename_from_url(url_only, filename, 255);
     }
     
-    PRINT(CYAN, BLACK, "\n========================================\n");
-    PRINT(CYAN, BLACK, "           WGET\n");
-    PRINT(CYAN, BLACK, "========================================\n");
-    PRINT(WHITE, BLACK, "URL: %s\n", url_only);
-    PRINT(WHITE, BLACK, "Saving to: %s\n", output_filename);
-    PRINT(CYAN, BLACK, "----------------------------------------\n");
+    // Simple path: /filename (always in root)
+    char path[256];
+    path[0] = '/';
+    int idx = 1;
     
+    // Skip leading / if filename has it
+    int start = (filename[0] == '/') ? 1 : 0;
+    while (filename[start] && idx < 255) {
+        path[idx++] = filename[start++];
+    }
+    path[idx] = '\0';
+    
+    PRINT(CYAN, BLACK, "\nWGET: %s -> %s\n\n", url_only, path);
+    
+    // Download
     char response[8192];
     int len = http_get(url_only, response, sizeof(response));
     
-    if (len > 0) {
-        PRINT(GREEN, BLACK, "[WGET] Downloaded %d bytes\n\n", len);
-        
-        // Find the body (after headers)
-        int body_start = 0;
-        for (int i = 0; i < len - 3; i++) {
-            if (response[i] == '\r' && response[i+1] == '\n' && 
-                response[i+2] == '\r' && response[i+3] == '\n') {
-                body_start = i + 4;
-                break;
-            }
-        }
-        
-        // Prepare full path
-        char fullpath[512];
-        const char *cwd = vfs_get_cwd_path();
-        
-        // Build full path
-        int idx = 0;
-        if (output_filename[0] == '/') {
-            // Absolute path
-            while (output_filename[idx] && idx < 511) {
-                fullpath[idx] = output_filename[idx];
-                idx++;
-            }
-        } else {
-            // Relative path - prepend cwd
-            int j = 0;
-            while (cwd[j] && idx < 510) {
-                fullpath[idx++] = cwd[j++];
-            }
-            if (idx > 0 && fullpath[idx-1] != '/') {
-                fullpath[idx++] = '/';
-            }
-            j = 0;
-            while (output_filename[j] && idx < 511) {
-                fullpath[idx++] = output_filename[j++];
-            }
-        }
-        fullpath[idx] = '\0';
-        
-        PRINT(WHITE, BLACK, "[WGET] Saving to: %s\n", fullpath);
-        
-        // Create the file if it doesn't exist
-        int fd = vfs_open(fullpath, FILE_WRITE);
-        if (fd < 0) {
-            PRINT(WHITE, BLACK, "[WGET] Creating file...\n");
-            if (vfs_create(fullpath, FILE_READ | FILE_WRITE) != 0) {
-                PRINT(RED, BLACK, "[WGET] ERROR: Failed to create file\n");
-                goto show_preview;
-            }
-            fd = vfs_open(fullpath, FILE_WRITE);
-        }
-        
-        if (fd >= 0) {
-            // Write content to file
-            int write_len = (body_start > 0) ? (len - body_start) : len;
-            uint8_t *write_data = (body_start > 0) ? 
-                (uint8_t*)(response + body_start) : (uint8_t*)response;
-            
-            int written = vfs_write(fd, write_data, write_len);
-            vfs_close(fd);
-            
-            if (written > 0) {
-                PRINT(GREEN, BLACK, "[WGET] File saved successfully (%d bytes)\n\n", written);
-            } else {
-                PRINT(RED, BLACK, "[WGET] âœ— Write failed\n");
-                goto show_preview;
-            }
-        } else {
-            PRINT(RED, BLACK, "[WGET] ERROR: Cannot open file for writing\n");
-            goto show_preview;
-        }
-        
-show_preview:
-        // Show preview of content
-        PRINT(CYAN, BLACK, "========================================\n");
-        PRINT(CYAN, BLACK, "           PREVIEW\n");
-        PRINT(CYAN, BLACK, "========================================\n");
-        
-        if (body_start > 0) {
-            // Show headers
-            PRINT(YELLOW, BLACK, "--- Headers ---\n");
-            for (int i = 0; i < body_start - 2 && i < 400; i++) {
-                PRINT(WHITE, BLACK, "%c", response[i]);
-            }
-            PRINT(WHITE, BLACK, "\n");
-            
-            // Show body preview
-            PRINT(GREEN, BLACK, "--- Body (first 512 bytes) ---\n");
-            int body_len = len - body_start;
-            int show_len = body_len < 512 ? body_len : 512;
-            
-            for (int i = 0; i < show_len; i++) {
-                PRINT(WHITE, BLACK, "%c", response[body_start + i]);
-            }
-            
-            if (body_len > 512) {
-                PRINT(YELLOW, BLACK, "\n\n... (truncated, full content saved to file)\n");
-            }
-        } else {
-            // No clear separation, show first 512 bytes
-            int show_len = len < 512 ? len : 512;
-            for (int i = 0; i < show_len; i++) {
-                PRINT(WHITE, BLACK, "%c", response[i]);
-            }
-            if (len > 512) {
-                PRINT(YELLOW, BLACK, "\n\n... (truncated)\n");
-            }
-        }
-        
-        PRINT(CYAN, BLACK, "\n========================================\n");
-        PRINT(GREEN, BLACK, " Download complete\n");
-        PRINT(WHITE, BLACK, "File: %s (%d bytes)\n", output_filename, 
-              body_start > 0 ? (len - body_start) : len);
-        PRINT(CYAN, BLACK, "========================================\n\n");
-        
-    } else {
-        PRINT(CYAN, BLACK, "========================================\n");
-        PRINT(RED, BLACK, "âœ— FAILED: Could not retrieve URL\n");
-        PRINT(CYAN, BLACK, "========================================\n\n");
-    }
-}
-
-// ========== SIMPLIFIED TEST COMMAND ==========
-
-void cmd_httptest(void) {
-    PRINT(CYAN, BLACK, "\n========================================\n");
-    PRINT(CYAN, BLACK, "        HTTP CLIENT TEST\n");
-    PRINT(CYAN, BLACK, "========================================\n");
-    
-    // Check network configuration
-    net_config_t *config = net_get_config();
-    if (!config->configured) {
-        PRINT(RED, BLACK, "ERROR: Network not configured!\n");
-        PRINT(YELLOW, BLACK, "Run 'dhcp' command first\n");
-        PRINT(CYAN, BLACK, "========================================\n");
+    if (len <= 0) {
+        PRINT(RED, BLACK, "Download failed\n");
         return;
     }
     
-    PRINT(WHITE, BLACK, "Testing with http://example.com\n");
-    PRINT(CYAN, BLACK, "----------------------------------------\n");
+    PRINT(GREEN, BLACK, "Downloaded %d bytes\n", len);
     
-    char response[4096];
-    int len = http_get("http://example.com", response, sizeof(response));
-    
-    if (len > 0) {
-        PRINT(CYAN, BLACK, "----------------------------------------\n");
-        PRINT(GREEN, BLACK, "✓ SUCCESS!\n");
-        PRINT(WHITE, BLACK, "Received %d bytes\n\n", len);
-        
-        // Show first 400 chars
-        PRINT(WHITE, BLACK, "First 400 characters:\n");
-        PRINT(CYAN, BLACK, "---\n");
-        
-        int show_len = len < 400 ? len : 400;
-        for (int i = 0; i < show_len; i++) {
-            PRINT(WHITE, BLACK, "%c", response[i]);
+    // Skip HTTP headers
+    int body = 0;
+    for (int i = 0; i < len - 3; i++) {
+        if (response[i] == '\r' && response[i+1] == '\n' && 
+            response[i+2] == '\r' && response[i+3] == '\n') {
+            body = i + 4;
+            break;
         }
-        
-        PRINT(CYAN, BLACK, "\n---\n");
-    } else {
-        PRINT(RED, BLACK, "✗ FAILED\n");
     }
     
-    PRINT(CYAN, BLACK, "========================================\n\n");
+    uint8_t *data = (body > 0) ? (uint8_t*)(response + body) : (uint8_t*)response;
+    int size = (body > 0) ? (len - body) : len;
+    
+    PRINT(WHITE, BLACK, "Content: %d bytes\n", size);
+    
+    // Write file
+    PRINT(WHITE, BLACK, "Creating %s... ", path);
+    
+    if (vfs_create(path, FILE_READ | FILE_WRITE) != 0) {
+        PRINT(RED, BLACK, "FAILED (create)\n");
+        goto preview;
+    }
+    
+    int fd = vfs_open(path, FILE_WRITE);
+    if (fd < 0) {
+        PRINT(RED, BLACK, "FAILED (open, fd=%d)\n", fd);
+        goto preview;
+    }
+    
+    int written = vfs_write(fd, data, size);
+    vfs_close(fd);
+    
+    if (written > 0) {
+        PRINT(GREEN, BLACK, "OK (%d bytes)\n", written);
+        PRINT(GREEN, BLACK, "\nSaved to %s\n", path);
+        PRINT(WHITE, BLACK, "Use: cat %s\n\n", path);
+    } else {
+        PRINT(RED, BLACK, "FAILED (write=%d)\n", written);
+    }
+    
+preview:
+    // Show what we got
+    PRINT(CYAN, BLACK, "\n--- PREVIEW ---\n");
+    int show = (size < 400) ? size : 400;
+    for (int i = 0; i < show; i++) {
+        PRINT(WHITE, BLACK, "%c", data[i]);
+    }
+    if (size > 400) {
+        PRINT(YELLOW, BLACK, "\n... (%d more)\n", size - 400);
+    }
+    PRINT(CYAN, BLACK, "\n---------------\n\n");
+}
+
+
+void cmd_httptest(void) {
+    cmd_wget("http://example.com");
 }
