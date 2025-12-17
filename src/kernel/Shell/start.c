@@ -80,46 +80,46 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
 
-    PRINT(WHITE, BLACK, "AMQ OS Kernel v0.2\n");
+    PRINT(WHITE, BLACK, "AMQ OS Kernel v2.6\n");
     PRINT(WHITE, BLACK, "==================\n\n");
 
     enable_io_privilege();
-    PRINT(MAGENTA, BLACK, "[OK] I/O privileges enabled\n");
+    PRINT(GREEN, BLACK, "[OK] I/O privileges enabled\n");
 
-    PRINT(MAGENTA, BLACK, "[OK] Stack: base=0x%llx, top=0x%llx\n",
+    PRINT(GREEN, BLACK, "[OK] Stack: base=0x%llx, top=0x%llx\n",
           kernel_stack_base, kernel_stack_top);
 
     tss_init();
-    PRINT(MAGENTA, BLACK, "[OK] TSS initialized\n");
+    PRINT(GREEN, BLACK, "[OK] TSS initialized\n");
 
     gdt_install();
-    PRINT(MAGENTA, BLACK, "[OK] GDT installed\n");
+    PRINT(GREEN, BLACK, "[OK] GDT installed\n");
 
     pic_remap();
-    PRINT(MAGENTA, BLACK, "[OK] PIC remapped\n");
+    PRINT(GREEN, BLACK, "[OK] PIC remapped\n");
 
     idt_install();
-    PRINT(MAGENTA, BLACK, "[OK] IDT installed\n");
+    PRINT(GREEN, BLACK, "[OK] IDT installed\n");
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing syscall interface...\n");
 
     syscall_init();
     syscall_register_all();
 
-    PRINT(MAGENTA, BLACK, "[OK] Syscalls ready\n");
+    PRINT(GREEN, BLACK, "[OK] Syscalls ready\n");
 
     serial_init(COM1);
-    PRINT(MAGENTA, BLACK, "[OK] Serial initialized\n");
+    PRINT(GREEN, BLACK, "[OK] Serial initialized\n");
 
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing job system...\n");
     jobs_init();
     jobs_set_active(0);
-    PRINT(MAGENTA, BLACK, "[OK] Job system initialized (INACTIVE)\n");
+    PRINT(GREEN, BLACK, "[OK] Job system initialized (INACTIVE)\n");
 
     PRINT(WHITE, BLACK, "\n[INIT] Enabling IRQ system...\n");
     irq_init();
-    PRINT(MAGENTA, BLACK, "[OK] IRQ system enabled\n");
+    PRINT(GREEN, BLACK, "[OK] IRQ system enabled\n");
 
 
     PRINT(WHITE, BLACK, "\n[TEST] Testing timer for 3 seconds...\n");
@@ -133,22 +133,22 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
             __asm__ volatile("hlt");
         }
 
-        PRINT(MAGENTA, BLACK, "[TEST] Second %d: timer_ticks=%llu\n",
+        PRINT(GREEN, BLACK, "[TEST] Second %d: timer_ticks=%llu\n",
               sec, timer_ticks);
     }
 
-    PRINT(MAGENTA, BLACK, "[OK] Timer is working correctly!\n");
+    PRINT(GREEN, BLACK, "[OK] Timer is working correctly!\n");
 
 
     uint8_t mask = inb(0x21);
     mask &= ~0x02;
     outb(0x21, mask);
-    PRINT(MAGENTA, BLACK, "[OK] Keyboard enabled\n");
+    PRINT(GREEN, BLACK, "[OK] Keyboard enabled\n");
 
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing storage...\n");
     ata_init();
-    PRINT(MAGENTA, BLACK, "[OK] ATA initialized\n");
+    PRINT(GREEN, BLACK, "[OK] ATA initialized\n");
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing filesystem...\n");
     vfs_init();
@@ -172,7 +172,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         goto boot_failed;
     }
 
-    PRINT(MAGENTA, BLACK, "[OK] Disk formatted\n");
+    PRINT(GREEN, BLACK, "[OK] Disk formatted\n");
 
     for (volatile int i = 0; i < 10000000; i++);
 
@@ -187,7 +187,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         goto boot_failed;
     }
 
-    PRINT(MAGENTA, BLACK, "[OK] Filesystem mounted\n");
+    PRINT(GREEN, BLACK, "[OK] Filesystem mounted\n");
 
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing processes...\n");
@@ -201,14 +201,14 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     }
 
     init_kernel_threads();
-    PRINT(MAGENTA, BLACK, "[OK] Threads initialized (scheduler DISABLED)\n");
+    PRINT(GREEN, BLACK, "[OK] Threads initialized (scheduler DISABLED)\n");
 
 
-    PRINT(MAGENTA, BLACK, "\n=== Boot Complete ===\n");
+    PRINT(GREEN, BLACK, "\n=== Boot Complete ===\n");
 
     jobs_set_active(1);
-    PRINT(MAGENTA, BLACK, "[OK] Job tracking ENABLED\n");
-    PRINT(MAGENTA, BLACK, "\nStarting shell...\n\n");
+    PRINT(GREEN, BLACK, "[OK] Job tracking ENABLED\n");
+    PRINT(GREEN, BLACK, "\nStarting shell...\n\n");
     for (volatile int i = 0; i < 5000000; i++);
 
     init_shell();
