@@ -1,5 +1,8 @@
 #include <efi.h>
 #include <efilib.h>
+#include <stdint.h>
+#include <stddef.h>
+
 #ifndef STRING_HELPERS_H
 #define STRING_HELPERS_H
 
