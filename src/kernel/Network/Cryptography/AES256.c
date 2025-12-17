@@ -1,5 +1,5 @@
 
-#include "aes256.h"
+#include "AES256.h"
 #include "string_helpers.h"
 
 // AES S-box

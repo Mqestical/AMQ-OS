@@ -1,7 +1,9 @@
 #include "print.h"
 #include "FONT.h"
 #include "string_helpers.h"
+#include "auto_scroll.h"
 #include <stdarg.h>
+
 Framebuffer fb;
 Cursor cursor = {0, 0, WHITE, RED};
 EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
@@ -110,9 +112,9 @@ void printc(char c) {
     if (c == '\n') {
         cursor.x = 0;
         cursor.y += 8;
-        if (cursor.y + 8 > fb.height) {
-            cursor.y = 0;
-        }
+        
+        // CHECK IF WE NEED TO SCROLL
+        auto_scroll_check();
         return;
     }
 
@@ -126,30 +128,19 @@ void printc(char c) {
         if (cursor.x + 8 > fb.width) {
             cursor.x = 0;
             cursor.y += 8;
-            if (cursor.y + 8 > fb.height) {
-                cursor.y = 0;
-            }
+            auto_scroll_check();
         }
         return;
     }
 
+    // Line wrap
     if (cursor.x + 8 > fb.width) {
         cursor.x = 0;
         cursor.y += 8;
-        if (cursor.y + 8 > fb.height) {
-            cursor.y = 0;
-        }
-    }
-
-    if (cursor.y + 8 > fb.height) {
-        cursor.y = 0;
-    }
-    if (cursor.x + 8 > fb.width) {
-        cursor.x = 0;
+        auto_scroll_check();
     }
 
     draw_char(cursor.x, cursor.y, c, cursor.fg_color, cursor.bg_color);
-
     cursor.x += 8;
 }
 

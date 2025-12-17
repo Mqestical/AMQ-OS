@@ -16,6 +16,7 @@
 #include "elf_test.h"
 #include "asm.h"
 #include "piano_synth.h"
+#include "auto_scroll.h"
 #include "anthropic.h"
 #include "System_States.h"
 #include "AC97.h"
@@ -2497,6 +2498,10 @@ void run_text_demo(void) {
 void init_shell(void) {
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
+    
+    // Initialize auto-scroll system
+    auto_scroll_init();
+    
     run_text_demo();
 }
 
