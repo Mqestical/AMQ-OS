@@ -5,10 +5,10 @@
 #include "print.h"
 #include "handler.h"
 #include "string_helpers.h"
+#include "keyboard.h"
 
 #define IDT_ENTRIES 256
 #define GDT_ENTRIES 5
-#define INPUT_BUFFER_SIZE 256
 
 struct gdt_entry {
     uint16_t limit_low;
@@ -43,6 +43,8 @@ struct gdt_entry gdt[GDT_ENTRIES];
 struct gdt_ptr gdtp;
 struct idt_entry idt[IDT_ENTRIES];
 struct idt_ptr idtp;
+
+static int escape_sequence = 0;
 
 void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
     gdt[num].base_low = (base & 0xFFFF);
@@ -361,6 +363,7 @@ void process_keyboard_buffer(void) {
     while (scancode_read_pos != scancode_write_pos) {
         uint8_t scancode = scancode_buffer[scancode_read_pos++];
 
+        // Handle shift keys
         if (scancode == 0x2A || scancode == 0x36) {
             shift_pressed = 1;
             continue;
@@ -370,8 +373,20 @@ void process_keyboard_buffer(void) {
             continue;
         }
 
+        // Skip release scancodes (high bit set)
         if (scancode & 0x80) continue;
 
+        // Handle arrow keys DIRECTLY - no E0 prefix needed!
+        if (scancode == 0x48) {  // UP arrow
+            handle_arrow_up();
+            continue;
+        }
+        if (scancode == 0x50) {  // DOWN arrow
+            handle_arrow_down();
+            continue;
+        }
+
+        // Normal character processing
         char ascii = scancode_to_ascii(scancode, shift_pressed);
 
         if (ascii) {

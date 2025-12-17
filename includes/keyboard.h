@@ -3,23 +3,27 @@
 
 #include <stdint.h>
 
-#define KEY_ESC         0x01
-#define KEY_BACKSPACE   0x0E
-#define KEY_TAB         0x0F
-#define KEY_ENTER       0x1C
-#define KEY_LCTRL       0x1D
-#define KEY_LSHIFT      0x2A
-#define KEY_RSHIFT      0x36
-#define KEY_LALT        0x38
-#define KEY_SPACE       0x39
-#define KEY_CAPSLOCK    0x3A
+#define INPUT_BUFFER_SIZE 256
 
+// Keyboard buffer management
 extern volatile uint8_t scancode_buffer[256];
 extern volatile uint8_t scancode_read_pos;
 extern volatile uint8_t scancode_write_pos;
-extern volatile uint32_t interrupt_counter;
-extern volatile uint8_t last_scancode;
 
+// Input management
+extern char input_buffer[INPUT_BUFFER_SIZE];
+extern volatile int input_pos;
+extern volatile int input_ready;
+
+// Function declarations
 void process_keyboard_buffer(void);
+char* get_input_line(void);
+int input_available(void);
+char* get_input_and_reset(void);
+void handle_backspace(void);
 
-#endif
+// Arrow key handlers (for history navigation)
+void handle_arrow_up(void);
+void handle_arrow_down(void);
+
+#endif // KEYBOARD_H

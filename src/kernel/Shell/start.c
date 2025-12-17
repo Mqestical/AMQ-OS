@@ -80,7 +80,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
 
-    PRINT(WHITE, BLACK, "AMQ OS Kernel v2.6\n");
+    PRINT(WHITE, BLACK, "AMQ OS Kernel v2.8\n");
     PRINT(WHITE, BLACK, "==================\n\n");
 
     enable_io_privilege();

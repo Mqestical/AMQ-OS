@@ -29,6 +29,8 @@
 #include "dhcp.h"
 #include "dns.h"
 #include "http.h"
+#include "command_history.h"
+#include "keyboard.h"
 
 #define CURSOR_BLINK_RATE 50000
 
@@ -112,6 +114,87 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
     }
     dest[i] = '\0';
 }
+void replace_input_line(const char *new_input);
+void handle_arrow_up(void) {
+    const char *prev = history_prev();
+    if (prev) {
+        replace_input_line(prev);
+    }
+}
+
+void handle_arrow_down(void) {
+    const char *next = history_next();
+    if (next) {
+        replace_input_line(next);
+    } else {
+        replace_input_line("");
+    }
+}
+
+// Also update clear_current_line to be more robust:
+void clear_current_line(void) {
+    extern char input_buffer[];
+    extern volatile int input_pos;
+    
+    int chars_to_clear = input_pos;
+    
+    // Move cursor back to start of input
+    for (int i = 0; i < chars_to_clear; i++) {
+        if (cursor.x >= 8) {
+            cursor.x -= 8;
+        } else if (cursor.y >= 16) {
+            cursor.y -= 16;
+            cursor.x = (fb.width - 8);
+        }
+    }
+    
+    // Clear the characters
+    int saved_x = cursor.x;
+    int saved_y = cursor.y;
+    
+    for (int i = 0; i < chars_to_clear; i++) {
+        draw_char(cursor.x, cursor.y, ' ', WHITE, BLACK);
+        cursor.x += 8;
+        if (cursor.x >= fb.width) {
+            cursor.x = 0;
+            cursor.y += 16;
+        }
+    }
+    
+    // Restore cursor position
+    cursor.x = saved_x;
+    cursor.y = saved_y;
+}
+
+void replace_input_line(const char *new_input) {
+    extern char input_buffer[];
+    extern volatile int input_pos;
+    
+    // Clear current input
+    clear_current_line();
+    
+    // Reset input position
+    input_pos = 0;
+    
+    // Copy new input if provided
+    if (new_input) {
+        int i = 0;
+        while (new_input[i] && i < INPUT_BUFFER_SIZE - 1) {
+            input_buffer[i] = new_input[i];
+            i++;
+        }
+        input_pos = i;
+    }
+    input_buffer[input_pos] = '\0';
+    
+    // Display new input
+    cursor.fg_color = WHITE;
+    cursor.bg_color = BLACK;
+    for (int i = 0; i < input_pos; i++) {
+        printc(input_buffer[i]);
+    }
+}
+
 
 static uint32_t resolve_special_target(const char *target) {
     net_config_t *config = net_get_config();
@@ -1661,6 +1744,8 @@ void send_to_background(int job_id) {
 void process_command(char* cmd) {
     if (cmd[0] == '\0') return;
 
+    history_add(cmd);
+
     int len = strlen_local(cmd);
     int is_background = 0;
     if (len > 0 && cmd[len-1] == '&') {
@@ -1675,7 +1760,6 @@ void process_command(char* cmd) {
             PRINT(YELLOW, BLACK, "Invalid command\n");
             return;
         }
-
         PRINT(WHITE, BLACK, "[SHELL] Running in background: %s\n", cmd);
 
         process_t *proc = get_process(1);
@@ -2456,7 +2540,10 @@ else if (STRNCMP(cmd, "curl ", 5) == 0) {
 }
 else if (STRNCMP(cmd, "httptest", 8) == 0) {
     cmd_httptest();
-}
+}  else if (STRNCMP(cmd, "history", 8) == 0) {
+        history_list();
+        return;
+    }
     else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");
@@ -2466,7 +2553,7 @@ else if (STRNCMP(cmd, "httptest", 8) == 0) {
 void run_text_demo(void) {
     scheduler_enable();
     PRINT(CYAN, BLACK, "==========================================\n");
-    PRINT(CYAN, BLACK, "    AMQ Operating System v1.6\n");
+    PRINT(CYAN, BLACK, "    AMQ Operating System v2.8\n");
     PRINT(CYAN, BLACK, "==========================================\n");
     PRINT(WHITE, BLACK, "Welcome! Type 'help' for commands.\n\n");
     PRINT(GREEN, BLACK, "%s> ", vfs_get_cwd_path());
