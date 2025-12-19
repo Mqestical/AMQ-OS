@@ -1,5 +1,6 @@
 #include <efi.h>
 #include <efilib.h>
+#include "shell.h"
 #include "print.h"
 #include "memory.h"
 #include "serial.h"
@@ -31,12 +32,13 @@
 #include "http.h"
 #include "command_history.h"
 #include "keyboard.h"
-
+#include "IO.h"
 #define CURSOR_BLINK_RATE 50000
 
 void bg_command_thread(void);
 void bring_to_foreground(int job_id);
 void send_to_background(int job_id);
+extern uint64_t get_timer_ticks(void);
 extern volatile uint32_t interrupt_counter;
 extern volatile uint8_t last_scancode;
 extern volatile uint8_t scancode_write_pos;
@@ -68,6 +70,14 @@ void cmd_dnstest(const char *args);
 
 /*test func*/
 void test_syscall_interface(void);
+
+typedef struct {
+    char command[256];
+    char cmd_name[64];
+    char args[192];
+    int job_id;
+    int should_run;
+} bg_exec_context_t;
 
 void draw_cursor(int visible) {
     cursor.bg_color = BLACK;
@@ -114,6 +124,21 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
     }
     dest[i] = '\0';
 }
+
+void shell_thread_entry(void) {
+    PRINT(GREEN, BLACK, "[SHELL] Starting as thread\n");
+    
+    // Enable interrupts for this thread
+    __asm__ volatile("sti");
+    
+    // Run the normal shell
+    init_shell();
+    
+    // If shell ever exits, terminate thread
+    PRINT(WHITE, BLACK, "[SHELL] Exiting\n");
+    thread_exit();
+}
+
 void replace_input_line(const char *new_input);
 void handle_arrow_up(void) {
     const char *prev = history_prev();
@@ -195,6 +220,141 @@ void replace_input_line(const char *new_input) {
     }
 }
 
+void cmd_schedinfo(void) {
+    extern int get_scheduler_enabled(void);
+    extern thread_t thread_table[];
+    
+    PRINT(CYAN, BLACK, "\n=== Scheduler Information ===\n");
+    PRINT(WHITE, BLACK, "Scheduler enabled: %s\n", 
+          get_scheduler_enabled() ? "YES" : "NO");
+    
+    thread_t *current = get_current_thread();
+    if (current) {
+        PRINT(GREEN, BLACK, "Current thread: TID=%u\n", current->tid);
+    } else {
+        PRINT(YELLOW, BLACK, "Current thread: NONE\n");
+    }
+    
+    // Count threads by state
+    int running = 0, ready = 0, blocked = 0, terminated = 0;
+    for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
+        if (thread_table[i].used) {
+            switch (thread_table[i].state) {
+                case THREAD_STATE_RUNNING: running++; break;
+                case THREAD_STATE_READY: ready++; break;
+                case THREAD_STATE_BLOCKED: blocked++; break;
+                case THREAD_STATE_TERMINATED: terminated++; break;
+            }
+        }
+    }
+    
+    PRINT(WHITE, BLACK, "\nThread States:\n");
+    PRINT(GREEN, BLACK, "  Running:    %d\n", running);
+    PRINT(WHITE, BLACK, "  Ready:      %d\n", ready);
+    PRINT(YELLOW, BLACK, "  Blocked:    %d\n", blocked);
+    PRINT(RED, BLACK, "  Terminated: %d\n", terminated);
+    
+    if (running == 0 && ready > 0) {
+        PRINT(RED, BLACK, "\n!! WARNING: No running threads but %d ready!\n", ready);
+        PRINT(YELLOW, BLACK, "!! Scheduler is not running threads!\n");
+    }
+}
+
+// Show detailed thread info
+void cmd_threaddebug(void) {
+    extern thread_t thread_table[];
+    
+    PRINT(CYAN, BLACK, "\n=== Thread Debug ===\n");
+    
+    int count = 0;
+    for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
+        if (thread_table[i].used) {
+            thread_t *t = &thread_table[i];
+            
+            PRINT(WHITE, BLACK, "\nThread %d:\n", count + 1);
+            PRINT(WHITE, BLACK, "  TID: %u\n", t->tid);
+            PRINT(WHITE, BLACK, "  PID: %u\n", t->parent ? t->parent->pid : 0);
+            PRINT(WHITE, BLACK, "  State: ");
+            
+            switch (t->state) {
+                case THREAD_STATE_RUNNING:
+                    PRINT(GREEN, BLACK, "RUNNING\n");
+                    break;
+                case THREAD_STATE_READY:
+                    PRINT(WHITE, BLACK, "READY\n");
+                    break;
+                case THREAD_STATE_BLOCKED:
+                    PRINT(YELLOW, BLACK, "BLOCKED\n");
+                    break;
+                case THREAD_STATE_TERMINATED:
+                    PRINT(RED, BLACK, "TERMINATED\n");
+                    break;
+                default:
+                    PRINT(RED, BLACK, "UNKNOWN (%d)\n", t->state);
+            }
+            
+            PRINT(WHITE, BLACK, "  Entry: 0x%llx\n", t->entry_point);
+            PRINT(WHITE, BLACK, "  Stack: 0x%llx (%u bytes)\n", 
+                  (uint64_t)t->stack_base, t->stack_size);
+            
+            if (t->parent) {
+                PRINT(WHITE, BLACK, "  Process: %s\n", t->parent->name);
+            }
+            
+            count++;
+        }
+    }
+    
+    if (count == 0) {
+        PRINT(WHITE, BLACK, "\nNo threads in system!\n");
+    } else {
+        PRINT(WHITE, BLACK, "\nTotal threads: %d\n", count);
+    }
+}
+
+// Test scheduler by creating a simple thread
+void test_scheduler_thread(void) {
+    PRINT(MAGENTA, BLACK, "[TEST THREAD] Hello! I'm running!\n");
+    
+    for (int i = 0; i < 5; i++) {
+        PRINT(MAGENTA, BLACK, "[TEST THREAD] Iteration %d\n", i + 1);
+        
+        // Sleep for 1 second
+        sleep_seconds(1);
+    }
+    
+    PRINT(MAGENTA, BLACK, "[TEST THREAD] Exiting!\n");
+    thread_exit();
+}
+
+void cmd_schedtest(void) {
+    PRINT(CYAN, BLACK, "\n=== Scheduler Test ===\n");
+    PRINT(WHITE, BLACK, "Creating test thread that sleeps 5 times...\n");
+    
+    process_t *init = get_process(1);
+    if (!init) {
+        PRINT(YELLOW, BLACK, "ERROR: Init process not found!\n");
+        return;
+    }
+    
+    int tid = thread_create(
+        init->pid,
+        test_scheduler_thread,
+        65536,
+        50000000,
+        500000000,
+        500000000
+    );
+    
+    if (tid < 0) {
+        PRINT(YELLOW, BLACK, "ERROR: Failed to create test thread\n");
+        return;
+    }
+    
+    PRINT(GREEN, BLACK, "Created test thread TID=%d\n", tid);
+    PRINT(WHITE, BLACK, "Watch for messages from the test thread.\n");
+    PRINT(WHITE, BLACK, "Use 'threads' or 'threaddebug' to check status.\n");
+}
 
 static uint32_t resolve_special_target(const char *target) {
     net_config_t *config = net_get_config();
@@ -215,7 +375,128 @@ static uint32_t resolve_special_target(const char *target) {
     
     return 0;
 }
-
+ void cmd_schedstart(void) {
+    PRINT(WHITE, BLACK, "Forcing scheduler to start threads...\n");
+    
+    extern thread_t thread_table[];
+    int ready_count = 0;
+    
+    for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
+        if (thread_table[i].used && thread_table[i].state == THREAD_STATE_READY) {
+            ready_count++;
+        }
+    }
+    
+    PRINT(WHITE, BLACK, "Found %d ready threads\n", ready_count);
+    
+    if (ready_count > 0) {
+        PRINT(WHITE, BLACK, "Calling thread_yield() to start scheduling...\n");
+        thread_yield();
+        PRINT(GREEN, BLACK, "Done. Check with 'schedinfo'.\n");
+    } else {
+        PRINT(YELLOW, BLACK, "No ready threads to start!\n");
+    }
+} void cmd_jobupdate(void) {
+    PRINT(WHITE, BLACK, "Forcing job update...\n");
+    update_jobs();
+    PRINT(GREEN, BLACK, "Done. Run 'jobs' to see result.\n");
+} void cmd_syscheck(void) {
+    PRINT(CYAN, BLACK, "\n╔════════════════════════════════════════╗\n");
+    PRINT(CYAN, BLACK, "║     SYSTEM HEALTH CHECK                ║\n");
+    PRINT(CYAN, BLACK, "╚════════════════════════════════════════╝\n\n");
+    
+    int issues = 0;
+    
+    // 1. Check timer
+    PRINT(WHITE, BLACK, "[1/5] Checking timer... ");
+    uint64_t t1 = get_timer_ticks();
+    for (volatile int i = 0; i < 10000000; i++);
+    uint64_t t2 = get_timer_ticks();
+    
+    if (t2 > t1) {
+        PRINT(GREEN, BLACK, "✓ OK (%llu ticks in delay)\n", t2 - t1);
+    } else {
+        PRINT(RED, BLACK, "✗ FAILED (timer not incrementing!)\n");
+        issues++;
+    }
+    
+    // 2. Check scheduler
+    PRINT(WHITE, BLACK, "[2/5] Checking scheduler... ");
+    extern int get_scheduler_enabled(void);
+    if (get_scheduler_enabled()) {
+        PRINT(GREEN, BLACK, "✓ Enabled\n");
+    } else {
+        PRINT(RED, BLACK, "✗ DISABLED\n");
+        issues++;
+    }
+    
+    // 3. Check threads
+    PRINT(WHITE, BLACK, "[3/5] Checking threads... ");
+    extern thread_t thread_table[];
+    int running = 0, ready = 0, blocked = 0;
+    for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
+        if (thread_table[i].used) {
+            switch (thread_table[i].state) {
+                case THREAD_STATE_RUNNING: running++; break;
+                case THREAD_STATE_READY: ready++; break;
+                case THREAD_STATE_BLOCKED: blocked++; break;
+            }
+        }
+    }
+    
+    if (running > 0 || ready > 0) {
+        PRINT(GREEN, BLACK, "✓ OK (Running:%d Ready:%d Blocked:%d)\n", 
+              running, ready, blocked);
+        
+        if (running == 0 && ready > 0) {
+            PRINT(YELLOW, BLACK, "   ⚠ Warning: Threads ready but none running!\n");
+            PRINT(YELLOW, BLACK, "   Scheduler may not be being called.\n");
+            issues++;
+        }
+    } else {
+        PRINT(YELLOW, BLACK, "⚠ No active threads\n");
+    }
+    
+    // 4. Check jobs
+    PRINT(WHITE, BLACK, "[4/5] Checking job system... ");
+    extern job_t job_table[];
+    int active_jobs = 0;
+    for (int i = 0; i < MAX_JOBS; i++) {
+        if (job_table[i].used) active_jobs++;
+    }
+    PRINT(GREEN, BLACK, "✓ %d active jobs\n", active_jobs);
+    
+    // 5. Check interrupts
+    PRINT(WHITE, BLACK, "[5/5] Checking interrupts... ");
+    uint8_t pic_mask = inb(0x21);
+    if (pic_mask & 0x01) {
+        PRINT(RED, BLACK, "✗ IRQ0 (timer) is MASKED!\n");
+        PRINT(YELLOW, BLACK, "   PIC mask: 0x%02x\n", pic_mask);
+        issues++;
+    } else {
+        PRINT(GREEN, BLACK, "✓ IRQ0 unmasked (mask: 0x%02x)\n", pic_mask);
+    }
+    
+    // Summary
+    PRINT(CYAN, BLACK, "\n═══════════════════════════════════════\n");
+    if (issues == 0) {
+        PRINT(GREEN, BLACK, "✓ ALL CHECKS PASSED\n");
+        PRINT(WHITE, BLACK, "\nSystem should be working correctly.\n");
+        PRINT(WHITE, BLACK, "Try: sleep 5 &\n");
+    } else {
+        PRINT(YELLOW, BLACK, "⚠ %d ISSUES FOUND\n", issues);
+        PRINT(WHITE, BLACK, "\nRecommended actions:\n");
+        if (get_scheduler_enabled() == 0) {
+            PRINT(WHITE, BLACK, "  • Scheduler disabled - check start.c initialization\n");
+        }
+        if (pic_mask & 0x01) {
+            PRINT(WHITE, BLACK, "  • Timer IRQ masked - interrupts won't fire\n");
+        }
+        if (running == 0 && ready > 0) {
+            PRINT(WHITE, BLACK, "  • Scheduler not running threads - check timer_handler_c\n");
+        }
+    }
+}
 void cmd_multiudp(void) {
     PRINT(CYAN, BLACK, "\n=== Multiple UDP Send Test ===\n");
     PRINT(WHITE, BLACK, "This tests if we can send multiple UDP packets.\n\n");
@@ -1633,58 +1914,115 @@ void bg_command_thread(void) {
         return;
     }
 
-    cmd_thread_data_t *data = (cmd_thread_data_t*)current->private_data;
-
-    PRINT(GREEN, BLACK, "\n[BG %d] Starting: %s\n", data->job_id, data->command);
-
-    char cmd_name[64];
+    bg_exec_context_t *ctx = (bg_exec_context_t*)current->private_data;
+    
+    PRINT(GREEN, BLACK, "\n[BG %d] Starting: %s\n", ctx->job_id, ctx->command);
+    
+    // Parse command name and arguments
     int i = 0;
-    while (data->command[i] && data->command[i] != ' ' && i < 63) {
-        cmd_name[i] = data->command[i];
+    while (ctx->command[i] && ctx->command[i] != ' ' && i < 63) {
+        ctx->cmd_name[i] = ctx->command[i];
         i++;
     }
-    cmd_name[i] = '\0';
-
-    if (strcmp(cmd_name, "sleep") == 0) {
-        char *arg = data->command;
-        while (*arg && *arg != ' ') arg++;
-        while (*arg == ' ') arg++;
-
+    ctx->cmd_name[i] = '\0';
+    
+    // Get arguments
+    while (ctx->command[i] == ' ') i++;
+    int j = 0;
+    while (ctx->command[i] && j < 191) {
+        ctx->args[j++] = ctx->command[i++];
+    }
+    ctx->args[j] = '\0';
+    
+    // Execute the command
+    if (strcmp(ctx->cmd_name, "sleep") == 0) {
         uint32_t seconds = 0;
+        char *arg = ctx->args;
         while (*arg >= '0' && *arg <= '9') {
             seconds = seconds * 10 + (*arg - '0');
             arg++;
         }
-
+        
         if (seconds > 0) {
-            PRINT(WHITE, BLACK, "[BG %d] Sleeping %u seconds\n", data->job_id, seconds);
-
-            for (uint32_t s = 0; s < seconds; s++) {
-                for (volatile uint64_t j = 0; j < 50000000; j++) {
-                    if (j % 5000000 == 0) {
-                        thread_yield();
-                    }
-                }
-                PRINT(WHITE, BLACK, "[BG %d] %u/%u\n", data->job_id, s + 1, seconds);
-            }
-
-            PRINT(GREEN, BLACK, "[BG %d] Done!\n", data->job_id);
+            PRINT(WHITE, BLACK, "[BG %d] Sleeping %u seconds\n", ctx->job_id, seconds);
+            sleep_seconds(seconds);
+            PRINT(GREEN, BLACK, "[BG %d] Sleep complete!\n", ctx->job_id);
         }
     }
-    else if (strcmp(cmd_name, "echo") == 0) {
-        char *text = data->command + 5;
-        PRINT(WHITE, BLACK, "[BG %d] %s\n", data->job_id, text);
+    else if (strcmp(ctx->cmd_name, "echo") == 0) {
+        PRINT(WHITE, BLACK, "[BG %d] %s\n", ctx->job_id, ctx->args);
+    }
+    else if (strcmp(ctx->cmd_name, "ls") == 0) {
+        PRINT(WHITE, BLACK, "[BG %d] Listing directory...\n", ctx->job_id);
+        if (ctx->args[0] == '\0') {
+            vfs_list_directory(vfs_get_cwd_path());
+        } else {
+            char fullpath[256];
+            if (ctx->args[0] == '/') {
+                strcpy_local(fullpath, ctx->args);
+            } else {
+                const char* cwd = vfs_get_cwd_path();
+                strcpy_local(fullpath, cwd);
+                int len = strlen_local(fullpath);
+                if (len > 0 && fullpath[len-1] != '/') {
+                    fullpath[len] = '/';
+                    fullpath[len+1] = '\0';
+                }
+                int k = strlen_local(fullpath);
+                int m = 0;
+                while (ctx->args[m] && k < 255) {
+                    fullpath[k++] = ctx->args[m++];
+                }
+                fullpath[k] = '\0';
+            }
+            vfs_list_directory(fullpath);
+        }
+        PRINT(GREEN, BLACK, "[BG %d] ls complete\n", ctx->job_id);
+    }
+    else if (strcmp(ctx->cmd_name, "cat") == 0) {
+        PRINT(WHITE, BLACK, "[BG %d] Reading file...\n", ctx->job_id);
+        char fullpath[256];
+        if (ctx->args[0] == '/') {
+            strcpy_local(fullpath, ctx->args);
+        } else {
+            const char* cwd = vfs_get_cwd_path();
+            strcpy_local(fullpath, cwd);
+            int len = strlen_local(fullpath);
+            if (len > 0 && fullpath[len-1] != '/') {
+                fullpath[len] = '/';
+                fullpath[len+1] = '\0';
+            }
+            int k = strlen_local(fullpath);
+            int m = 0;
+            while (ctx->args[m] && k < 255) {
+                fullpath[k++] = ctx->args[m++];
+            }
+            fullpath[k] = '\0';
+        }
+        int fd = vfs_open(fullpath, FILE_READ);
+        if (fd >= 0) {
+            uint8_t buffer[513];
+            int bytes = vfs_read(fd, buffer, 512);
+            if (bytes > 0) {
+                buffer[bytes] = '\0';
+                PRINT(WHITE, BLACK, "%s\n", buffer);
+            }
+            vfs_close(fd);
+        } else {
+            PRINT(YELLOW, BLACK, "[BG %d] File not found: %s\n", ctx->job_id, fullpath);
+        }
     }
     else {
-        PRINT(YELLOW, BLACK, "[BG %d] Unknown command: %s\n", data->job_id, cmd_name);
+        PRINT(YELLOW, BLACK, "[BG %d] Unknown command: %s\n", ctx->job_id, ctx->cmd_name);
+        PRINT(WHITE, BLACK, "[BG %d] Supported: sleep, echo, ls, cat\n", ctx->job_id);
     }
-
-    data->job_id = 0;
-    data->command[0] = '\0';
-
+    
+    // Mark completion
+    ctx->should_run = 0;
+    
+    PRINT(GREEN, BLACK, "[BG %d] Thread exiting\n", ctx->job_id);
     thread_exit();
 }
-
 
 void bring_to_foreground(int job_id) {
     job_t *job = get_job(job_id);
@@ -1742,7 +2080,7 @@ void send_to_background(int job_id) {
 }
 
 void process_command(char* cmd) {
-    if (cmd[0] == '\0') return;
+   if (cmd[0] == '\0') return;
 
     history_add(cmd);
 
@@ -1760,7 +2098,8 @@ void process_command(char* cmd) {
             PRINT(YELLOW, BLACK, "Invalid command\n");
             return;
         }
-        PRINT(WHITE, BLACK, "[SHELL] Running in background: %s\n", cmd);
+        
+        PRINT(WHITE, BLACK, "[SHELL] Launching background job: %s\n", cmd);
 
         process_t *proc = get_process(1);
         if (!proc) {
@@ -1768,22 +2107,18 @@ void process_command(char* cmd) {
             return;
         }
 
-        extern cmd_thread_data_t bg_thread_data[MAX_JOBS];
-        int data_idx = -1;
-        for (int i = 0; i < MAX_JOBS; i++) {
-            if (bg_thread_data[i].job_id == 0) {
-                data_idx = i;
-                break;
-            }
-        }
-        if (data_idx < 0) {
-            PRINT(YELLOW, BLACK, "[ERROR] No free background slots\n");
+        // Allocate context for this background job
+        bg_exec_context_t *bg_ctx = kmalloc(sizeof(bg_exec_context_t));
+        if (!bg_ctx) {
+            PRINT(YELLOW, BLACK, "[ERROR] Out of memory\n");
             return;
         }
 
-        strcpy_safe_local(bg_thread_data[data_idx].command, cmd, 256);
-        bg_thread_data[data_idx].job_id = -1;
+        strcpy_safe_local(bg_ctx->command, cmd, 256);
+        bg_ctx->job_id = -1;
+        bg_ctx->should_run = 1;
 
+        // Create thread
         int tid = thread_create(
             proc->pid,
             bg_command_thread,
@@ -1795,23 +2130,24 @@ void process_command(char* cmd) {
 
         if (tid < 0) {
             PRINT(YELLOW, BLACK, "[ERROR] Failed to create background thread\n");
-            bg_thread_data[data_idx].job_id = 0;
+            kfree(bg_ctx);
             return;
         }
 
+        // Set thread private data
         thread_t *thread = get_thread(tid);
         if (thread) {
-            thread->private_data = &bg_thread_data[data_idx];
+            thread->private_data = bg_ctx;
         }
 
+        // Create job
         int job_id = add_bg_job(cmd, proc->pid, tid);
         if (job_id > 0) {
-            bg_thread_data[data_idx].job_id = job_id;
-            PRINT(GREEN, BLACK, "[SHELL] Created background job %d (TID=%d)\n",
-                  job_id, tid);
+            bg_ctx->job_id = job_id;
+            PRINT(GREEN, BLACK, "[%d] %d (thread %d)\n", job_id, proc->pid, tid);
         } else {
             PRINT(YELLOW, BLACK, "[ERROR] Failed to add background job\n");
-            bg_thread_data[data_idx].job_id = 0;
+            kfree(bg_ctx);
         }
 
         return;
@@ -1933,6 +2269,12 @@ void process_command(char* cmd) {
         PRINT(WHITE, BLACK, "  wget <url>  - Fetch web page\n");
         PRINT(WHITE, BLACK, "  curl <url>  - Fetch web page (alias)\n");
         PRINT(WHITE, BLACK, "  httptest    - Test HTTP client\n");
+        PRINT(GREEN, BLACK, "\nSystem Debug Commands:\n");
+PRINT(WHITE, BLACK, "  syscheck     - Comprehensive system health check\n");
+PRINT(WHITE, BLACK, "  schedinfo    - Show scheduler state\n");
+PRINT(WHITE, BLACK, "  threaddebug  - Detailed thread information\n");
+PRINT(WHITE, BLACK, "  schedtest    - Test scheduler with demo thread\n");
+PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
         PRINT(GREEN, BLACK, "Shutdown commands: \n");
         PRINT(WHITE, BLACK, "  shutdown - Power off the system\n");
         PRINT(WHITE, BLACK, "  reboot   - Reboot the system\n");
@@ -2543,7 +2885,25 @@ else if (STRNCMP(cmd, "httptest", 8) == 0) {
 }  else if (STRNCMP(cmd, "history", 8) == 0) {
         history_list();
         return;
-    }
+    } else if (STRNCMP(cmd, "schedinfo", 9) == 0) {
+    cmd_schedinfo();
+}
+else if (STRNCMP(cmd, "threaddebug", 11) == 0) {
+    cmd_threaddebug();
+}
+else if (STRNCMP(cmd, "schedtest", 9) == 0) {
+    cmd_schedtest();
+} 
+else if (STRNCMP(cmd, "schedstart", 10) == 0) {
+    cmd_schedstart();
+} 
+
+// Add to process_command():
+else if (STRNCMP(cmd, "jobupdate", 9) == 0) {
+    cmd_jobupdate();
+} else if (STRNCMP(cmd, "syscheck", 8) == 0) {
+    cmd_syscheck();
+}
     else {
         PRINT(YELLOW, BLACK, "Unknown command: %s\n", cmd);
         PRINT(YELLOW, BLACK, "Try 'help' for available commands\n");
@@ -2551,8 +2911,6 @@ else if (STRNCMP(cmd, "httptest", 8) == 0) {
 }
 
 void run_text_demo(void) {
-    // Don't call scheduler_enable() here - it's done in start.c
-    
     PRINT(CYAN, BLACK, "==========================================\n");
     PRINT(CYAN, BLACK, "    AMQ Operating System v2.8\n");
     PRINT(CYAN, BLACK, "==========================================\n");
@@ -2561,6 +2919,7 @@ void run_text_demo(void) {
 
     int cursor_visible = 1;
     int cursor_timer = 0;
+    int job_update_counter = 0;  // Move outside loop
 
     while (1) {
         cursor_timer++;
@@ -2568,9 +2927,9 @@ void run_text_demo(void) {
         process_keyboard_buffer();
         mouse();
         
-        // Periodically update jobs (check for sleeping threads)
-        static int job_update_counter = 0;
-        if (++job_update_counter > 10000) {
+        // Update jobs MUCH more frequently - every 100 iterations instead of 10000
+        job_update_counter++;
+        if (job_update_counter >= 100) {
             job_update_counter = 0;
             update_jobs();
         }

@@ -1,4 +1,4 @@
-// sleep.c - Fixed sleep implementation
+// sleep.c - Fixed sleep implementation with proper job integration
 
 #include "sleep.h"
 #include "irq.h"
@@ -8,6 +8,9 @@
 #include "fg.h"
 
 #define TIMER_FREQ 1000  // 1000 Hz = 1ms per tick
+
+// Forward declaration
+extern job_t job_table[];
 
 void sleep_ticks(uint64_t ticks) {
     if (ticks == 0) return;
@@ -26,38 +29,43 @@ void sleep_ticks(uint64_t ticks) {
     }
     
     // Calculate wake time
-    uint64_t target_ticks = get_timer_ticks() + ticks;
-    uint64_t wake_time_ms = (target_ticks * 1000) / TIMER_FREQ;
+    uint64_t current_time_ms = get_uptime_ms();
+    uint64_t sleep_duration_ms = (ticks * 1000) / TIMER_FREQ;
+    uint64_t wake_time_ms = current_time_ms + sleep_duration_ms;
     
-    PRINT(WHITE, BLACK, "[SLEEP TID=%u] Sleeping for %llu ticks (until %llu ms)\n",
-          current->tid, ticks, wake_time_ms);
+    PRINT(WHITE, BLACK, "[SLEEP TID=%u] Sleeping for %llu ms (current=%llu, wake=%llu)\n",
+          current->tid, sleep_duration_ms, current_time_ms, wake_time_ms);
     
-    // Find job for this thread
+    // Find job for this thread and update sleep time
     int found_job = 0;
     for (int i = 0; i < MAX_JOBS; i++) {
-        extern job_t job_table[];  // From fg.c
         job_t *job = &job_table[i];
         
         if (job->used && job->tid == current->tid) {
             job->state = JOB_SLEEPING;
             job->sleep_until = wake_time_ms;
             found_job = 1;
-            PRINT(WHITE, BLACK, "[SLEEP] Set job %d to wake at %llu ms\n",
-                  job->job_id, wake_time_ms);
+            
+            PRINT(WHITE, BLACK, "[SLEEP] Job %d will wake at %llu ms (%llu seconds)\n",
+                  job->job_id, wake_time_ms, sleep_duration_ms / 1000);
             break;
         }
     }
     
     if (!found_job) {
-        PRINT(YELLOW, BLACK, "[SLEEP] WARNING: No job for TID=%u\n", current->tid);
+        PRINT(YELLOW, BLACK, "[SLEEP] WARNING: No job found for TID=%u\n", current->tid);
+        PRINT(YELLOW, BLACK, "[SLEEP] Sleeping without job tracking\n");
     }
     
-    // Block thread
+    // Block thread - update_jobs() will wake us up
     thread_block(current->tid);
     
-    // When we return here, we've been unblocked
-    PRINT(MAGENTA, BLACK, "[SLEEP TID=%u] Woke up at %llu ms\n",
-          current->tid, get_uptime_ms());
+    // When we return here, we've been unblocked by update_jobs()
+    uint64_t actual_wake_ms = get_uptime_ms();
+    uint64_t slept_ms = actual_wake_ms - current_time_ms;
+    
+    PRINT(MAGENTA, BLACK, "[SLEEP TID=%u] Woke up after %llu ms (target was %llu ms)\n",
+          current->tid, slept_ms, sleep_duration_ms);
 }
 
 void sleep_ms(uint64_t milliseconds) {
@@ -81,7 +89,8 @@ void sleep_seconds(uint32_t seconds) {
     sleep_ms(seconds * 1000);
     
     if (current) {
-        PRINT(MAGENTA, BLACK, "[SLEEP TID=%u] Awake!\n", current->tid);
+        PRINT(MAGENTA, BLACK, "[SLEEP TID=%u] Awake after %u seconds!\n", 
+              current->tid, seconds);
     }
 }
 

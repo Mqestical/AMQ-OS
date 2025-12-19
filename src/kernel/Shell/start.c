@@ -288,6 +288,30 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     init_kernel_threads();
     PRINT(GREEN, BLACK, "[OK] Kernel threads created\n");
 
+    // Create shell as a thread
+PRINT(WHITE, BLACK, "\n[INIT] Starting shell as thread...\n");
+process_t *init_proc = get_process(1);
+if (!init_proc) {
+    PRINT(YELLOW, BLACK, "[ERROR] Init process not found!\n");
+    goto boot_failed;
+}
+
+extern void shell_thread_entry(void);
+
+int shell_tid = thread_create(
+    init_proc->pid,
+    shell_thread_entry,
+    131072,  // 128KB stack for shell
+    50000000,
+    1000000000,
+    1000000000
+);
+
+if (shell_tid < 0) {
+    PRINT(YELLOW, BLACK, "[ERROR] Failed to create shell thread\n");
+    goto boot_failed;
+}
+
     // Enable scheduler BEFORE starting shell
     PRINT(WHITE, BLACK, "\n[INIT] Enabling scheduler...\n");
     scheduler_enable();
@@ -306,14 +330,19 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     
     PRINT(GREEN, BLACK, "=== Boot Complete ===\n");
 
-    jobs_set_active(1);
-    PRINT(GREEN, BLACK, "[OK] Job tracking ENABLED\n");
-    PRINT(GREEN, BLACK, "\nStarting shell...\n\n");
-    for (volatile int i = 0; i < 5000000; i++);
+jobs_set_active(1);
+PRINT(GREEN, BLACK, "[OK] Job tracking ENABLED\n");
 
-    init_shell();
 
-    while(1) __asm__ volatile("hlt");
+
+PRINT(GREEN, BLACK, "[OK] Shell thread created (TID=%d)\n", shell_tid);
+PRINT(GREEN, BLACK, "\n=== Boot Complete ===\n");
+
+
+// Now just idle - scheduler handles everything
+while(1) {
+    __asm__ volatile("hlt");
+}
 
 boot_failed:
     PRINT(YELLOW, BLACK, "\n=== BOOT FAILED ===\n");

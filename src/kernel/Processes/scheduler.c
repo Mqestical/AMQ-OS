@@ -1,4 +1,4 @@
-// scheduler.c - Complete scheduler reimplementation
+// scheduler.c - CRITICAL FIX: Scheduler must start first thread
 
 #include "process.h"
 #include "memory.h"
@@ -19,6 +19,63 @@ static volatile int in_scheduler = 0;
 // Simple ready queue
 static thread_t *ready_queue_head = NULL;
 static thread_t *ready_queue_tail = NULL;
+
+// Export scheduler state
+int get_scheduler_enabled(void) {
+    return scheduler_enabled;
+}
+
+void debug_context_switch(void) {
+    thread_t *current = get_current_thread();
+    
+    if (!current) {
+        PRINT(YELLOW, BLACK, "[DEBUG] No current thread\n");
+        return;
+    }
+    
+    PRINT(CYAN, BLACK, "\n=== Context Switch Debug ===\n");
+    PRINT(WHITE, BLACK, "Current thread: TID=%u\n", current->tid);
+    PRINT(WHITE, BLACK, "  State: %d\n", current->state);
+    PRINT(WHITE, BLACK, "  RSP: 0x%llx\n", current->context.rsp);
+    PRINT(WHITE, BLACK, "  RIP: 0x%llx\n", current->context.rip);
+    PRINT(WHITE, BLACK, "  Stack base: 0x%llx\n", (uint64_t)current->stack_base);
+    PRINT(WHITE, BLACK, "  Stack top:  0x%llx\n", 
+          (uint64_t)current->stack_base + current->stack_size);
+    
+    // Verify RSP is in bounds
+    uint64_t stack_start = (uint64_t)current->stack_base;
+    uint64_t stack_end = stack_start + current->stack_size;
+    
+    if (current->context.rsp >= stack_start && current->context.rsp < stack_end) {
+        PRINT(GREEN, BLACK, "  RSP within stack\n");
+    } else {
+        PRINT(RED, BLACK, "RSP OUTSIDE STACK!\n");
+    }
+    
+    // Check next thread
+    if (ready_queue_head) {
+        thread_t *next = ready_queue_head;
+        PRINT(WHITE, BLACK, "\nNext thread: TID=%u\n", next->tid);
+        PRINT(WHITE, BLACK, "  RSP: 0x%llx\n", next->context.rsp);
+        PRINT(WHITE, BLACK, "  RIP: 0x%llx\n", next->context.rip);
+        
+        stack_start = (uint64_t)next->stack_base;
+        stack_end = stack_start + next->stack_size;
+        
+        if (next->context.rsp >= stack_start && next->context.rsp < stack_end) {
+            PRINT(GREEN, BLACK, "  RSP within stack\n");
+        } else {
+            PRINT(RED, BLACK, " — RSP OUTSIDE STACK!\n");
+        }
+        
+        // Dump what's at the RSP
+        PRINT(WHITE, BLACK, "\n  Stack at RSP:\n");
+        uint64_t *sp = (uint64_t*)next->context.rsp;
+        for (int i = 0; i < 8; i++) {
+            PRINT(WHITE, BLACK, "    [RSP+%d] = 0x%llx\n", i * 8, sp[i]);
+        }
+    }
+}
 
 void scheduler_init(void) {
     // Zero out thread table
@@ -48,6 +105,12 @@ void scheduler_init(void) {
 void scheduler_enable(void) {
     scheduler_enabled = 1;
     PRINT(MAGENTA, BLACK, "[SCHED] Scheduler ENABLED\n");
+    
+    // CRITICAL: If we have ready threads but no current thread, start one NOW
+    if (!current_thread && ready_queue_head) {
+        PRINT(YELLOW, BLACK, "[SCHED] No current thread, forcing initial schedule...\n");
+        schedule();
+    }
 }
 
 void scheduler_disable(void) {
@@ -105,14 +168,34 @@ void ready_queue_remove(thread_t *thread) {
 }
 
 static void thread_wrapper(void) {
+    // Ensure segments are valid
+    __asm__ volatile(
+        "mov $0x10, %%rax\n"
+        "mov %%rax, %%ds\n"
+        "mov %%rax, %%es\n"
+        "mov %%rax, %%ss\n"
+        ::: "rax", "memory"
+    );
+    
     thread_t *current = current_thread;
+    
     if (!current) {
         PRINT(YELLOW, BLACK, "[THREAD] No current thread in wrapper!\n");
         while(1) __asm__ volatile("hlt");
     }
     
+    PRINT(GREEN, BLACK, "[THREAD] TID=%u started execution\n", current->tid);
+    
     // Enable interrupts for this thread
     __asm__ volatile("sti");
+    
+    // FIX: Align stack to 16 bytes before calling entry
+    // The stack must be 16-byte aligned + 8 when we call
+    __asm__ volatile(
+        "and $-16, %%rsp\n"  // Align to 16 bytes
+        "sub $8, %%rsp\n"    // Then subtract 8 (so after call pushes ret addr, it's aligned)
+        ::: "rsp", "memory"
+    );
     
     void (*entry)(void) = (void (*)(void))current->entry_point;
     if (entry) {
@@ -129,19 +212,52 @@ static void setup_thread_context(thread_t *thread, void (*entry)(void)) {
         ((uint8_t*)&thread->context)[i] = 0;
     }
     
-    // Setup stack
+    // Calculate aligned stack top
     uint64_t stack_top = (uint64_t)thread->stack_base + thread->stack_size;
     stack_top &= ~0xFULL;  // 16-byte align
     
-    // Setup context for switch_to_thread
-    thread->context.rsp = stack_top;
-    thread->context.rbp = 0;
-    thread->context.rip = (uint64_t)thread_wrapper;
-    thread->context.rflags = 0x202;  // IF=1
+    // The stack layout must match what switch_to_thread expects:
+    // When switch_to_thread returns to this thread, it will:
+    //   1. popfq (restore flags)
+    //   2. pop rbx, rbp, r12, r13, r14, r15
+    //   3. ret (pop return address and jump)
+    //
+    // So we need to build the stack in REVERSE order:
     
-    // Set segment registers
-    thread->context.cs = 0x08;  // Kernel code
-    thread->context.ss = 0x10;  // Kernel data
+    uint64_t *stack = (uint64_t*)stack_top;
+    
+    // Build stack from high to low addresses:
+    
+    stack--;  // Return address (popped LAST by ret)
+    *stack = (uint64_t)thread_wrapper;
+    
+    stack--;  // r15 (popped 7th)
+    *stack = 0;
+    
+    stack--;  // r14 (popped 6th)
+    *stack = 0;
+    
+    stack--;  // r13 (popped 5th)
+    *stack = 0;
+    
+    stack--;  // r12 (popped 4th)
+    *stack = 0;
+    
+    stack--;  // rbp (popped 3rd)
+    *stack = 0;
+    
+    stack--;  // rbx (popped 2nd)
+    *stack = 0;
+    
+    stack--;  // rflags (popped FIRST by popfq)
+    *stack = 0x202;  // Interrupts enabled, reserved bit
+    
+    // RSP now points to the rflags value
+    thread->context.rsp = (uint64_t)stack;
+    thread->context.rip = (uint64_t)thread_wrapper;
+    thread->context.rflags = 0x202;
+    thread->context.cs = 0x08;
+    thread->context.ss = 0x10;
 }
 
 int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
@@ -212,6 +328,12 @@ int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
     
     PRINT(MAGENTA, BLACK, "[THREAD] Created TID=%u for PID=%u (entry=0x%llx)\n", 
           thread->tid, proc->pid, thread->entry_point);
+    
+    // CRITICAL: If scheduler is enabled and no current thread, start this one
+    if (scheduler_enabled && !current_thread) {
+        PRINT(YELLOW, BLACK, "[THREAD] Scheduler enabled, auto-starting first thread\n");
+        schedule();
+    }
     
     return thread->tid;
 }
@@ -320,7 +442,13 @@ void thread_exit(void) {
 
 void thread_yield(void) {
     if (!scheduler_enabled) return;
-    if (!current_thread) return;
+    if (!current_thread) {
+        // No current thread but scheduler enabled? Try to start one
+        if (ready_queue_head) {
+            schedule();
+        }
+        return;
+    }
     
     schedule();
 }
@@ -337,7 +465,7 @@ void schedule(void) {
     thread_t *prev = current_thread;
     thread_t *next = ready_queue_head;
     
-    // If current thread is still runnable, put it back
+    // If current thread is still runnable, put it back in queue
     if (prev && prev->state == THREAD_STATE_RUNNING) {
         prev->state = THREAD_STATE_READY;
         ready_queue_add(prev);
@@ -345,14 +473,7 @@ void schedule(void) {
     
     // Get next thread from queue
     if (!next) {
-        // No threads ready
         in_scheduler = 0;
-        
-        // If we had a previous thread, something went wrong
-        if (prev && prev->state != THREAD_STATE_BLOCKED && 
-            prev->state != THREAD_STATE_TERMINATED) {
-            PRINT(YELLOW, BLACK, "[SCHED] No threads but prev exists!\n");
-        }
         return;
     }
     
@@ -364,25 +485,51 @@ void schedule(void) {
     next->next = NULL;
     next->state = THREAD_STATE_RUNNING;
     
-    // If no previous thread, this is the first thread
+    // SPECIAL CASE: First thread (no previous context)
     if (!prev) {
         current_thread = next;
         in_scheduler = 0;
         
         PRINT(MAGENTA, BLACK, "[SCHED] Starting first thread TID=%u\n", next->tid);
+        PRINT(WHITE, BLACK, "  Entry=0x%llx RSP=0x%llx\n", 
+              next->entry_point, next->context.rsp);
         
-        // Jump to thread directly
+        uint64_t new_rsp = next->context.rsp;
+        
         __asm__ volatile(
-            "mov %0, %%rsp\n"
-            "xor %%rbp, %%rbp\n"
-            "sti\n"
-            "jmp *%1\n"
+            "mov %0, %%rsp\n"      // Load new stack
+            "mov $0x10, %%rax\n"   // Load data segment selector
+            "mov %%rax, %%ds\n"    // Set DS
+            "mov %%rax, %%es\n"    // Set ES
+            "mov %%rax, %%ss\n"    // Set SS
+            "popfq\n"              // Restore flags
+            "pop %%rbx\n"
+            "pop %%rbp\n"
+            "pop %%r12\n"
+            "pop %%r13\n"
+            "pop %%r14\n"
+            "pop %%r15\n"
+            "sti\n"                // Enable interrupts
+            "ret\n"                // Jump to thread_wrapper
             :
-            : "r"(next->context.rsp), "r"(next->context.rip)
-            : "memory"
+            : "r"(new_rsp)
+            : "memory", "rax"
         );
         
-        // Should never return
+               PRINT(CYAN, BLACK, "[DEBUG] About to jump to first thread\n");
+    PRINT(CYAN, BLACK, "[DEBUG] Checking stack at RSP=0x%llx:\n", next->context.rsp);
+    uint64_t *check = (uint64_t*)next->context.rsp;
+    PRINT(CYAN, BLACK, "  [0] rflags = 0x%llx\n", check[0]);
+    PRINT(CYAN, BLACK, "  [1] rbx    = 0x%llx\n", check[1]);
+    PRINT(CYAN, BLACK, "  [2] rbp    = 0x%llx\n", check[2]);
+    PRINT(CYAN, BLACK, "  [3] r12    = 0x%llx\n", check[3]);
+    PRINT(CYAN, BLACK, "  [4] r13    = 0x%llx\n", check[4]);
+    PRINT(CYAN, BLACK, "  [5] r14    = 0x%llx\n", check[5]);
+    PRINT(CYAN, BLACK, "  [6] r15    = 0x%llx\n", check[6]);
+    PRINT(CYAN, BLACK, "  [7] ret addr = 0x%llx\n", check[7]);
+    PRINT(CYAN, BLACK, "[DEBUG] thread_wrapper should be at 0x%llx\n", (uint64_t)thread_wrapper);
+
+        // Should never reach here
         PRINT(YELLOW, BLACK, "[FATAL] First thread returned!\n");
         while(1) __asm__ volatile("hlt");
     }
@@ -394,43 +541,68 @@ void schedule(void) {
     }
     
     current_thread = next;
+    
+    PRINT(CYAN, BLACK, "[SCHED] Switch: TID %u -> TID %u\n", prev->tid, next->tid);
+    PRINT(WHITE, BLACK, "  Prev RSP=0x%llx Next RSP=0x%llx\n",
+          prev->context.rsp, next->context.rsp);
+    
     in_scheduler = 0;
     
     // Context switch
     switch_to_thread(&prev->context, &next->context);
+    
+    // Returns here when this thread is scheduled again
 }
-
 void scheduler_tick(void) {
     if (!scheduler_enabled) return;
     
     // Don't interrupt scheduler
     if (in_scheduler) return;
     
+    // If no current thread but we have ready threads, start one
+    if (!current_thread && ready_queue_head) {
+        PRINT(YELLOW, BLACK, "[SCHED_TICK] No current thread, starting one...\n");
+        schedule();
+        return;
+    }
+    
     // For now, just yield if we have a current thread
-    if (current_thread) {
-        thread_yield();
+    if (current_thread && current_thread->state == THREAD_STATE_RUNNING) {
+        schedule();
     }
 }
 
-// Context switch assembly
+extern void switch_to_thread(cpu_context_t *old_ctx, cpu_context_t *new_ctx);
+
 __asm__(
 ".global switch_to_thread\n"
 "switch_to_thread:\n"
-"    pushfq\n"
-"    push %rbx\n"
-"    push %rbp\n"
-"    push %r12\n"
-"    push %r13\n"
-"    push %r14\n"
+"    # RDI = old context, RSI = new context\n"
+"    \n"
+"    # Save old context (callee-saved registers)\n"
 "    push %r15\n"
-"    mov %rsp, 56(%rdi)\n"  // Save RSP to old context
-"    mov 56(%rsi), %rsp\n"  // Load RSP from new context
-"    pop %r15\n"
-"    pop %r14\n"
-"    pop %r13\n"
-"    pop %r12\n"
-"    pop %rbp\n"
-"    pop %rbx\n"
+"    push %r14\n"
+"    push %r13\n"
+"    push %r12\n"
+"    push %rbp\n"
+"    push %rbx\n"
+"    pushfq\n"
+"    \n"
+"    # Save old RSP to context->rsp (offset 0)\n"
+"    mov %rsp, 0(%rdi)\n"
+"    \n"
+"    # Load new RSP from context->rsp (offset 0)\n"
+"    mov 0(%rsi), %rsp\n"
+"    \n"
+"    # Restore new context\n"
 "    popfq\n"
+"    pop %rbx\n"
+"    pop %rbp\n"
+"    pop %r12\n"
+"    pop %r13\n"
+"    pop %r14\n"
+"    pop %r15\n"
+"    \n"
+"    # Return to new thread\n"
 "    ret\n"
 );

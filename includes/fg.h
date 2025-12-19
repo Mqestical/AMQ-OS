@@ -42,5 +42,4 @@ job_t* get_job(int job_id);
 void update_jobs(void);
 void scheduler_enable(void);
 void update_jobs_safe(void);
-
 #endif
