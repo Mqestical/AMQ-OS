@@ -272,7 +272,11 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
     PRINT(WHITE, BLACK, "\n[INIT] Initializing processes...\n");
     process_init();
+    PRINT(GREEN, BLACK, "[OK] Process table initialized\n");
+    
+    PRINT(WHITE, BLACK, "\n[INIT] Initializing scheduler...\n");
     scheduler_init();
+    PRINT(GREEN, BLACK, "[OK] Scheduler initialized (DISABLED)\n");
 
     extern cmd_thread_data_t bg_thread_data[MAX_JOBS];
     for (int i = 0; i < MAX_JOBS; i++) {
@@ -280,8 +284,14 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         bg_thread_data[i].command[0] = '\0';
     }
 
+    PRINT(WHITE, BLACK, "\n[INIT] Creating kernel threads...\n");
     init_kernel_threads();
-    PRINT(GREEN, BLACK, "[OK] Threads initialized (scheduler DISABLED)\n");
+    PRINT(GREEN, BLACK, "[OK] Kernel threads created\n");
+
+    // Enable scheduler BEFORE starting shell
+    PRINT(WHITE, BLACK, "\n[INIT] Enabling scheduler...\n");
+    scheduler_enable();
+    PRINT(GREEN, BLACK, "[OK] Scheduler ENABLED\n");
 
     ClearScreen(BLACK);
     

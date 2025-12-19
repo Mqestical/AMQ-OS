@@ -117,47 +117,6 @@ void timer_irq_handler(void) {
 }
 
 
-__attribute__((naked))
-void timer_handler_asm(void) {
-    __asm__ volatile(
-        "push %rax\n"
-        "push %rbx\n"
-        "push %rcx\n"
-        "push %rdx\n"
-        "push %rsi\n"
-        "push %rdi\n"
-        "push %rbp\n"
-        "push %r8\n"
-        "push %r9\n"
-        "push %r10\n"
-        "push %r11\n"
-        "push %r12\n"
-        "push %r13\n"
-        "push %r14\n"
-        "push %r15\n"
-        "mov %rsp, %rbp\n"
-        "and $-16, %rsp\n"
-        "sub $8, %rsp\n"
-        "call timer_irq_handler\n"
-        "mov %rbp, %rsp\n"
-        "pop %r15\n"
-        "pop %r14\n"
-        "pop %r13\n"
-        "pop %r12\n"
-        "pop %r11\n"
-        "pop %r10\n"
-        "pop %r9\n"
-        "pop %r8\n"
-        "pop %rbp\n"
-        "pop %rdi\n"
-        "pop %rsi\n"
-        "pop %rdx\n"
-        "pop %rcx\n"
-        "pop %rbx\n"
-        "pop %rax\n"
-        "iretq\n"
-    );
-}
 
 
 void pit_init(uint32_t frequency) {
@@ -203,11 +162,6 @@ void irq_init(void) {
     PRINT(MAGENTA, BLACK, "[IRQ] IRQ system ready\n");
 }
 
-
-uint64_t get_timer_ticks(void) {
-    return timer_ticks;
-}
-
 uint64_t get_uptime_seconds(void) {
     return timer_seconds;
 }
@@ -218,4 +172,61 @@ void show_timer_info(void) {
     PRINT(WHITE, BLACK, "Uptime: %llu seconds\n", timer_seconds);
     PRINT(WHITE, BLACK, "Milliseconds: %llu\n", (timer_ticks * 1000) / TIMER_FREQ);
     PRINT(WHITE, BLACK, "PIC1 mask: 0x%x\n", pic_get_mask());
+}
+
+void timer_handler_c(void) {
+    timer_ticks++;
+    
+    // Update job sleep timers
+    update_jobs();
+    
+    // Scheduler tick (if enabled)
+    scheduler_tick();
+    
+    // Send EOI
+    outb(0x20, 0x20);
+}
+
+__attribute__((naked))
+void timer_handler_asm(void) {
+    __asm__ volatile(
+        "push %rax\n"
+        "push %rbx\n"
+        "push %rcx\n"
+        "push %rdx\n"
+        "push %rsi\n"
+        "push %rdi\n"
+        "push %rbp\n"
+        "push %r8\n"
+        "push %r9\n"
+        "push %r10\n"
+        "push %r11\n"
+        "push %r12\n"
+        "push %r13\n"
+        "push %r14\n"
+        "push %r15\n"
+        
+        "call timer_handler_c\n"
+        
+        "pop %r15\n"
+        "pop %r14\n"
+        "pop %r13\n"
+        "pop %r12\n"
+        "pop %r11\n"
+        "pop %r10\n"
+        "pop %r9\n"
+        "pop %r8\n"
+        "pop %rbp\n"
+        "pop %rdi\n"
+        "pop %rsi\n"
+        "pop %rdx\n"
+        "pop %rcx\n"
+        "pop %rbx\n"
+        "pop %rax\n"
+        "iretq\n"
+    );
+}
+
+uint64_t get_timer_ticks(void) {
+    return timer_ticks;
 }

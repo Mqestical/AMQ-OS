@@ -1,11 +1,18 @@
+// process.c - Process management
+
 #include "process.h"
 #include "memory.h"
 #include "print.h"
 #include "string_helpers.h"
 
+// Global process table
 process_t process_table[MAX_PROCESSES];
 
 static uint32_t next_pid = 1;
+
+// ============================================================================
+// PROCESS INITIALIZATION
+// ============================================================================
 
 void process_init(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -26,6 +33,10 @@ void process_init(void) {
 
     PRINT(MAGENTA, BLACK, "[PROCESS] Process management initialized\n");
 }
+
+// ============================================================================
+// PROCESS MANAGEMENT
+// ============================================================================
 
 static int find_free_process(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -72,6 +83,10 @@ process_t* get_process(uint32_t pid) {
     return NULL;
 }
 
+// ============================================================================
+// PROCESS TABLE DISPLAY
+// ============================================================================
+
 void print_process_table(void) {
     PRINT(WHITE, BLACK, "\n=== Process Table ===\n");
 
@@ -80,11 +95,13 @@ void print_process_table(void) {
         if (process_table[i].used) {
             process_t *p = &process_table[i];
 
-            char *state_str;
-            if (p->state == PROCESS_STATE_RUNNING) state_str = "RUNNING";
-            else if (p->state == PROCESS_STATE_READY) state_str = "READY";
-            else if (p->state == PROCESS_STATE_BLOCKED) state_str = "BLOCKED";
-            else state_str = "TERMINATED";
+            const char *state_str;
+            switch (p->state) {
+                case PROCESS_STATE_RUNNING: state_str = "RUNNING"; break;
+                case PROCESS_STATE_READY: state_str = "READY"; break;
+                case PROCESS_STATE_BLOCKED: state_str = "BLOCKED"; break;
+                default: state_str = "TERMINATED"; break;
+            }
 
             PRINT(MAGENTA, BLACK, "PID=%u | '%s' | Memory=0x%llX | State=%s | Threads=%u\n",
                   p->pid, p->name, p->memory_space, state_str, p->thread_count);
@@ -92,14 +109,16 @@ void print_process_table(void) {
             for (uint32_t j = 0; j < p->thread_count; j++) {
                 thread_t *t = p->threads[j];
                 if (t) {
-                    char *tstate_str;
-                    if (t->state == THREAD_STATE_RUNNING) tstate_str = "RUNNING";
-                    else if (t->state == THREAD_STATE_READY) tstate_str = "READY";
-                    else if (t->state == THREAD_STATE_BLOCKED) tstate_str = "BLOCKED";
-                    else tstate_str = "TERMINATED";
+                    const char *tstate_str;
+                    switch (t->state) {
+                        case THREAD_STATE_RUNNING: tstate_str = "RUNNING"; break;
+                        case THREAD_STATE_READY: tstate_str = "READY"; break;
+                        case THREAD_STATE_BLOCKED: tstate_str = "BLOCKED"; break;
+                        default: tstate_str = "TERMINATED"; break;
+                    }
 
-                    PRINT(WHITE, BLACK, "  â””â”€ TID=%u | %s | Deadline=%llu ns\n",
-                          t->tid, tstate_str, t->sched.absolute_deadline);
+                    PRINT(WHITE, BLACK, "  └─ TID=%u | %s | Entry=0x%llx\n",
+                          t->tid, tstate_str, t->entry_point);
                 }
             }
             count++;

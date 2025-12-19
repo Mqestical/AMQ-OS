@@ -2551,7 +2551,8 @@ else if (STRNCMP(cmd, "httptest", 8) == 0) {
 }
 
 void run_text_demo(void) {
-    scheduler_enable();
+    // Don't call scheduler_enable() here - it's done in start.c
+    
     PRINT(CYAN, BLACK, "==========================================\n");
     PRINT(CYAN, BLACK, "    AMQ Operating System v2.8\n");
     PRINT(CYAN, BLACK, "==========================================\n");
@@ -2563,9 +2564,17 @@ void run_text_demo(void) {
 
     while (1) {
         cursor_timer++;
-         e1000_interrupt_handler();
+        e1000_interrupt_handler();
         process_keyboard_buffer();
         mouse();
+        
+        // Periodically update jobs (check for sleeping threads)
+        static int job_update_counter = 0;
+        if (++job_update_counter > 10000) {
+            job_update_counter = 0;
+            update_jobs();
+        }
+        
         if (input_available()) {
             char* input = get_input_and_reset();
             process_command(input);

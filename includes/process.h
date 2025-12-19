@@ -2,11 +2,12 @@
 #define PROCESS_H
 
 #include <stdint.h>
-#include <sched.h>
+
 #define MAX_PROCESSES 64
 #define MAX_THREADS_PER_PROCESS 16
 #define MAX_THREADS_GLOBAL 256
 
+// Thread states
 typedef enum {
     THREAD_STATE_READY,
     THREAD_STATE_RUNNING,
@@ -14,6 +15,7 @@ typedef enum {
     THREAD_STATE_TERMINATED
 } thread_state_t;
 
+// Process states
 typedef enum {
     PROCESS_STATE_READY,
     PROCESS_STATE_RUNNING,
@@ -21,16 +23,22 @@ typedef enum {
     PROCESS_STATE_TERMINATED
 } process_state_t;
 
+// CPU context for context switching
 typedef struct {
-    uint64_t rax, rbx, rcx, rdx;
-    uint64_t rsi, rdi, rbp, rsp;
-    uint64_t r8, r9, r10, r11;
-    uint64_t r12, r13, r14, r15;
-    uint64_t rip;
+    uint64_t rsp;      // Stack pointer (must be first for asm)
+    uint64_t rbp;
+    uint64_t rbx;
+    uint64_t r12;
+    uint64_t r13;
+    uint64_t r14;
+    uint64_t r15;
+    uint64_t rip;      // Return address
     uint64_t rflags;
-    uint64_t cs, ss;
+    uint64_t cs;
+    uint64_t ss;
 } cpu_context_t;
 
+// Scheduling parameters
 typedef struct {
     uint64_t runtime;
     uint64_t deadline;
@@ -41,22 +49,24 @@ typedef struct {
 
 struct process_t;
 
-
+// Thread structure
 typedef struct thread_t {
     uint32_t tid;
     struct process_t *parent;
     thread_state_t state;
     cpu_context_t context;
-    uint64_t stack_pointer;
     void *stack_base;
     uint32_t stack_size;
+    uint64_t stack_pointer;  // Deprecated, use context.rsp
     deadline_params_t sched;
     uint64_t last_scheduled;
-    struct thread_t *next;
+    struct thread_t *next;   // For ready queue
     int used;
     void *private_data;
     uint64_t entry_point;
 } thread_t;
+
+// Process structure
 typedef struct process_t {
     uint32_t pid;
     uint64_t memory_space;
@@ -67,12 +77,13 @@ typedef struct process_t {
     char name[64];
 } process_t;
 
+// Process management
 void process_init(void);
 int process_create(const char *name, uint64_t memory_space);
 process_t* get_process(uint32_t pid);
 void print_process_table(void);
 
-void init_kernel_threads(void);
+// Thread management
 int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size, 
                   uint64_t runtime, uint64_t deadline, uint64_t period);
 thread_t* get_thread(uint32_t tid);
@@ -82,13 +93,18 @@ void thread_yield(void);
 void thread_block(uint32_t tid);
 void thread_unblock(uint32_t tid);
 
+// Scheduler
 void scheduler_init(void);
+void scheduler_enable(void);
+void scheduler_disable(void);
 void scheduler_tick(void);
 void schedule(void);
-void insert_ready_queue(thread_t *thread);
-void remove_ready_queue(thread_t *thread);
 
+// Kernel threads
+void init_kernel_threads(void);
+
+// Global tables
 extern process_t process_table[MAX_PROCESSES];
 extern thread_t thread_table[MAX_THREADS_GLOBAL];
-void start_scheduler(void);
-#endif
+
+#endif // PROCESS_H

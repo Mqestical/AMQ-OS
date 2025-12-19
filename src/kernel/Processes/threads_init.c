@@ -1,28 +1,32 @@
+// threads_init.c - Kernel thread initialization
+
 #include "process.h"
 #include "print.h"
 #include "string_helpers.h"
-
-static volatile uint64_t thread_tick_counter = 0;
+// ============================================================================
+// IDLE THREAD
+// ============================================================================
 
 void idle_thread_entry(void) {
-    PRINT(MAGENTA, BLACK, "[IDLE] Started directly (no wrapper)\n");
+    PRINT(MAGENTA, BLACK, "[IDLE] Started\n");
 
     volatile uint64_t counter = 0;
     while (1) {
         counter++;
 
         if (counter % 100000000 == 0) {
-            PRINT(WHITE, BLACK, "[IDLE] %llu\n", counter / 100000000);
+            PRINT(WHITE, BLACK, "[IDLE] tick %llu\n", counter / 100000000);
         }
 
         if (counter % 10000000 == 0) {
             thread_yield();
         }
     }
-
-    PRINT(YELLOW, BLACK, "[IDLE] Exited!\n");
-    while(1) __asm__ volatile("hlt");
 }
+
+// ============================================================================
+// TEST THREAD
+// ============================================================================
 
 void test_thread_entry(void) {
     PRINT(YELLOW, BLACK, "[TEST] Thread started!\n");
@@ -32,7 +36,7 @@ void test_thread_entry(void) {
         counter++;
 
         if (counter % 100000000 == 0) {
-            PRINT(MAGENTA, BLACK, "[TEST] %llu\n", counter / 100000000);
+            PRINT(MAGENTA, BLACK, "[TEST] tick %llu\n", counter / 100000000);
         }
 
         if (counter % 10000000 == 0) {
@@ -40,60 +44,16 @@ void test_thread_entry(void) {
         }
     }
 }
-void periodic_task_entry(void) {
-    uint64_t iteration = 0;
 
-    while (1) {
-        for (volatile int i = 0; i < 100000; i++) {
-        }
-
-        iteration++;
-
-        thread_yield();
-    }
-}
-
-void high_priority_entry(void) {
-    uint64_t critical_events = 0;
-
-    while (1) {
-        critical_events++;
-
-        for (volatile int i = 0; i < 50000; i++);
-
-        thread_yield();
-    }
-}
-
-void background_worker_entry(void) {
-    uint64_t tasks_completed = 0;
-
-    while (1) {
-        for (volatile int i = 0; i < 500000; i++) {
-        }
-
-        tasks_completed++;
-
-        thread_yield();
-    }
-}
-
-void monitor_thread_entry(void) {
-    uint64_t monitor_cycles = 0;
-
-    while (1) {
-        monitor_cycles++;
-
-        for (volatile int i = 0; i < 200000; i++);
-
-        thread_yield();
-    }
-}
+// ============================================================================
+// KERNEL THREAD INITIALIZATION
+// ============================================================================
 
 void init_kernel_threads(void) {
-    PRINT(MAGENTA, BLACK, "\n=== Initializing Threads ===\n");
+    PRINT(MAGENTA, BLACK, "\n=== Initializing Kernel Threads ===\n");
 
-    int init_pid = process_create("init", YELLOW);
+    // Create init process
+    int init_pid = process_create("init", 0);
     if (init_pid < 0) {
         PRINT(YELLOW, BLACK, "[ERROR] Failed to create init process\n");
         return;
@@ -101,13 +61,29 @@ void init_kernel_threads(void) {
 
     const uint32_t THREAD_STACK_SIZE = 65536;
 
+    // Create idle thread
     int idle_tid = thread_create(init_pid, idle_thread_entry,
-                                  THREAD_STACK_SIZE, 10000000, 1000000000, 1000000000);
+                                  THREAD_STACK_SIZE, 
+                                  10000000,    // runtime
+                                  1000000000,  // deadline
+                                  1000000000); // period
+    if (idle_tid < 0) {
+        PRINT(YELLOW, BLACK, "[ERROR] Failed to create idle thread\n");
+        return;
+    }
     PRINT(MAGENTA, BLACK, "[OK] Idle thread TID=%d\n", idle_tid);
 
+    // Create test thread
     int test_tid = thread_create(init_pid, test_thread_entry,
-                                  THREAD_STACK_SIZE, 10000000, 1000000000, 1000000000);
+                                  THREAD_STACK_SIZE,
+                                  10000000,
+                                  1000000000,
+                                  1000000000);
+    if (test_tid < 0) {
+        PRINT(YELLOW, BLACK, "[ERROR] Failed to create test thread\n");
+        return;
+    }
     PRINT(MAGENTA, BLACK, "[OK] Test thread TID=%d\n", test_tid);
 
-    PRINT(MAGENTA, BLACK, "[INFO] 2 threads created\n");
+    PRINT(MAGENTA, BLACK, "[INFO] Created 2 kernel threads\n");
 }
