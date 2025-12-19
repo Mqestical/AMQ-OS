@@ -542,15 +542,11 @@ void schedule(void) {
     
     current_thread = next;
     
-    PRINT(CYAN, BLACK, "[SCHED] Switch: TID %u -> TID %u\n", prev->tid, next->tid);
-    PRINT(WHITE, BLACK, "  Prev RSP=0x%llx Next RSP=0x%llx\n",
-          prev->context.rsp, next->context.rsp);
-    
     in_scheduler = 0;
     
     // Context switch
     switch_to_thread(&prev->context, &next->context);
-    
+    __asm__ volatile("sti");
     // Returns here when this thread is scheduled again
 }
 void scheduler_tick(void) {

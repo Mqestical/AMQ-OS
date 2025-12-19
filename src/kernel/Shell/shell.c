@@ -128,14 +128,15 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
 void shell_thread_entry(void) {
     PRINT(GREEN, BLACK, "[SHELL] Starting as thread\n");
     
-    // Enable interrupts for this thread
+    // FORCE interrupts on
     __asm__ volatile("sti");
     
-    // Run the normal shell
-    init_shell();
+    // Verify they're actually on
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0" : "=r"(flags));
+    PRINT(WHITE, BLACK, "[SHELL] RFLAGS = 0x%llx (IF=%d)\n", flags, !!(flags & 0x200));
     
-    // If shell ever exits, terminate thread
-    PRINT(WHITE, BLACK, "[SHELL] Exiting\n");
+    init_shell();
     thread_exit();
 }
 
@@ -2772,20 +2773,21 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
     asm_buf[bytes] = '\0';
 
     create_elf_from_asm(output, (char *)asm_buf);
-} else if (STRNCMP(cmd, "anthropic ", 10) == 0) {
+}else if (STRNCMP(cmd, "anthropic ", 10) == 0) {
     char* filename = cmd + 10;
-
-
     while (*filename == ' ') filename++;
 
     if (filename[0] == '\0') {
         PRINT(YELLOW, BLACK, "Usage: anthropic <filename>\n");
-        PRINT(WHITE, BLACK, "  Opens a graphical text editor\n");
-        PRINT(WHITE, BLACK, "  Ctrl+S to save\n");
-        PRINT(WHITE, BLACK, "  Click X button to close\n");
     } else {
+        // Clear any pending keyboard input before entering editor
+        scancode_read_pos = scancode_write_pos;
+        input_pos = 0;
+        input_ready = 0;
+        
         anthropic_editor(filename);
 
+        // After returning from editor, print prompt again
         PRINT(GREEN, BLACK, "\n%s> ", vfs_get_cwd_path());
     }
 }
@@ -2919,13 +2921,28 @@ void run_text_demo(void) {
 
     int cursor_visible = 1;
     int cursor_timer = 0;
-    int job_update_counter = 0;  // Move outside loop
-
+    int job_update_counter = 0;
+   
     while (1) {
+        
+  uint8_t mask = inb(0x21);
+    if (mask & 0x02) {
+        PRINT(RED, BLACK, "unmasking irq1...");
+        mask &= ~0x02;
+        outb(0x21, mask);
+    }
+    
+     if (inb(0x64) & 0x01) {
+        uint8_t scancode = inb(0x60);
+        
+        // Manually add to buffer since interrupt isn't firing
+        scancode_buffer[scancode_write_pos++] = scancode;
+    }
+
         cursor_timer++;
         e1000_interrupt_handler();
         process_keyboard_buffer();
-        mouse();
+   //     mouse();
         
         // Update jobs MUCH more frequently - every 100 iterations instead of 10000
         job_update_counter++;

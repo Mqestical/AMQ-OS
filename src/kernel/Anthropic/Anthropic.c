@@ -23,7 +23,7 @@ extern volatile uint8_t scancode_buffer[256];
 extern volatile uint8_t scancode_read_pos;
 extern volatile uint8_t scancode_write_pos;
 
-extern int mouse_button_state = 0;
+extern int mouse_button_state;
 
 typedef struct {
     char lines[MAX_LINES][MAX_LINE_LENGTH];
@@ -47,75 +47,94 @@ typedef struct {
     int cursor_saved;
     int saved_cx, saved_cy;
 } editor_state_t;
+
 static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_held);
 
 static int internal_cursor_x = 512;
 static int internal_cursor_y = 384;
 static int mouse_initialized = 0;
 
-static void draw_simple_text(int x, int y, const char* text, uint32_t color) {
-
-    for (int i = 0; text[i]; i++) {
-        int cx = x + i * 6;
-
-        for (int dy = 0; dy < 7; dy++) {
-            for (int dx = 0; dx < 5; dx++) {
-                put_pixel(cx + dx, y + dy, color);
-            }
-        }
-    }
-}
-
-
 static void update_mouse_position_only(void) {
     static uint8_t packet[3];
     static uint8_t packet_index = 0;
 
     if (!mouse_initialized) {
-        while (inb(0x64) & 2);
+        int timeout = 100000;
+        while ((inb(0x64) & 2) && timeout--);
         outb(0x64, 0xD4);
+        
+        timeout = 100000;
+        while ((inb(0x64) & 2) && timeout--);
         outb(0x60, 0xF4);
-
-        while (!(inb(0x64) & 1));
-        inb(0x60);
-
+        
+        timeout = 100000;
+        while (!(inb(0x64) & 1) && timeout--);
+        if (inb(0x64) & 1) {
+            inb(0x60);
+        }
+        
         mouse_initialized = 1;
         packet_index = 0;
-
         internal_cursor_x = fb.width / 2;
         internal_cursor_y = fb.height / 2;
     }
 
+    if (inb(0x64) & 0x01) {
+        uint8_t status = inb(0x64);
+        uint8_t data = inb(0x60);
+        
+        if (status & 0x20) {
+            packet[packet_index++] = data;
 
-    while (inb(0x64) & 1) {
-        packet[packet_index++] = inb(0x60);
+            if (packet_index == 3) {
+                uint8_t b1 = packet[0];
+                uint8_t b2 = packet[1];
+                uint8_t b3 = packet[2];
 
-        if (packet_index == 3) {
-            uint8_t b1 = packet[0];
-            uint8_t b2 = packet[1];
-            uint8_t b3 = packet[2];
+                mouse_button_state = b1 & 0x01;
 
+                int delta_x = b2;
+                int delta_y = b3;
 
-            mouse_button_state = b1 & 0x01;
+                if (b1 & 0x10) delta_x |= 0xFFFFFF00;
+                if (b1 & 0x20) delta_y |= 0xFFFFFF00;
 
-            int delta_x = b2;
-            int delta_y = b3;
+                delta_y = -delta_y;
 
-            if (b1 & 0x10) delta_x |= 0xFFFFFF00;
-            if (b1 & 0x20) delta_y |= 0xFFFFFF00;
+                internal_cursor_x += delta_x;
+                internal_cursor_y += delta_y;
 
-            delta_y = -delta_y;
+                if (internal_cursor_x < 0) internal_cursor_x = 0;
+                if (internal_cursor_y < 0) internal_cursor_y = 0;
+                if (internal_cursor_x >= fb.width - 16) internal_cursor_x = fb.width - 16;
+                if (internal_cursor_y >= fb.height - 16) internal_cursor_y = fb.height - 16;
 
-            internal_cursor_x += delta_x;
-            internal_cursor_y += delta_y;
-
-            if (internal_cursor_x < 0) internal_cursor_x = 0;
-            if (internal_cursor_y < 0) internal_cursor_y = 0;
-            if (internal_cursor_x >= fb.width - 16) internal_cursor_x = fb.width - 16;
-            if (internal_cursor_y >= fb.height - 16) internal_cursor_y = fb.height - 16;
-
-            packet_index = 0;
+                packet_index = 0;
+            }
+        } else {
+            scancode_buffer[scancode_write_pos++] = data;
         }
+    }
+}
+
+static void disable_mouse(void) {
+    int timeout = 100000;
+    while ((inb(0x64) & 2) && timeout--);
+    outb(0x64, 0xD4);
+    
+    timeout = 100000;
+    while ((inb(0x64) & 2) && timeout--);
+    outb(0x60, 0xF5);
+    
+    timeout = 100000;
+    while (!(inb(0x64) & 1) && timeout--);
+    if (inb(0x64) & 1) {
+        inb(0x60);
+    }
+    
+    timeout = 10000;
+    while (timeout-- > 0 && (inb(0x64) & 0x01)) {
+        inb(0x60);
     }
 }
 
@@ -256,7 +275,6 @@ static void editor_init(editor_state_t* ed, const char* filename) {
 }
 
 static int editor_load_file(editor_state_t* ed) {
-
     for (int i = 0; i < MAX_LINES; i++) {
         ed->lines[i][0] = '\0';
     }
@@ -277,40 +295,23 @@ static int editor_load_file(editor_state_t* ed) {
 
     int fd = vfs_open(fullpath, FILE_READ);
     if (fd < 0) {
-        ed->lines[0][0] = '\0';
         ed->line_count = 1;
-        ed->cursor_line = 0;
-        ed->cursor_col = 0;
-        ed->scroll_offset = 0;
-        return 0;
+        ed->lines[0][0] = '\0';
+        ed->modified = 0;
+        return -1;
     }
 
-
-    uint8_t* buffer = (uint8_t*)kmalloc(MAX_LINES * MAX_LINE_LENGTH);
-    if (!buffer) {
-        vfs_close(fd);
-        ed->lines[0][0] = '\0';
-        ed->line_count = 1;
-        return 0;
-    }
-
-    int bytes = vfs_read(fd, buffer, MAX_LINES * MAX_LINE_LENGTH - 1);
+    uint8_t buffer[2048];
+    int bytes = vfs_read(fd, buffer, sizeof(buffer) - 1);
     vfs_close(fd);
 
     if (bytes <= 0) {
-        kfree(buffer);
-        ed->lines[0][0] = '\0';
         ed->line_count = 1;
-        ed->cursor_line = 0;
-        ed->cursor_col = 0;
-        ed->scroll_offset = 0;
-        return 0;
+        ed->lines[0][0] = '\0';
+        return -1;
     }
 
     buffer[bytes] = '\0';
-
-    PRINT(WHITE, BLACK, "[EDITOR] Read %d raw bytes\n", bytes);
-
 
     int line = 0;
     int col = 0;
@@ -321,63 +322,25 @@ static int editor_load_file(editor_state_t* ed) {
             line++;
             col = 0;
         } else if (buffer[i] == '\r') {
-
             continue;
         } else if (col < MAX_LINE_LENGTH - 1) {
-            ed->lines[line][col] = buffer[i];
-            col++;
+            ed->lines[line][col++] = buffer[i];
         }
     }
-
 
     if (col > 0 || line == 0) {
         ed->lines[line][col] = '\0';
         line++;
     }
 
-
-    kfree(buffer);
-
     ed->line_count = line;
-    if (ed->line_count == 0) ed->line_count = 1;
-
-    ed->cursor_line = 0;
-    ed->cursor_col = 0;
-    ed->scroll_offset = 0;
-    ed->needs_full_redraw = 1;
-
-    PRINT(WHITE, BLACK, "[EDITOR] Loaded %d lines\n", ed->line_count);
-
-    return 1;
+    ed->modified = 0;
+    return 0;
 }
 
+// WORKING SAVE METHOD - builds entire file in buffer then writes once
 static int editor_save_file(editor_state_t* ed) {
-
-    uint8_t* buffer = (uint8_t*)kmalloc(MAX_LINES * MAX_LINE_LENGTH);
-    if (!buffer) {
-        return -1;
-    }
-
-    int buffer_pos = 0;
-
-
-    for (int i = 0; i < ed->line_count; i++) {
-        int line_len = STRLEN(ed->lines[i]);
-
-
-        for (int j = 0; j < line_len; j++) {
-            buffer[buffer_pos++] = ed->lines[i][j];
-        }
-
-
-        if (i < ed->line_count - 1) {
-            buffer[buffer_pos++] = '\n';
-        }
-    }
-
-    PRINT(WHITE, BLACK, "[EDITOR] Converted %d lines to %d bytes\n", ed->line_count, buffer_pos);
-
-
+    // Build full path
     char fullpath[256];
     if (ed->filename[0] == '/') {
         STRCPY(fullpath, ed->filename);
@@ -392,20 +355,46 @@ static int editor_save_file(editor_state_t* ed) {
         STRCAT(fullpath, ed->filename);
     }
 
+    // Allocate buffer for entire file
+    uint8_t* buffer = (uint8_t*)kmalloc(MAX_LINES * MAX_LINE_LENGTH);
+    if (!buffer) {
+        PRINT(YELLOW, BLACK, "[EDITOR] Out of memory for save buffer\n");
+        return -1;
+    }
+
+    int buffer_pos = 0;
+
+    // Convert all lines to buffer
+    for (int i = 0; i < ed->line_count; i++) {
+        int line_len = STRLEN(ed->lines[i]);
+
+        // Copy line content byte by byte
+        for (int j = 0; j < line_len; j++) {
+            buffer[buffer_pos++] = ed->lines[i][j];
+        }
+
+        // Add newline after each line except the last
+        if (i < ed->line_count - 1) {
+            buffer[buffer_pos++] = '\n';
+        }
+    }
+
+    PRINT(WHITE, BLACK, "[EDITOR] Converted %d lines to %d bytes\n", ed->line_count, buffer_pos);
+
+    // Delete old file and create new one
     vfs_unlink(fullpath);
     vfs_create(fullpath, FILE_READ | FILE_WRITE);
     int fd = vfs_open(fullpath, FILE_WRITE);
 
     if (fd < 0) {
+        PRINT(YELLOW, BLACK, "[EDITOR] Failed to open file for writing: %s\n", fullpath);
         kfree(buffer);
         return -1;
     }
 
-
+    // Write entire buffer in ONE call
     int written = vfs_write(fd, buffer, buffer_pos);
     vfs_close(fd);
-
-
     kfree(buffer);
 
     if (written != buffer_pos) {
@@ -414,7 +403,7 @@ static int editor_save_file(editor_state_t* ed) {
     }
 
     ed->modified = 0;
-    PRINT(WHITE, BLACK, "[EDITOR] Successfully saved %d bytes\n", written);
+    PRINT(GREEN, BLACK, "[EDITOR] Successfully saved %d bytes to: %s\n", written, fullpath);
     return 0;
 }
 
@@ -512,14 +501,14 @@ static int editor_show_save_prompt(editor_state_t* ed) {
 
     draw_rect(yes_x, button_y, button_w, button_h, 0x10B981);
     draw_rect_outline(yes_x, button_y, button_w, button_h, 0xFFFFFF, 2);
-    draw_char(yes_x + 42, button_y + 16, 'Y', GREEN, 0x10B981);
-    draw_char(yes_x + 50, button_y + 16, 'E', GREEN, 0x10B981);
-    draw_char(yes_x + 58, button_y + 16, 'S', GREEN, 0x10B981);
+    draw_char(yes_x + 42, button_y + 16, 'Y', 0xFFFFFF, 0x10B981);
+    draw_char(yes_x + 50, button_y + 16, 'E', 0xFFFFFF, 0x10B981);
+    draw_char(yes_x + 58, button_y + 16, 'S', 0xFFFFFF, 0x10B981);
 
     draw_rect(no_x, button_y, button_w, button_h, 0xDC2626);
     draw_rect_outline(no_x, button_y, button_w, button_h, 0xFFFFFF, 2);
-    draw_char(no_x + 50, button_y + 16, 'N', RED, 0xDC2626);
-    draw_char(no_x + 58, button_y + 16, 'O', RED, 0xDC2626);
+    draw_char(no_x + 50, button_y + 16, 'N', 0xFFFFFF, 0xDC2626);
+    draw_char(no_x + 58, button_y + 16, 'O', 0xFFFFFF, 0xDC2626);
 
     while (result == -1) {
         update_mouse_position_only();
@@ -575,157 +564,122 @@ static int editor_show_save_prompt(editor_state_t* ed) {
     return result;
 }
 
-
 static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_held) {
-    if (scancode & 0x80) return;
-
-    // ENTER key - split line
-    if (scancode == 0x1C) {
-        if (ed->line_count >= MAX_LINES) return;
-
-        char remaining[MAX_LINE_LENGTH];
-        
-        // CRITICAL FIX: Bounds check before copying
-        int current_len = STRLEN(ed->lines[ed->cursor_line]);
-        
-        // Make sure cursor_col is within valid range
-        if (ed->cursor_col > current_len) {
-            ed->cursor_col = current_len;
-        }
-        
-        // Copy the remaining part of the line (from cursor to end)
-        if (ed->cursor_col < current_len) {
-            STRCPY(remaining, &ed->lines[ed->cursor_line][ed->cursor_col]);
-        } else {
-            remaining[0] = '\0';  // No remaining text
-        }
-        
-        // Terminate current line at cursor position
-        ed->lines[ed->cursor_line][ed->cursor_col] = '\0';
-
-        // Shift lines down to make room for new line
-        for (int i = ed->line_count; i > ed->cursor_line + 1; i--) {
-            STRCPY(ed->lines[i], ed->lines[i-1]);
-        }
-
-        // Put remaining text on new line
-        STRCPY(ed->lines[ed->cursor_line + 1], remaining);
-        ed->line_count++;
-        ed->cursor_line++;
-        ed->cursor_col = 0;
-        ed->modified = 1;
-        ed->needs_full_redraw = 1;
-
-        if (ed->cursor_line >= ed->scroll_offset + ed->visible_lines) {
-            ed->scroll_offset++;
-        }
-        return;
-    }
-
-    // BACKSPACE key
-    if (scancode == 0x0E) {
-        if (ed->cursor_col > 0) {
-            int len = STRLEN(ed->lines[ed->cursor_line]);
-            
-            // CRITICAL FIX: Bounds check
-            if (ed->cursor_col > len) {
-                ed->cursor_col = len;
-            }
-            
-            if (ed->cursor_col > 0) {
-                // Shift characters left
-                for (int i = ed->cursor_col - 1; i < len; i++) {
-                    ed->lines[ed->cursor_line][i] = ed->lines[ed->cursor_line][i + 1];
-                }
-                ed->cursor_col--;
-                ed->modified = 1;
-                ed->needs_full_redraw = 1;
-            }
-        } else if (ed->cursor_line > 0) {
-            // Backspace at start of line - merge with previous line
-            int prev_len = STRLEN(ed->lines[ed->cursor_line - 1]);
-            int curr_len = STRLEN(ed->lines[ed->cursor_line]);
-            
-            // Check if merge is possible
-            if (prev_len + curr_len < MAX_LINE_LENGTH - 1) {
-                STRCAT(ed->lines[ed->cursor_line - 1], ed->lines[ed->cursor_line]);
-
-                // Shift lines up
-                for (int i = ed->cursor_line; i < ed->line_count - 1; i++) {
-                    STRCPY(ed->lines[i], ed->lines[i + 1]);
-                }
-                ed->line_count--;
-                ed->cursor_line--;
-                ed->cursor_col = prev_len;
-                ed->modified = 1;
-                ed->needs_full_redraw = 1;
-
-                if (ed->cursor_line < ed->scroll_offset) {
-                    ed->scroll_offset--;
-                }
-            }
-        }
-        return;
-    }
-
-    // UP arrow
     if (scancode == 0x48) {
         if (ed->cursor_line > 0) {
             ed->cursor_line--;
-            int len = STRLEN(ed->lines[ed->cursor_line]);
-            if (ed->cursor_col > len) ed->cursor_col = len;
             if (ed->cursor_line < ed->scroll_offset) {
                 ed->scroll_offset--;
             }
-        }
-        return;
-    }
-
-    // DOWN arrow
-    if (scancode == 0x50) {
-        if (ed->cursor_line < ed->line_count - 1) {
-            ed->cursor_line++;
             int len = STRLEN(ed->lines[ed->cursor_line]);
-            if (ed->cursor_col > len) ed->cursor_col = len;
-            if (ed->cursor_line >= ed->scroll_offset + ed->visible_lines) {
-                ed->scroll_offset++;
+            if (ed->cursor_col > len) {
+                ed->cursor_col = len;
             }
         }
         return;
     }
 
-    // LEFT arrow
+    if (scancode == 0x50) {
+        if (ed->cursor_line < ed->line_count - 1) {
+            ed->cursor_line++;
+            if (ed->cursor_line >= ed->scroll_offset + ed->visible_lines) {
+                ed->scroll_offset++;
+            }
+            int len = STRLEN(ed->lines[ed->cursor_line]);
+            if (ed->cursor_col > len) {
+                ed->cursor_col = len;
+            }
+        }
+        return;
+    }
+
     if (scancode == 0x4B) {
         if (ed->cursor_col > 0) {
             ed->cursor_col--;
         } else if (ed->cursor_line > 0) {
             ed->cursor_line--;
-            ed->cursor_col = STRLEN(ed->lines[ed->cursor_line]);
             if (ed->cursor_line < ed->scroll_offset) {
                 ed->scroll_offset--;
             }
+            ed->cursor_col = STRLEN(ed->lines[ed->cursor_line]);
         }
         return;
     }
 
-    // RIGHT arrow
     if (scancode == 0x4D) {
         int len = STRLEN(ed->lines[ed->cursor_line]);
         if (ed->cursor_col < len) {
             ed->cursor_col++;
         } else if (ed->cursor_line < ed->line_count - 1) {
             ed->cursor_line++;
-            ed->cursor_col = 0;
             if (ed->cursor_line >= ed->scroll_offset + ed->visible_lines) {
                 ed->scroll_offset++;
+            }
+            ed->cursor_col = 0;
+        }
+        return;
+    }
+
+    if (scancode == 0x0E) {
+        if (ed->cursor_col > 0) {
+            int len = STRLEN(ed->lines[ed->cursor_line]);
+            for (int i = ed->cursor_col - 1; i < len; i++) {
+                ed->lines[ed->cursor_line][i] = ed->lines[ed->cursor_line][i + 1];
+            }
+            ed->cursor_col--;
+            ed->modified = 1;
+        } else if (ed->cursor_line > 0) {
+            int prev_len = STRLEN(ed->lines[ed->cursor_line - 1]);
+            int curr_len = STRLEN(ed->lines[ed->cursor_line]);
+
+            if (prev_len + curr_len < MAX_LINE_LENGTH - 1) {
+                STRCAT(ed->lines[ed->cursor_line - 1], ed->lines[ed->cursor_line]);
+
+                for (int i = ed->cursor_line; i < ed->line_count - 1; i++) {
+                    STRCPY(ed->lines[i], ed->lines[i + 1]);
+                }
+                ed->line_count--;
+
+                ed->cursor_line--;
+                if (ed->cursor_line < ed->scroll_offset) {
+                    ed->scroll_offset--;
+                }
+                ed->cursor_col = prev_len;
+                ed->modified = 1;
             }
         }
         return;
     }
 
-    // Character input
+    if (scancode == 0x1C) {
+        if (ed->line_count < MAX_LINES) {
+            for (int i = ed->line_count; i > ed->cursor_line + 1; i--) {
+                STRCPY(ed->lines[i], ed->lines[i - 1]);
+            }
+
+            int len = STRLEN(ed->lines[ed->cursor_line]);
+            int split_pos = ed->cursor_col;
+
+            if (split_pos < len) {
+                STRCPY(ed->lines[ed->cursor_line + 1], &ed->lines[ed->cursor_line][split_pos]);
+                ed->lines[ed->cursor_line][split_pos] = '\0';
+            } else {
+                ed->lines[ed->cursor_line + 1][0] = '\0';
+            }
+
+            ed->line_count++;
+            ed->cursor_line++;
+            if (ed->cursor_line >= ed->scroll_offset + ed->visible_lines) {
+                ed->scroll_offset++;
+            }
+            ed->cursor_col = 0;
+            ed->modified = 1;
+        }
+        return;
+    }
+
     char ch = 0;
-    switch (scancode) {
+    switch(scancode) {
         case 0x02: ch = shift_held ? '!' : '1'; break;
         case 0x03: ch = shift_held ? '@' : '2'; break;
         case 0x04: ch = shift_held ? '#' : '3'; break;
@@ -783,17 +737,14 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
     if (ch) {
         int len = STRLEN(ed->lines[ed->cursor_line]);
         
-        // CRITICAL FIX: Bounds check cursor position
         if (ed->cursor_col > len) {
             ed->cursor_col = len;
         }
         
         if (len < MAX_LINE_LENGTH - 1) {
-            // Shift characters right to make room
             for (int i = len; i > ed->cursor_col; i--) {
                 ed->lines[ed->cursor_line][i] = ed->lines[ed->cursor_line][i - 1];
             }
-            // Insert new character
             ed->lines[ed->cursor_line][ed->cursor_col] = ch;
             ed->lines[ed->cursor_line][len + 1] = '\0';
             ed->cursor_col++;
@@ -802,7 +753,6 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
         }
     }
 }
-
 
 void anthropic_editor(const char* filename);
 
@@ -985,6 +935,31 @@ void anthropic_editor(const char* filename) {
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
 
+    // CRITICAL: Disable mouse FIRST
+    disable_mouse();
+    
+    // Delay to let mouse drain
+    for (volatile int i = 0; i < 100000; i++);
+
+    // Clear buffers
+    __asm__ volatile("cli");
+    scancode_read_pos = 0;
+    scancode_write_pos = 0;
+    
+    for (int i = 0; i < 256; i++) {
+        scancode_buffer[i] = 0;
+    }
+    __asm__ volatile("sti");
+
     mouse_initialized = 0;
     mouse_button_state = 0;
+    
+    // Clear shell input buffer
+    extern char input_buffer[];
+    extern volatile int input_pos;
+    extern volatile int input_ready;
+    
+    input_pos = 0;
+    input_ready = 0;
+    input_buffer[0] = '\0';
 }
