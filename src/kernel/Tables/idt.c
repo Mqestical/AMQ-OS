@@ -6,23 +6,9 @@
 #include "handler.h"
 #include "string_helpers.h"
 #include "keyboard.h"
+#include "gdt.h"  // Use shared GDT
 
 #define IDT_ENTRIES 256
-#define GDT_ENTRIES 5
-
-struct gdt_entry {
-    uint16_t limit_low;
-    uint16_t base_low;
-    uint8_t  base_middle;
-    uint8_t  access;
-    uint8_t  granularity;
-    uint8_t  base_high;
-} __attribute__((packed));
-
-struct gdt_ptr {
-    uint16_t limit;
-    uint64_t base;
-} __attribute__((packed));
 
 struct idt_entry {
     uint16_t offset_low;
@@ -39,50 +25,8 @@ struct idt_ptr {
     uint64_t base;
 } __attribute__((packed));
 
-struct gdt_entry gdt[GDT_ENTRIES];
-struct gdt_ptr gdtp;
 struct idt_entry idt[IDT_ENTRIES];
 struct idt_ptr idtp;
-
-static int escape_sequence = 0;
-
-void gdt_set_gate(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
-    gdt[num].base_low = (base & 0xFFFF);
-    gdt[num].base_middle = (base >> 16) & 0xFF;
-    gdt[num].base_high = (base >> 24) & 0xFF;
-    gdt[num].limit_low = (limit & 0xFFFF);
-    gdt[num].granularity = (limit >> 16) & 0x0F;
-    gdt[num].granularity |= gran & 0xF0;
-    gdt[num].access = access;
-}
-
-void gdt_install() {
-    gdtp.limit = (sizeof(struct gdt_entry) * GDT_ENTRIES) - 1;
-    gdtp.base = (uint64_t)&gdt;
-
-    gdt_set_gate(0, 0, 0, 0, 0);
-    gdt_set_gate(1, 0, 0, 0x9A, 0x20);
-    gdt_set_gate(2, 0, 0, 0x92, 0x00);
-    gdt_set_gate(3, 0, 0, 0xFA, 0x20);
-    gdt_set_gate(4, 0, 0, 0xF2, 0x00);
-
-    __asm__ volatile("lgdt %0" : : "m"(gdtp));
-
-    __asm__ volatile(
-        "mov $0x10, %%ax\n"
-        "mov %%ax, %%ds\n"
-        "mov %%ax, %%es\n"
-        "mov %%ax, %%fs\n"
-        "mov %%ax, %%gs\n"
-        "mov %%ax, %%ss\n"
-        "pushq $0x08\n"
-        "lea 1f(%%rip), %%rax\n"
-        "pushq %%rax\n"
-        "lretq\n"
-        "1:\n"
-        : : : "rax"
-    );
-}
 
 void generic_handler(void) {
     __asm__ volatile(
@@ -107,11 +51,11 @@ void idt_set_gate(int num, uint64_t handler, uint16_t selector, uint8_t flags) {
     idt[num].zero = 0;
 }
 
-
 void idt_install() {
     idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
     idtp.base = (uint64_t)&idt;
 
+    // Clear IDT
     for(int i = 0; i < IDT_ENTRIES; i++) {
         idt[i].offset_low = 0;
         idt[i].selector = 0;
@@ -122,47 +66,51 @@ void idt_install() {
         idt[i].zero = 0;
     }
 
-    idt_set_gate(0, (uint64_t)isr0, 0x08, 0x8E);
-    idt_set_gate(1, (uint64_t)isr1, 0x08, 0x8E);
-    idt_set_gate(2, (uint64_t)isr2, 0x08, 0x8E);
-    idt_set_gate(3, (uint64_t)isr3, 0x08, 0x8E);
-    idt_set_gate(4, (uint64_t)isr4, 0x08, 0x8E);
-    idt_set_gate(5, (uint64_t)isr5, 0x08, 0x8E);
-    idt_set_gate(6, (uint64_t)isr6, 0x08, 0x8E);
-    idt_set_gate(7, (uint64_t)isr7, 0x08, 0x8E);
-    idt_set_gate(8, (uint64_t)isr8, 0x08, 0x8E);
-    idt_set_gate(9, (uint64_t)isr9, 0x08, 0x8E);
-    idt_set_gate(10, (uint64_t)isr10, 0x08, 0x8E);
-    idt_set_gate(11, (uint64_t)isr11, 0x08, 0x8E);
-    idt_set_gate(12, (uint64_t)isr12, 0x08, 0x8E);
-    idt_set_gate(13, (uint64_t)isr13, 0x08, 0x8E);
-    idt_set_gate(14, (uint64_t)isr14, 0x08, 0x8E);
-    idt_set_gate(15, (uint64_t)isr15, 0x08, 0x8E);
-    idt_set_gate(16, (uint64_t)isr16, 0x08, 0x8E);
-    idt_set_gate(17, (uint64_t)isr17, 0x08, 0x8E);
-    idt_set_gate(18, (uint64_t)isr18, 0x08, 0x8E);
-    idt_set_gate(19, (uint64_t)isr19, 0x08, 0x8E);
-    idt_set_gate(20, (uint64_t)isr20, 0x08, 0x8E);
-    idt_set_gate(21, (uint64_t)isr21, 0x08, 0x8E);
-    idt_set_gate(22, (uint64_t)isr22, 0x08, 0x8E);
-    idt_set_gate(23, (uint64_t)isr23, 0x08, 0x8E);
-    idt_set_gate(24, (uint64_t)isr24, 0x08, 0x8E);
-    idt_set_gate(25, (uint64_t)isr25, 0x08, 0x8E);
-    idt_set_gate(26, (uint64_t)isr26, 0x08, 0x8E);
-    idt_set_gate(27, (uint64_t)isr27, 0x08, 0x8E);
-    idt_set_gate(28, (uint64_t)isr28, 0x08, 0x8E);
-    idt_set_gate(29, (uint64_t)isr29, 0x08, 0x8E);
-    idt_set_gate(30, (uint64_t)isr30, 0x08, 0x8E);
-    idt_set_gate(31, (uint64_t)isr31, 0x08, 0x8E);
+    // Install exception handlers (0-31)
+    idt_set_gate(0, (uint64_t)isr0, KERNEL_CS, 0x8E);
+    idt_set_gate(1, (uint64_t)isr1, KERNEL_CS, 0x8E);
+    idt_set_gate(2, (uint64_t)isr2, KERNEL_CS, 0x8E);
+    idt_set_gate(3, (uint64_t)isr3, KERNEL_CS, 0x8E);
+    idt_set_gate(4, (uint64_t)isr4, KERNEL_CS, 0x8E);
+    idt_set_gate(5, (uint64_t)isr5, KERNEL_CS, 0x8E);
+    idt_set_gate(6, (uint64_t)isr6, KERNEL_CS, 0x8E);
+    idt_set_gate(7, (uint64_t)isr7, KERNEL_CS, 0x8E);
+    idt_set_gate(8, (uint64_t)isr8, KERNEL_CS, 0x8E);
+    idt_set_gate(9, (uint64_t)isr9, KERNEL_CS, 0x8E);
+    idt_set_gate(10, (uint64_t)isr10, KERNEL_CS, 0x8E);
+    idt_set_gate(11, (uint64_t)isr11, KERNEL_CS, 0x8E);
+    idt_set_gate(12, (uint64_t)isr12, KERNEL_CS, 0x8E);
+    idt_set_gate(13, (uint64_t)isr13, KERNEL_CS, 0x8E);
+    idt_set_gate(14, (uint64_t)isr14, KERNEL_CS, 0x8E);
+    idt_set_gate(15, (uint64_t)isr15, KERNEL_CS, 0x8E);
+    idt_set_gate(16, (uint64_t)isr16, KERNEL_CS, 0x8E);
+    idt_set_gate(17, (uint64_t)isr17, KERNEL_CS, 0x8E);
+    idt_set_gate(18, (uint64_t)isr18, KERNEL_CS, 0x8E);
+    idt_set_gate(19, (uint64_t)isr19, KERNEL_CS, 0x8E);
+    idt_set_gate(20, (uint64_t)isr20, KERNEL_CS, 0x8E);
+    idt_set_gate(21, (uint64_t)isr21, KERNEL_CS, 0x8E);
+    idt_set_gate(22, (uint64_t)isr22, KERNEL_CS, 0x8E);
+    idt_set_gate(23, (uint64_t)isr23, KERNEL_CS, 0x8E);
+    idt_set_gate(24, (uint64_t)isr24, KERNEL_CS, 0x8E);
+    idt_set_gate(25, (uint64_t)isr25, KERNEL_CS, 0x8E);
+    idt_set_gate(26, (uint64_t)isr26, KERNEL_CS, 0x8E);
+    idt_set_gate(27, (uint64_t)isr27, KERNEL_CS, 0x8E);
+    idt_set_gate(28, (uint64_t)isr28, KERNEL_CS, 0x8E);
+    idt_set_gate(29, (uint64_t)isr29, KERNEL_CS, 0x8E);
+    idt_set_gate(30, (uint64_t)isr30, KERNEL_CS, 0x8E);
+    idt_set_gate(31, (uint64_t)isr31, KERNEL_CS, 0x8E);
+
+    // Install generic handler for remaining vectors
     for(int i = 32; i < 256; i++) {
-        idt_set_gate(i, (uint64_t)generic_handler, 0x08, 0x8E);
+        idt_set_gate(i, (uint64_t)generic_handler, KERNEL_CS, 0x8E);
     }
 
+    // Install specific IRQ handlers
     extern void timer_handler_asm(void);
-    idt_set_gate(32, (uint64_t)timer_handler_asm, 0x08, 0x8E);
+    idt_set_gate(32, (uint64_t)timer_handler_asm, KERNEL_CS, 0x8E);
+    idt_set_gate(33, (uint64_t)keyboard_handler, KERNEL_CS, 0x8E);
 
-    idt_set_gate(33, (uint64_t)keyboard_handler, 0x08, 0x8E);
-
+    // Load IDT
     __asm__ volatile("lidt %0" : : "m"(idtp));
 
     PRINT(MAGENTA, BLACK, "[IDT] IDT installed (256 entries)\n");
@@ -231,6 +179,7 @@ void keyboard_handler(void) {
         "iretq\n"
     );
 }
+
 static char scancode_to_ascii(uint8_t scancode, int shifted) {
     if (!shifted) {
         switch(scancode) {
@@ -340,7 +289,6 @@ static char scancode_to_ascii(uint8_t scancode, int shifted) {
     }
 }
 
-
 static int shift_pressed = 0;
 
 void handle_backspace(void) {
@@ -363,7 +311,6 @@ void process_keyboard_buffer(void) {
     while (scancode_read_pos != scancode_write_pos) {
         uint8_t scancode = scancode_buffer[scancode_read_pos++];
 
-        // Handle shift keys
         if (scancode == 0x2A || scancode == 0x36) {
             shift_pressed = 1;
             continue;
@@ -373,20 +320,17 @@ void process_keyboard_buffer(void) {
             continue;
         }
 
-        // Skip release scancodes (high bit set)
         if (scancode & 0x80) continue;
 
-        // Handle arrow keys DIRECTLY - no E0 prefix needed!
-        if (scancode == 0x48) {  // UP arrow
+        if (scancode == 0x48) {
             handle_arrow_up();
             continue;
         }
-        if (scancode == 0x50) {  // DOWN arrow
+        if (scancode == 0x50) {
             handle_arrow_down();
             continue;
         }
 
-        // Normal character processing
         char ascii = scancode_to_ascii(scancode, shift_pressed);
 
         if (ascii) {
@@ -396,7 +340,6 @@ void process_keyboard_buffer(void) {
             } else if (ascii == '\n') {
                 input_buffer[input_pos] = '\0';
                 input_ready = 1;
-
                 printc('\n');
                 serial_write_byte(COM1, '\r');
                 serial_write_byte(COM1, '\n');

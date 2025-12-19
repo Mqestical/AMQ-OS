@@ -1,63 +1,30 @@
 #include "TSS.h"
+#include "gdt.h"
 
-struct __attribute__((packed)) GDTEntry64 {
-    uint16_t limit_low;
-    uint16_t base_low;
-    uint8_t  base_middle;
-    uint8_t  access;
-    uint8_t  granularity;
-    uint8_t  base_high;
-};
-
-struct __attribute__((packed)) GDTPtr {
-    uint16_t limit;
-    uint64_t base;
-};
-
-#define GDT_SIZE 10
-static struct GDTEntry64 gdt[GDT_SIZE];
-static struct GDTPtr gdt_ptr;
 static struct TSS64 tss;
 
-static void set_tss_entry(int index, struct TSS64 *tss_ptr) {
-    uint64_t base = (uint64_t)tss_ptr;
-    uint32_t limit = sizeof(struct TSS64) - 1;
-
-    gdt[index].limit_low    = limit & 0xFFFF;
-    gdt[index].base_low     = base & 0xFFFF;
-    gdt[index].base_middle  = (base >> 16) & 0xFF;
-    gdt[index].access       = 0x89;
-    gdt[index].granularity  = (limit >> 16) & 0x0F;
-    gdt[index].base_high    = (base >> 24) & 0xFF;
-}
-
-static inline void gdt_load(void) {
-    gdt_ptr.limit = sizeof(gdt) - 1;
-    gdt_ptr.base  = (uint64_t)&gdt;
-    __asm__ volatile("lgdt %0" : : "m"(gdt_ptr));
-}
-
-static inline void tss_load_sel(uint16_t sel) {
-    __asm__ volatile("ltr %0" : : "r"(sel));
-}
-
 void tss_init(void) {
-    for (int i = 0; i < sizeof(tss)/8; i++) ((uint64_t*)&tss)[i] = 0;
-
-    tss.io_map_base = sizeof(struct TSS64);
-
-    for (int i = 0; i < GDT_SIZE; i++) {
-        ((uint64_t*)&gdt[i])[0] = 0;
-        ((uint64_t*)&gdt[i])[1] = 0;
+    // Zero out the TSS
+    for (int i = 0; i < sizeof(tss) / 8; i++) {
+        ((uint64_t*)&tss)[i] = 0;
     }
 
-    set_tss_entry(5, &tss);
+    // Set io_map_base to indicate no I/O permission bitmap
+    tss.io_map_base = sizeof(struct TSS64);
 
-    gdt_load();
+    // Install TSS into GDT
+    gdt_set_tss(&tss);
 
-    tss_load_sel(5 * 8);
+    // Load TSS selector into TR register
+    tss_load();
 }
 
-void tss_load(void) {
-    tss_load_sel(5 * 8);
+void tss_set_rsp0(uint64_t rsp0) {
+    tss.rsp0 = rsp0;
+}
+
+void tss_set_ist(int ist_index, uint64_t stack_addr) {
+    if (ist_index >= 1 && ist_index <= 7) {
+        tss.ist[ist_index - 1] = stack_addr;
+    }
 }
