@@ -312,8 +312,7 @@ if (shell_tid < 0) {
     goto boot_failed;
 }
 
-    // Enable scheduler BEFORE starting shell
-    PRINT(WHITE, BLACK, "\n[INIT] Enabling scheduler...\n");
+   PRINT(WHITE, BLACK, "\n[INIT] Enabling scheduler...\n");
     scheduler_enable();
     PRINT(GREEN, BLACK, "[OK] Scheduler ENABLED\n");
 
@@ -330,19 +329,21 @@ if (shell_tid < 0) {
     
     PRINT(GREEN, BLACK, "=== Boot Complete ===\n");
 
-jobs_set_active(1);
-PRINT(GREEN, BLACK, "[OK] Job tracking ENABLED\n");
+    jobs_set_active(1);
+    PRINT(GREEN, BLACK, "[OK] Job tracking ENABLED\n");
+    ClearScreen(BLACK);
+    jobs_init();
 
+    PRINT(GREEN, BLACK, "[OK] Shell thread created (TID=%d)\n", shell_tid);
+    PRINT(GREEN, BLACK, "\n=== Boot Complete ===\n");
 
-
-PRINT(GREEN, BLACK, "[OK] Shell thread created (TID=%d)\n", shell_tid);
-PRINT(GREEN, BLACK, "\n=== Boot Complete ===\n");
-
-
-// Now just idle - scheduler handles everything
-while(1) {
-    __asm__ volatile("hlt");
-}
+    // **FIX: Explicitly start first thread**
+    PRINT(YELLOW, BLACK, "[INIT] Starting first thread...\n");
+    schedule();  // <-- ADD THIS LINE
+    
+    // Should never reach here if schedule() works
+    PRINT(RED, BLACK, "[FATAL] Returned from schedule()!\n");
+    while(1) __asm__ volatile("hlt");
 
 boot_failed:
     PRINT(YELLOW, BLACK, "\n=== BOOT FAILED ===\n");

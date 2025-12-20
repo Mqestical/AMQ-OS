@@ -1,5 +1,3 @@
-// process.c - Process management
-
 #include "process.h"
 #include "memory.h"
 #include "print.h"
@@ -117,7 +115,7 @@ void print_process_table(void) {
                         default: tstate_str = "TERMINATED"; break;
                     }
 
-                    PRINT(WHITE, BLACK, "  └─ TID=%u | %s | Entry=0x%llx\n",
+                    PRINT(WHITE, BLACK, "  TID=%u | %s | Entry=0x%llx\n",
                           t->tid, tstate_str, t->entry_point);
                 }
             }

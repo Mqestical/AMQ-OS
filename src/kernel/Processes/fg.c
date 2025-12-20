@@ -1,5 +1,3 @@
-// fg.c - Fixed background job management
-
 #include "fg.h"
 #include "print.h"
 #include "process.h"
@@ -76,10 +74,10 @@ int add_fg_job(const char *command, uint32_t pid, uint32_t tid) {
 }
 
 int add_bg_job(const char *command, uint32_t pid, uint32_t tid) {
-    if (!jobs_enabled) {
-        PRINT(YELLOW, BLACK, "[JOBS] Job system not enabled\n");
-        return -1;
-    }
+  //  if (!jobs_enabled) {
+    //    PRINT(YELLOW, BLACK, "[JOBS] Job system not enabled\n");
+      //  return -1;
+    //}
     
     int slot = find_free_job_slot();
     if (slot < 0) {

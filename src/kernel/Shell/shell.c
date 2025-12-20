@@ -402,9 +402,9 @@ static uint32_t resolve_special_target(const char *target) {
     update_jobs();
     PRINT(GREEN, BLACK, "Done. Run 'jobs' to see result.\n");
 } void cmd_syscheck(void) {
-    PRINT(CYAN, BLACK, "\n╔════════════════════════════════════════╗\n");
-    PRINT(CYAN, BLACK, "║     SYSTEM HEALTH CHECK                ║\n");
-    PRINT(CYAN, BLACK, "╚════════════════════════════════════════╝\n\n");
+    PRINT(CYAN, BLACK, "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n");
+    PRINT(CYAN, BLACK, "â•‘     SYSTEM HEALTH CHECK                â•‘\n");
+    PRINT(CYAN, BLACK, "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n");
     
     int issues = 0;
     
@@ -415,9 +415,9 @@ static uint32_t resolve_special_target(const char *target) {
     uint64_t t2 = get_timer_ticks();
     
     if (t2 > t1) {
-        PRINT(GREEN, BLACK, "✓ OK (%llu ticks in delay)\n", t2 - t1);
+        PRINT(GREEN, BLACK, "âœ“ OK (%llu ticks in delay)\n", t2 - t1);
     } else {
-        PRINT(RED, BLACK, "✗ FAILED (timer not incrementing!)\n");
+        PRINT(RED, BLACK, "âœ— FAILED (timer not incrementing!)\n");
         issues++;
     }
     
@@ -425,9 +425,9 @@ static uint32_t resolve_special_target(const char *target) {
     PRINT(WHITE, BLACK, "[2/5] Checking scheduler... ");
     extern int get_scheduler_enabled(void);
     if (get_scheduler_enabled()) {
-        PRINT(GREEN, BLACK, "✓ Enabled\n");
+        PRINT(GREEN, BLACK, "âœ“ Enabled\n");
     } else {
-        PRINT(RED, BLACK, "✗ DISABLED\n");
+        PRINT(RED, BLACK, "âœ— DISABLED\n");
         issues++;
     }
     
@@ -446,16 +446,16 @@ static uint32_t resolve_special_target(const char *target) {
     }
     
     if (running > 0 || ready > 0) {
-        PRINT(GREEN, BLACK, "✓ OK (Running:%d Ready:%d Blocked:%d)\n", 
+        PRINT(GREEN, BLACK, "âœ“ OK (Running:%d Ready:%d Blocked:%d)\n", 
               running, ready, blocked);
         
         if (running == 0 && ready > 0) {
-            PRINT(YELLOW, BLACK, "   ⚠ Warning: Threads ready but none running!\n");
+            PRINT(YELLOW, BLACK, "   âš  Warning: Threads ready but none running!\n");
             PRINT(YELLOW, BLACK, "   Scheduler may not be being called.\n");
             issues++;
         }
     } else {
-        PRINT(YELLOW, BLACK, "⚠ No active threads\n");
+        PRINT(YELLOW, BLACK, "âš  No active threads\n");
     }
     
     // 4. Check jobs
@@ -465,36 +465,36 @@ static uint32_t resolve_special_target(const char *target) {
     for (int i = 0; i < MAX_JOBS; i++) {
         if (job_table[i].used) active_jobs++;
     }
-    PRINT(GREEN, BLACK, "✓ %d active jobs\n", active_jobs);
+    PRINT(GREEN, BLACK, "âœ“ %d active jobs\n", active_jobs);
     
     // 5. Check interrupts
     PRINT(WHITE, BLACK, "[5/5] Checking interrupts... ");
     uint8_t pic_mask = inb(0x21);
     if (pic_mask & 0x01) {
-        PRINT(RED, BLACK, "✗ IRQ0 (timer) is MASKED!\n");
+        PRINT(RED, BLACK, "âœ— IRQ0 (timer) is MASKED!\n");
         PRINT(YELLOW, BLACK, "   PIC mask: 0x%02x\n", pic_mask);
         issues++;
     } else {
-        PRINT(GREEN, BLACK, "✓ IRQ0 unmasked (mask: 0x%02x)\n", pic_mask);
+        PRINT(GREEN, BLACK, "âœ“ IRQ0 unmasked (mask: 0x%02x)\n", pic_mask);
     }
     
     // Summary
-    PRINT(CYAN, BLACK, "\n═══════════════════════════════════════\n");
+    PRINT(CYAN, BLACK, "\nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n");
     if (issues == 0) {
-        PRINT(GREEN, BLACK, "✓ ALL CHECKS PASSED\n");
+        PRINT(GREEN, BLACK, "âœ“ ALL CHECKS PASSED\n");
         PRINT(WHITE, BLACK, "\nSystem should be working correctly.\n");
         PRINT(WHITE, BLACK, "Try: sleep 5 &\n");
     } else {
-        PRINT(YELLOW, BLACK, "⚠ %d ISSUES FOUND\n", issues);
+        PRINT(YELLOW, BLACK, "âš  %d ISSUES FOUND\n", issues);
         PRINT(WHITE, BLACK, "\nRecommended actions:\n");
         if (get_scheduler_enabled() == 0) {
-            PRINT(WHITE, BLACK, "  • Scheduler disabled - check start.c initialization\n");
+            PRINT(WHITE, BLACK, "  â€¢ Scheduler disabled - check start.c initialization\n");
         }
         if (pic_mask & 0x01) {
-            PRINT(WHITE, BLACK, "  • Timer IRQ masked - interrupts won't fire\n");
+            PRINT(WHITE, BLACK, "  â€¢ Timer IRQ masked - interrupts won't fire\n");
         }
         if (running == 0 && ready > 0) {
-            PRINT(WHITE, BLACK, "  • Scheduler not running threads - check timer_handler_c\n");
+            PRINT(WHITE, BLACK, "  â€¢ Scheduler not running threads - check timer_handler_c\n");
         }
     }
 }
@@ -519,10 +519,10 @@ void cmd_multiudp(void) {
         int result = udp_send(0xFFFFFFFF, 68, 67, test_data, sizeof(test_data));
         
         if (result == 0) {
-            PRINT(GREEN, BLACK, "✓ Success\n");
+            PRINT(GREEN, BLACK, "âœ“ Success\n");
             success++;
         } else {
-            PRINT(RED, BLACK, "✗ FAILED (code %d)\n", result);
+            PRINT(RED, BLACK, "âœ— FAILED (code %d)\n", result);
             failed++;
             
             PRINT(YELLOW, BLACK, "    Stopping test - investigating failure...\n");
@@ -538,7 +538,7 @@ void cmd_multiudp(void) {
     PRINT(WHITE, BLACK, "Failed: %d\n", failed);
     
     if (failed > 0) {
-        PRINT(YELLOW, BLACK, "\n⚠ Multiple UDP sends failing!\n");
+        PRINT(YELLOW, BLACK, "\nâš  Multiple UDP sends failing!\n");
         PRINT(WHITE, BLACK, "This is why DHCP REQUEST fails.\n");
         PRINT(WHITE, BLACK, "\nPossible causes:\n");
         PRINT(WHITE, BLACK, "1. Memory leak - buffers not being freed\n");
@@ -546,7 +546,7 @@ void cmd_multiudp(void) {
         PRINT(WHITE, BLACK, "3. kmalloc() running out of memory\n");
         PRINT(WHITE, BLACK, "\nTry adding delays or checking memory usage.\n");
     } else {
-        PRINT(GREEN, BLACK, "\n✓ Multiple UDP sends work!\n");
+        PRINT(GREEN, BLACK, "\nâœ“ Multiple UDP sends work!\n");
         PRINT(WHITE, BLACK, "The issue with DHCP REQUEST is something else.\n");
     }
 }
@@ -622,10 +622,10 @@ void cmd_txtest(void) {
         PRINT(WHITE, BLACK, "[%d] ", i+1);
         
         if (e1000_send_packet(dummy, 60) == 0) {
-            PRINT(GREEN, BLACK, "✓ ");
+            PRINT(GREEN, BLACK, "âœ“ ");
             success++;
         } else {
-            PRINT(RED, BLACK, "✗ FAILED\n");
+            PRINT(RED, BLACK, "âœ— FAILED\n");
             break;
         }
         
@@ -635,11 +635,11 @@ void cmd_txtest(void) {
     PRINT(WHITE, BLACK, "\n\nSent: %d/10\n", success);
     
     if (success < 10) {
-        PRINT(YELLOW, BLACK, "⚠ TX descriptors filled up!\n");
+        PRINT(YELLOW, BLACK, "âš  TX descriptors filled up!\n");
         PRINT(WHITE, BLACK, "E1000 can't send packets fast enough.\n");
         PRINT(WHITE, BLACK, "Add delays between DHCP packets.\n");
     } else {
-        PRINT(GREEN, BLACK, "✓ TX descriptors OK\n");
+        PRINT(GREEN, BLACK, "âœ“ TX descriptors OK\n");
     }
     
     // Wait a moment and try again
@@ -648,9 +648,9 @@ void cmd_txtest(void) {
     
     PRINT(WHITE, BLACK, "Trying one more packet...\n");
     if (e1000_send_packet(dummy, 60) == 0) {
-        PRINT(GREEN, BLACK, "✓ Descriptors recovered\n");
+        PRINT(GREEN, BLACK, "âœ“ Descriptors recovered\n");
     } else {
-        PRINT(RED, BLACK, "✗ Still failing!\n");
+        PRINT(RED, BLACK, "âœ— Still failing!\n");
         PRINT(YELLOW, BLACK, "E1000 TX might be stuck.\n");
     }
 }
@@ -674,7 +674,7 @@ void cmd_memtest(void) {
             allocated++;
             if (i % 5 == 4) PRINT(WHITE, BLACK, ".");
         } else {
-            PRINT(RED, BLACK, "\n✗ kmalloc failed at block %d\n", i+1);
+            PRINT(RED, BLACK, "\nâœ— kmalloc failed at block %d\n", i+1);
             break;
         }
     }
@@ -682,11 +682,11 @@ void cmd_memtest(void) {
     PRINT(WHITE, BLACK, "\nAllocated: %d/%d blocks\n", allocated, TEST_COUNT);
     
     if (allocated < TEST_COUNT) {
-        PRINT(YELLOW, BLACK, "⚠ Out of memory!\n");
+        PRINT(YELLOW, BLACK, "âš  Out of memory!\n");
         PRINT(WHITE, BLACK, "This is why DHCP REQUEST fails.\n");
         PRINT(WHITE, BLACK, "Memory is being leaked somewhere.\n");
     } else {
-        PRINT(GREEN, BLACK, "✓ Memory OK\n");
+        PRINT(GREEN, BLACK, "âœ“ Memory OK\n");
     }
     
     // Free everything
@@ -694,7 +694,7 @@ void cmd_memtest(void) {
     for (int i = 0; i < allocated; i++) {
         kfree(ptrs[i]);
     }
-    PRINT(GREEN, BLACK, "✓ All freed\n");
+    PRINT(GREEN, BLACK, "âœ“ All freed\n");
 }
 
 // ========== Network Verification & Support ==========
@@ -738,9 +738,9 @@ void cmd_parseip(const char *args) {
 }
 
 void cmd_netstatus(void) {
-    PRINT(CYAN, BLACK, "\n╔════════════════════════════════════════╗\n");
-    PRINT(CYAN, BLACK, "║    Network Connection Status          ║\n");
-    PRINT(CYAN, BLACK, "╚════════════════════════════════════════╝\n\n");
+    PRINT(CYAN, BLACK, "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n");
+    PRINT(CYAN, BLACK, "â•‘    Network Connection Status          â•‘\n");
+    PRINT(CYAN, BLACK, "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n");
     
     net_config_t *config = net_get_config();
     
@@ -757,13 +757,13 @@ void cmd_netstatus(void) {
     }
     
     // Check 2: MAC Address
-    PRINT(WHITE, BLACK, "\n🔧 Hardware Address:\n");
+    PRINT(WHITE, BLACK, "\nðŸ”§ Hardware Address:\n");
     PRINT(WHITE, BLACK, "   MAC: ");
     net_print_mac(config->mac);
     PRINT(GREEN, BLACK, " \n");
     
     // Check 3: IP Configuration
-    PRINT(WHITE, BLACK, "\n🌐 IP Configuration:\n");
+    PRINT(WHITE, BLACK, "\nðŸŒ IP Configuration:\n");
     if (config->configured) {
         PRINT(GREEN, BLACK, "    Network configured\n");
         PRINT(WHITE, BLACK, "   IP Address: ");
@@ -781,7 +781,7 @@ void cmd_netstatus(void) {
     }
     
     // Check 4: Network Type Detection
-    PRINT(WHITE, BLACK, "\n🔍 Network Type:\n");
+    PRINT(WHITE, BLACK, "\nðŸ” Network Type:\n");
     uint32_t ip_first_octet = config->ip & 0xFF;
     if (ip_first_octet == 10) {
         PRINT(WHITE, BLACK, "   Private Network (Class A: 10.x.x.x)\n");
@@ -812,9 +812,9 @@ void cmd_netstatus(void) {
 }
 
 void cmd_netverify(void) {
-    PRINT(CYAN, BLACK, "\n╔════════════════════════════════════════╗\n");
-    PRINT(CYAN, BLACK, "║    Network Connectivity Verification   ║\n");
-    PRINT(CYAN, BLACK, "╚════════════════════════════════════════╝\n\n");
+    PRINT(CYAN, BLACK, "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n");
+    PRINT(CYAN, BLACK, "â•‘    Network Connectivity Verification   â•‘\n");
+    PRINT(CYAN, BLACK, "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n");
     
     net_config_t *config = net_get_config();
     int tests_passed = 0;
@@ -913,9 +913,9 @@ void cmd_netverify(void) {
     
 verification_summary:
     // Summary
-    PRINT(CYAN, BLACK, "\n╔════════════════════════════════════════╗\n");
-    PRINT(CYAN, BLACK, "║         Verification Summary           ║\n");
-    PRINT(CYAN, BLACK, "╚════════════════════════════════════════╝\n\n");
+    PRINT(CYAN, BLACK, "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n");
+    PRINT(CYAN, BLACK, "â•‘         Verification Summary           â•‘\n");
+    PRINT(CYAN, BLACK, "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n");
     
     PRINT(WHITE, BLACK, "Tests Passed: ");
     PRINT(GREEN, BLACK, "%d/5\n", tests_passed);
@@ -930,9 +930,9 @@ verification_summary:
         PRINT(GREEN, BLACK, " ALL TESTS PASSED!\n");
         PRINT(WHITE, BLACK, "Your network is fully functional!\n");
         PRINT(WHITE, BLACK, "\nYou can now:\n");
-        PRINT(WHITE, BLACK, "  • Use 'ping <ip>' to test other hosts\n");
-        PRINT(WHITE, BLACK, "  • Use 'arp' to view discovered devices\n");
-        PRINT(WHITE, BLACK, "  • Browse your local network\n");
+        PRINT(WHITE, BLACK, "  â€¢ Use 'ping <ip>' to test other hosts\n");
+        PRINT(WHITE, BLACK, "  â€¢ Use 'arp' to view discovered devices\n");
+        PRINT(WHITE, BLACK, "  â€¢ Browse your local network\n");
     } else if (tests_passed >= 3) {
         PRINT(YELLOW, BLACK, "  PARTIAL CONNECTIVITY\n");
         PRINT(WHITE, BLACK, "Local network works, but internet may be limited\n");
@@ -1126,9 +1126,9 @@ void cmd_dhcp(void) {
     
     // Just call the simple function
     if (dhcp_get_ip() == 0) {
-        PRINT(GREEN, BLACK, "\n✓ Network configured!\n");
+        PRINT(GREEN, BLACK, "\nâœ“ Network configured!\n");
     } else {
-        PRINT(RED, BLACK, "\n✗ DHCP failed\n");
+        PRINT(RED, BLACK, "\nâœ— DHCP failed\n");
     }
 }
 
@@ -1141,18 +1141,18 @@ void cmd_test(void) {
     PRINT(WHITE, BLACK, "1. MAC: ");
     if (config->mac[0] || config->mac[1] || config->mac[2]) {
         net_print_mac(config->mac);
-        PRINT(GREEN, BLACK, " ✓\n");
+        PRINT(GREEN, BLACK, " âœ“\n");
     } else {
-        PRINT(RED, BLACK, "ZERO ✗\n");
+        PRINT(RED, BLACK, "ZERO âœ—\n");
         return;
     }
     
     // Test 2: Link
     PRINT(WHITE, BLACK, "2. Link: ");
     if (e1000_link_status()) {
-        PRINT(GREEN, BLACK, "UP ✓\n");
+        PRINT(GREEN, BLACK, "UP âœ“\n");
     } else {
-        PRINT(RED, BLACK, "DOWN ✗\n");
+        PRINT(RED, BLACK, "DOWN âœ—\n");
         return;
     }
     
@@ -1163,9 +1163,9 @@ void cmd_test(void) {
     int result = e1000_send_packet(raw, 60);
     PRINT(WHITE, BLACK, "result=%d ", result);
     if (result == 0) {
-        PRINT(GREEN, BLACK, "✓\n");
+        PRINT(GREEN, BLACK, "âœ“\n");
     } else {
-        PRINT(RED, BLACK, "✗\n");
+        PRINT(RED, BLACK, "âœ—\n");
         return;
     }
     
@@ -1175,9 +1175,9 @@ void cmd_test(void) {
     result = e1000_send_packet(raw, 60);
     PRINT(WHITE, BLACK, "result=%d ", result);
     if (result == 0) {
-        PRINT(GREEN, BLACK, "✓\n");
+        PRINT(GREEN, BLACK, "âœ“\n");
     } else {
-        PRINT(RED, BLACK, "✗\n");
+        PRINT(RED, BLACK, "âœ—\n");
         return;
     }
     
@@ -1188,16 +1188,16 @@ void cmd_test(void) {
         result = e1000_send_packet(raw, 60);
         PRINT(WHITE, BLACK, "result=%d ", result);
         if (result == 0) {
-            PRINT(GREEN, BLACK, "✓\n");
+            PRINT(GREEN, BLACK, "âœ“\n");
         } else {
-            PRINT(RED, BLACK, "✗ FAILED HERE\n");
+            PRINT(RED, BLACK, "âœ— FAILED HERE\n");
             PRINT(YELLOW, BLACK, "\nProblem: Can't send multiple packets quickly\n");
             PRINT(WHITE, BLACK, "Fix: E1000 TX descriptors are full\n");
             return;
         }
     }
     
-    PRINT(GREEN, BLACK, "\n✓ ALL TESTS PASSED\n");
+    PRINT(GREEN, BLACK, "\nâœ“ ALL TESTS PASSED\n");
     PRINT(WHITE, BLACK, "Network stack is working. Try 'dhcp' now.\n");
 }
 
@@ -1216,22 +1216,22 @@ void cmd_webtest(void) {
     PRINT(WHITE, BLACK, "[1] Resolving google.com...\n");
     uint32_t google_ip;
     if (dns_resolve("google.com", &google_ip) == 0) {
-        PRINT(GREEN, BLACK, "    ✓ SUCCESS: google.com = ");
+        PRINT(GREEN, BLACK, "    âœ“ SUCCESS: google.com = ");
         net_print_ip(google_ip);
         PRINT(WHITE, BLACK, "\n");
     } else {
-        PRINT(YELLOW, BLACK, "    ✗ DNS failed (may need to set DNS server)\n");
+        PRINT(YELLOW, BLACK, "    âœ— DNS failed (may need to set DNS server)\n");
     }
     
     // Test 2: Resolve cloudflare.com
     PRINT(WHITE, BLACK, "\n[2] Resolving cloudflare.com...\n");
     uint32_t cf_ip;
     if (dns_resolve("cloudflare.com", &cf_ip) == 0) {
-        PRINT(GREEN, BLACK, "    ✓ SUCCESS: cloudflare.com = ");
+        PRINT(GREEN, BLACK, "    âœ“ SUCCESS: cloudflare.com = ");
         net_print_ip(cf_ip);
         PRINT(WHITE, BLACK, "\n");
     } else {
-        PRINT(YELLOW, BLACK, "    ✗ DNS failed\n");
+        PRINT(YELLOW, BLACK, "    âœ— DNS failed\n");
     }
     
     // Test 3: Try UDP to DNS server directly
@@ -1253,10 +1253,10 @@ void cmd_webtest(void) {
     };
     
     if (udp_send(dns_ip, 53, 53, query, sizeof(query)) == 0) {
-        PRINT(GREEN, BLACK, "    ✓ UDP packet sent to 8.8.8.8\n");
+        PRINT(GREEN, BLACK, "    âœ“ UDP packet sent to 8.8.8.8\n");
         PRINT(WHITE, BLACK, "    (This proves routing through gateway works!)\n");
     } else {
-        PRINT(RED, BLACK, "    ✗ Failed to send UDP\n");
+        PRINT(RED, BLACK, "    âœ— Failed to send UDP\n");
     }
     
     PRINT(CYAN, BLACK, "\n=== Summary ===\n");
@@ -1745,7 +1745,7 @@ void cmd_pianosong(const char *args) {
         {C4, 70, 800, 50}
     };
 
-    PRINT(WHITE, BLACK, "♪ ♫ ♪ ♫\n");
+    PRINT(WHITE, BLACK, "â™ª â™« â™ª â™«\n");
     audio_play_piano_phrase(song, 13);
     PRINT(GREEN, BLACK, "\nSong complete!\n");
 }
@@ -1906,7 +1906,6 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
 
     kfree(elf);
 }
-
 void bg_command_thread(void) {
     thread_t *current = get_current_thread();
     if (!current || !current->private_data) {
@@ -1916,6 +1915,9 @@ void bg_command_thread(void) {
     }
 
     bg_exec_context_t *ctx = (bg_exec_context_t*)current->private_data;
+    
+    // FORCE interrupts on
+    __asm__ volatile("sti");
     
     PRINT(GREEN, BLACK, "\n[BG %d] Starting: %s\n", ctx->job_id, ctx->command);
     
@@ -1936,7 +1938,7 @@ void bg_command_thread(void) {
     ctx->args[j] = '\0';
     
     // Execute the command
-    if (strcmp(ctx->cmd_name, "sleep") == 0) {
+    if (STRNCMP(ctx->cmd_name, "sleep", 5) == 0) {
         uint32_t seconds = 0;
         char *arg = ctx->args;
         while (*arg >= '0' && *arg <= '9') {
@@ -1948,13 +1950,14 @@ void bg_command_thread(void) {
             PRINT(WHITE, BLACK, "[BG %d] Sleeping %u seconds\n", ctx->job_id, seconds);
             sleep_seconds(seconds);
             PRINT(GREEN, BLACK, "[BG %d] Sleep complete!\n", ctx->job_id);
+        } else {
+            PRINT(YELLOW, BLACK, "[BG %d] Invalid sleep duration\n", ctx->job_id);
         }
     }
-    else if (strcmp(ctx->cmd_name, "echo") == 0) {
-        PRINT(WHITE, BLACK, "[BG %d] %s\n", ctx->job_id, ctx->args);
+    else if (STRNCMP(ctx->cmd_name, "echo", 4) == 0) {
+        PRINT(WHITE, BLACK, "%s\n", ctx->args);
     }
-    else if (strcmp(ctx->cmd_name, "ls") == 0) {
-        PRINT(WHITE, BLACK, "[BG %d] Listing directory...\n", ctx->job_id);
+    else if (STRNCMP(ctx->cmd_name, "ls", 2) == 0) {
         if (ctx->args[0] == '\0') {
             vfs_list_directory(vfs_get_cwd_path());
         } else {
@@ -1978,10 +1981,8 @@ void bg_command_thread(void) {
             }
             vfs_list_directory(fullpath);
         }
-        PRINT(GREEN, BLACK, "[BG %d] ls complete\n", ctx->job_id);
     }
-    else if (strcmp(ctx->cmd_name, "cat") == 0) {
-        PRINT(WHITE, BLACK, "[BG %d] Reading file...\n", ctx->job_id);
+    else if (STRNCMP(ctx->cmd_name, "cat", 3) == 0) {
         char fullpath[256];
         if (ctx->args[0] == '/') {
             strcpy_local(fullpath, ctx->args);
@@ -2010,18 +2011,22 @@ void bg_command_thread(void) {
             }
             vfs_close(fd);
         } else {
-            PRINT(YELLOW, BLACK, "[BG %d] File not found: %s\n", ctx->job_id, fullpath);
+            PRINT(YELLOW, BLACK, "File not found: %s\n", fullpath);
         }
     }
     else {
-        PRINT(YELLOW, BLACK, "[BG %d] Unknown command: %s\n", ctx->job_id, ctx->cmd_name);
-        PRINT(WHITE, BLACK, "[BG %d] Supported: sleep, echo, ls, cat\n", ctx->job_id);
+        PRINT(YELLOW, BLACK, "Unknown background command: %s\n", ctx->cmd_name);
+        PRINT(WHITE, BLACK, "Supported: sleep, echo, ls, cat\n");
     }
     
     // Mark completion
     ctx->should_run = 0;
     
-    PRINT(GREEN, BLACK, "[BG %d] Thread exiting\n", ctx->job_id);
+    PRINT(GREEN, BLACK, "[BG %d] Done!\n", ctx->job_id);
+    
+    // Yield before exit to ensure job updates
+    thread_yield();
+    
     thread_exit();
 }
 
@@ -2353,21 +2358,31 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             PRINT(YELLOW, BLACK, "Usage: bg <job_id>\n");
         }
     }
-    else if (strncmp(cmd, cmd21, 6) == 0) {
-        uint32_t seconds = 0;
-        char *arg = cmd + 6;
-        while (*arg >= '0' && *arg <= '9') {
-            seconds = seconds * 10 + (*arg - '0');
-            arg++;
-        }
-        if (seconds > 0) {
-            PRINT(WHITE, BLACK, "Sleeping for %u seconds...\n", seconds);
-            sleep_seconds(seconds);
-            PRINT(GREEN, BLACK, "Awake!\n");
-        } else {
-            PRINT(YELLOW, BLACK, "error: sleep count can not be under 0!\n");
-        }
+   else if (strncmp(cmd, cmd21, 6) == 0) {  // "sleep "
+    uint32_t seconds = 0;
+    char *arg = cmd + 6;
+    while (*arg >= '0' && *arg <= '9') {
+        seconds = seconds * 10 + (*arg - '0');
+        arg++;
     }
+    if (seconds > 0) {
+        PRINT(WHITE, BLACK, "Sleeping for %u seconds...\n", seconds);
+        
+        // Create a foreground job for this sleep
+        thread_t *current = get_current_thread();
+        if (current) {
+            int job_id = add_fg_job(cmd, current->parent->pid, current->tid);
+            PRINT(WHITE, BLACK, "[Job %d created for foreground sleep]\n", job_id);
+        }
+        
+        sleep_seconds(seconds);
+        PRINT(GREEN, BLACK, "Awake!\n");
+        
+        // Job will be automatically cleaned up by update_jobs() when thread unblocks
+    } else {
+        PRINT(YELLOW, BLACK, "error: sleep count can not be under 0!\n");
+    }
+}
     else if (strcmp(cmd, cmd55) == 0) {
         vfs_list_directory(vfs_get_cwd_path());
     }
@@ -2924,27 +2939,21 @@ void run_text_demo(void) {
     int job_update_counter = 0;
    
     while (1) {
+        uint8_t mask = inb(0x21);
+        if (mask & 0x02) {
+            mask &= ~0x02;
+            outb(0x21, mask);
+        }
         
-  uint8_t mask = inb(0x21);
-    if (mask & 0x02) {
-        PRINT(RED, BLACK, "unmasking irq1...");
-        mask &= ~0x02;
-        outb(0x21, mask);
-    }
-    
-     if (inb(0x64) & 0x01) {
-        uint8_t scancode = inb(0x60);
-        
-        // Manually add to buffer since interrupt isn't firing
-        scancode_buffer[scancode_write_pos++] = scancode;
-    }
+        if (inb(0x64) & 0x01) {
+            uint8_t scancode = inb(0x60);
+            scancode_buffer[scancode_write_pos++] = scancode;
+        }
 
         cursor_timer++;
         e1000_interrupt_handler();
         process_keyboard_buffer();
-   //     mouse();
         
-        // Update jobs MUCH more frequently - every 100 iterations instead of 10000
         job_update_counter++;
         if (job_update_counter >= 100) {
             job_update_counter = 0;
@@ -2963,6 +2972,8 @@ void run_text_demo(void) {
             draw_cursor(cursor_visible);
         }
 
+        thread_yield(); 
+        
         for (volatile int i = 0; i < 4000; i++);
     }
 }

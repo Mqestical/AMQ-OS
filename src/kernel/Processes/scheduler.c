@@ -1,4 +1,3 @@
-// scheduler.c - CRITICAL FIX: Scheduler must start first thread
 
 #include "process.h"
 #include "memory.h"
@@ -65,7 +64,7 @@ void debug_context_switch(void) {
         if (next->context.rsp >= stack_start && next->context.rsp < stack_end) {
             PRINT(GREEN, BLACK, "  RSP within stack\n");
         } else {
-            PRINT(RED, BLACK, " — RSP OUTSIDE STACK!\n");
+            PRINT(RED, BLACK, " â€” RSP OUTSIDE STACK!\n");
         }
         
         // Dump what's at the RSP
@@ -328,7 +327,8 @@ int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
     
     PRINT(MAGENTA, BLACK, "[THREAD] Created TID=%u for PID=%u (entry=0x%llx)\n", 
           thread->tid, proc->pid, thread->entry_point);
-    
+    PRINT(CYAN, BLACK, "[THREAD] TID=%u added, ready_head=%u\n", 
+      thread->tid, ready_queue_head ? ready_queue_head->tid : 0);
     // CRITICAL: If scheduler is enabled and no current thread, start this one
     if (scheduler_enabled && !current_thread) {
         PRINT(YELLOW, BLACK, "[THREAD] Scheduler enabled, auto-starting first thread\n");
@@ -454,26 +454,46 @@ void thread_yield(void) {
 }
 
 extern void switch_to_thread(cpu_context_t *old_ctx, cpu_context_t *new_ctx);
-
 void schedule(void) {
-    if (!scheduler_enabled) return;
+    if (!scheduler_enabled) {
+        PRINT(RED, BLACK, "[SCHED] SCHEDULER DISABLED!\n");
+        return;
+    }
     
-    // Prevent recursive scheduling
     if (in_scheduler) return;
     in_scheduler = 1;
     
     thread_t *prev = current_thread;
-    thread_t *next = ready_queue_head;
     
-    // If current thread is still runnable, put it back in queue
+    // Add current thread back to queue FIRST (if it's still runnable)
     if (prev && prev->state == THREAD_STATE_RUNNING) {
         prev->state = THREAD_STATE_READY;
         ready_queue_add(prev);
     }
     
-    // Get next thread from queue
+    // Get next thread
+    thread_t *next = ready_queue_head;
+    
+    // **FIX: If no ready threads, just return**
     if (!next) {
+        PRINT(YELLOW, BLACK, "[SCHED] No ready threads - staying in current\n");
         in_scheduler = 0;
+        
+        // If current thread is blocked, we're deadlocked
+        if (prev && prev->state == THREAD_STATE_BLOCKED) {
+            PRINT(RED, BLACK, "[SCHED] DEADLOCK: Current blocked, no ready threads!\n");
+            PRINT(YELLOW, BLACK, "[SCHED] System will halt until interrupt unblocks a thread\n");
+            
+            // Clear current so timer can wake us up
+            current_thread = NULL;
+            
+            // Enable interrupts and halt
+            __asm__ volatile("sti; hlt");
+            
+            // When we wake up, try scheduling again
+            in_scheduler = 0;
+            schedule();
+        }
         return;
     }
     
@@ -491,47 +511,28 @@ void schedule(void) {
         in_scheduler = 0;
         
         PRINT(MAGENTA, BLACK, "[SCHED] Starting first thread TID=%u\n", next->tid);
-        PRINT(WHITE, BLACK, "  Entry=0x%llx RSP=0x%llx\n", 
-              next->entry_point, next->context.rsp);
         
         uint64_t new_rsp = next->context.rsp;
         
         __asm__ volatile(
-            "mov %0, %%rsp\n"      // Load new stack
-            "mov $0x10, %%rax\n"   // Load data segment selector
-            "mov %%rax, %%ds\n"    // Set DS
-            "mov %%rax, %%es\n"    // Set ES
-            "mov %%rax, %%ss\n"    // Set SS
-            "popfq\n"              // Restore flags
+            "mov %0, %%rsp\n"
+            "mov $0x10, %%rax\n"
+            "mov %%rax, %%ds\n"
+            "mov %%rax, %%es\n"
+            "mov %%rax, %%ss\n"
+            "popfq\n"
             "pop %%rbx\n"
             "pop %%rbp\n"
             "pop %%r12\n"
             "pop %%r13\n"
             "pop %%r14\n"
             "pop %%r15\n"
-            "sti\n"                // Enable interrupts
-            "ret\n"                // Jump to thread_wrapper
+            "sti\n"
+            "ret\n"
             :
             : "r"(new_rsp)
             : "memory", "rax"
         );
-        
-               PRINT(CYAN, BLACK, "[DEBUG] About to jump to first thread\n");
-    PRINT(CYAN, BLACK, "[DEBUG] Checking stack at RSP=0x%llx:\n", next->context.rsp);
-    uint64_t *check = (uint64_t*)next->context.rsp;
-    PRINT(CYAN, BLACK, "  [0] rflags = 0x%llx\n", check[0]);
-    PRINT(CYAN, BLACK, "  [1] rbx    = 0x%llx\n", check[1]);
-    PRINT(CYAN, BLACK, "  [2] rbp    = 0x%llx\n", check[2]);
-    PRINT(CYAN, BLACK, "  [3] r12    = 0x%llx\n", check[3]);
-    PRINT(CYAN, BLACK, "  [4] r13    = 0x%llx\n", check[4]);
-    PRINT(CYAN, BLACK, "  [5] r14    = 0x%llx\n", check[5]);
-    PRINT(CYAN, BLACK, "  [6] r15    = 0x%llx\n", check[6]);
-    PRINT(CYAN, BLACK, "  [7] ret addr = 0x%llx\n", check[7]);
-    PRINT(CYAN, BLACK, "[DEBUG] thread_wrapper should be at 0x%llx\n", (uint64_t)thread_wrapper);
-
-        // Should never reach here
-        PRINT(YELLOW, BLACK, "[FATAL] First thread returned!\n");
-        while(1) __asm__ volatile("hlt");
     }
     
     // Same thread? Nothing to do
@@ -541,13 +542,11 @@ void schedule(void) {
     }
     
     current_thread = next;
-    
     in_scheduler = 0;
     
     // Context switch
     switch_to_thread(&prev->context, &next->context);
     __asm__ volatile("sti");
-    // Returns here when this thread is scheduled again
 }
 void scheduler_tick(void) {
     if (!scheduler_enabled) return;
@@ -555,15 +554,9 @@ void scheduler_tick(void) {
     // Don't interrupt scheduler
     if (in_scheduler) return;
     
-    // If no current thread but we have ready threads, start one
-    if (!current_thread && ready_queue_head) {
-        PRINT(YELLOW, BLACK, "[SCHED_TICK] No current thread, starting one...\n");
-        schedule();
-        return;
-    }
-    
-    // For now, just yield if we have a current thread
-    if (current_thread && current_thread->state == THREAD_STATE_RUNNING) {
+    // ALWAYS schedule if we have ready threads
+    // This ensures blocked threads get switched out
+    if (ready_queue_head) {
         schedule();
     }
 }

@@ -1,5 +1,3 @@
-// threads_init.c - Kernel thread initialization
-
 #include "process.h"
 #include "print.h"
 #include "string_helpers.h"
@@ -12,7 +10,11 @@
 void idle_thread_entry(void) {
     PRINT(MAGENTA, BLACK, "[IDLE] Started\n");
     while (1) {
+        // Just yield CPU to other threads
         thread_yield();
+        
+        // Small busy loop so we don't yield TOO fast
+        for (volatile int i = 0; i < 1000; i++);
     }
 }
 

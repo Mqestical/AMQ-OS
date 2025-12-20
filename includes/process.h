@@ -64,6 +64,7 @@ typedef struct thread_t {
     int used;
     void *private_data;
     uint64_t entry_point;
+    uint64_t sleep_until;
 } thread_t;
 
 // Process structure

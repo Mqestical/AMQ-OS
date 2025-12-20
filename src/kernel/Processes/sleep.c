@@ -1,5 +1,3 @@
-// sleep.c - Fixed sleep implementation with proper job integration
-
 #include "sleep.h"
 #include "irq.h"
 #include "print.h"
@@ -11,6 +9,8 @@
 
 // Forward declaration
 extern job_t job_table[];
+
+// In sleep_ticks() in sleep.c, replace the blocking section:
 
 void sleep_ticks(uint64_t ticks) {
     if (ticks == 0) return;
@@ -37,8 +37,9 @@ void sleep_ticks(uint64_t ticks) {
           current->tid, sleep_duration_ms, current_time_ms, wake_time_ms);
     
     // Find job for this thread and update sleep time
+    extern job_t job_table[];  // Remove MAX_JOBS - it's a #define
     int found_job = 0;
-    for (int i = 0; i < MAX_JOBS; i++) {
+    for (int i = 0; i < MAX_JOBS; i++) {  // MAX_JOBS comes from fg.h include
         job_t *job = &job_table[i];
         
         if (job->used && job->tid == current->tid) {
@@ -46,26 +47,26 @@ void sleep_ticks(uint64_t ticks) {
             job->sleep_until = wake_time_ms;
             found_job = 1;
             
-            PRINT(WHITE, BLACK, "[SLEEP] Job %d will wake at %llu ms (%llu seconds)\n",
-                  job->job_id, wake_time_ms, sleep_duration_ms / 1000);
+            PRINT(WHITE, BLACK, "[SLEEP] Job %d will wake at %llu ms\n",
+                  job->job_id, wake_time_ms);
             break;
         }
     }
     
     if (!found_job) {
         PRINT(YELLOW, BLACK, "[SLEEP] WARNING: No job found for TID=%u\n", current->tid);
-        PRINT(YELLOW, BLACK, "[SLEEP] Sleeping without job tracking\n");
     }
     
-    // Block thread - update_jobs() will wake us up
+    // **FIX: Block thread AND yield CPU**
     thread_block(current->tid);
+    schedule();  // <-- THIS IS THE FIX - give CPU to next thread
     
-    // When we return here, we've been unblocked by update_jobs()
+    // When we get here, we've been unblocked and scheduled back
     uint64_t actual_wake_ms = get_uptime_ms();
     uint64_t slept_ms = actual_wake_ms - current_time_ms;
     
-    PRINT(MAGENTA, BLACK, "[SLEEP TID=%u] Woke up after %llu ms (target was %llu ms)\n",
-          current->tid, slept_ms, sleep_duration_ms);
+    PRINT(MAGENTA, BLACK, "[SLEEP TID=%u] Woke up after %llu ms\n",
+          current->tid, slept_ms);
 }
 
 void sleep_ms(uint64_t milliseconds) {
