@@ -10,7 +10,6 @@
 #include "process.h"
 #include "fg.h"
 #include "sleep.h"
-#include "syscall.h"
 #include "string_helpers.h"
 #include "mouse.h"
 #include "elf_loader.h"
@@ -68,7 +67,7 @@ void cmd_netverify(void);
 void cmd_netstatus(void);
 void cmd_dnstest(const char *args);
 
-/*test func*/
+
 void test_syscall_interface(void);
 
 typedef struct {
@@ -127,15 +126,15 @@ static void strcpy_safe_local(char *dest, const char *src, int max) {
 
 void shell_thread_entry(void) {
     PRINT(GREEN, BLACK, "[SHELL] Starting as thread\n");
-    
-    // FORCE interrupts on
+
+
     __asm__ volatile("sti");
-    
-    // Verify they're actually on
+
+
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0" : "=r"(flags));
     PRINT(WHITE, BLACK, "[SHELL] RFLAGS = 0x%llx (IF=%d)\n", flags, !!(flags & 0x200));
-    
+
     init_shell();
     thread_exit();
 }
@@ -157,14 +156,14 @@ void handle_arrow_down(void) {
     }
 }
 
-// Also update clear_current_line to be more robust:
+
 void clear_current_line(void) {
     extern char input_buffer[];
     extern volatile int input_pos;
-    
+
     int chars_to_clear = input_pos;
-    
-    // Move cursor back to start of input
+
+
     for (int i = 0; i < chars_to_clear; i++) {
         if (cursor.x >= 8) {
             cursor.x -= 8;
@@ -173,11 +172,11 @@ void clear_current_line(void) {
             cursor.x = (fb.width - 8);
         }
     }
-    
-    // Clear the characters
+
+
     int saved_x = cursor.x;
     int saved_y = cursor.y;
-    
+
     for (int i = 0; i < chars_to_clear; i++) {
         draw_char(cursor.x, cursor.y, ' ', WHITE, BLACK);
         cursor.x += 8;
@@ -186,8 +185,8 @@ void clear_current_line(void) {
             cursor.y += 16;
         }
     }
-    
-    // Restore cursor position
+
+
     cursor.x = saved_x;
     cursor.y = saved_y;
 }
@@ -195,14 +194,14 @@ void clear_current_line(void) {
 void replace_input_line(const char *new_input) {
     extern char input_buffer[];
     extern volatile int input_pos;
-    
-    // Clear current input
+
+
     clear_current_line();
-    
-    // Reset input position
+
+
     input_pos = 0;
-    
-    // Copy new input if provided
+
+
     if (new_input) {
         int i = 0;
         while (new_input[i] && i < INPUT_BUFFER_SIZE - 1) {
@@ -212,8 +211,8 @@ void replace_input_line(const char *new_input) {
         input_pos = i;
     }
     input_buffer[input_pos] = '\0';
-    
-    // Display new input
+
+
     cursor.fg_color = WHITE;
     cursor.bg_color = BLACK;
     for (int i = 0; i < input_pos; i++) {
@@ -224,19 +223,19 @@ void replace_input_line(const char *new_input) {
 void cmd_schedinfo(void) {
     extern int get_scheduler_enabled(void);
     extern thread_t thread_table[];
-    
+
     PRINT(CYAN, BLACK, "\n=== Scheduler Information ===\n");
-    PRINT(WHITE, BLACK, "Scheduler enabled: %s\n", 
+    PRINT(WHITE, BLACK, "Scheduler enabled: %s\n",
           get_scheduler_enabled() ? "YES" : "NO");
-    
+
     thread_t *current = get_current_thread();
     if (current) {
         PRINT(GREEN, BLACK, "Current thread: TID=%u\n", current->tid);
     } else {
         PRINT(YELLOW, BLACK, "Current thread: NONE\n");
     }
-    
-    // Count threads by state
+
+
     int running = 0, ready = 0, blocked = 0, terminated = 0;
     for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
         if (thread_table[i].used) {
@@ -248,148 +247,53 @@ void cmd_schedinfo(void) {
             }
         }
     }
-    
+
     PRINT(WHITE, BLACK, "\nThread States:\n");
     PRINT(GREEN, BLACK, "  Running:    %d\n", running);
     PRINT(WHITE, BLACK, "  Ready:      %d\n", ready);
     PRINT(YELLOW, BLACK, "  Blocked:    %d\n", blocked);
     PRINT(RED, BLACK, "  Terminated: %d\n", terminated);
-    
+
     if (running == 0 && ready > 0) {
         PRINT(RED, BLACK, "\n!! WARNING: No running threads but %d ready!\n", ready);
         PRINT(YELLOW, BLACK, "!! Scheduler is not running threads!\n");
     }
 }
 
-// Show detailed thread info
-void cmd_threaddebug(void) {
-    extern thread_t thread_table[];
-    
-    PRINT(CYAN, BLACK, "\n=== Thread Debug ===\n");
-    
-    int count = 0;
-    for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
-        if (thread_table[i].used) {
-            thread_t *t = &thread_table[i];
-            
-            PRINT(WHITE, BLACK, "\nThread %d:\n", count + 1);
-            PRINT(WHITE, BLACK, "  TID: %u\n", t->tid);
-            PRINT(WHITE, BLACK, "  PID: %u\n", t->parent ? t->parent->pid : 0);
-            PRINT(WHITE, BLACK, "  State: ");
-            
-            switch (t->state) {
-                case THREAD_STATE_RUNNING:
-                    PRINT(GREEN, BLACK, "RUNNING\n");
-                    break;
-                case THREAD_STATE_READY:
-                    PRINT(WHITE, BLACK, "READY\n");
-                    break;
-                case THREAD_STATE_BLOCKED:
-                    PRINT(YELLOW, BLACK, "BLOCKED\n");
-                    break;
-                case THREAD_STATE_TERMINATED:
-                    PRINT(RED, BLACK, "TERMINATED\n");
-                    break;
-                default:
-                    PRINT(RED, BLACK, "UNKNOWN (%d)\n", t->state);
-            }
-            
-            PRINT(WHITE, BLACK, "  Entry: 0x%llx\n", t->entry_point);
-            PRINT(WHITE, BLACK, "  Stack: 0x%llx (%u bytes)\n", 
-                  (uint64_t)t->stack_base, t->stack_size);
-            
-            if (t->parent) {
-                PRINT(WHITE, BLACK, "  Process: %s\n", t->parent->name);
-            }
-            
-            count++;
-        }
-    }
-    
-    if (count == 0) {
-        PRINT(WHITE, BLACK, "\nNo threads in system!\n");
-    } else {
-        PRINT(WHITE, BLACK, "\nTotal threads: %d\n", count);
-    }
-}
-
-// Test scheduler by creating a simple thread
-void test_scheduler_thread(void) {
-    PRINT(MAGENTA, BLACK, "[TEST THREAD] Hello! I'm running!\n");
-    
-    for (int i = 0; i < 5; i++) {
-        PRINT(MAGENTA, BLACK, "[TEST THREAD] Iteration %d\n", i + 1);
-        
-        // Sleep for 1 second
-        sleep_seconds(1);
-    }
-    
-    PRINT(MAGENTA, BLACK, "[TEST THREAD] Exiting!\n");
-    thread_exit();
-}
-
-void cmd_schedtest(void) {
-    PRINT(CYAN, BLACK, "\n=== Scheduler Test ===\n");
-    PRINT(WHITE, BLACK, "Creating test thread that sleeps 5 times...\n");
-    
-    process_t *init = get_process(1);
-    if (!init) {
-        PRINT(YELLOW, BLACK, "ERROR: Init process not found!\n");
-        return;
-    }
-    
-    int tid = thread_create(
-        init->pid,
-        test_scheduler_thread,
-        65536,
-        50000000,
-        500000000,
-        500000000
-    );
-    
-    if (tid < 0) {
-        PRINT(YELLOW, BLACK, "ERROR: Failed to create test thread\n");
-        return;
-    }
-    
-    PRINT(GREEN, BLACK, "Created test thread TID=%d\n", tid);
-    PRINT(WHITE, BLACK, "Watch for messages from the test thread.\n");
-    PRINT(WHITE, BLACK, "Use 'threads' or 'threaddebug' to check status.\n");
-}
 
 static uint32_t resolve_special_target(const char *target) {
     net_config_t *config = net_get_config();
-    
+
     if (STRNCMP(target, "gateway", 8) == 0 || STRNCMP(target, "gw", 3) == 0) {
         return config->gateway;
     }
-    
-    // Try as IP first
+
+
     uint32_t ip = net_parse_ip(target);
     if (ip != 0) return ip;
-    
-    // Try DNS resolution
+
+
     uint32_t resolved_ip;
     if (dns_resolve(target, &resolved_ip) == 0) {
         return resolved_ip;
     }
-    
+
     return 0;
 }
  void cmd_schedstart(void) {
     PRINT(WHITE, BLACK, "Forcing scheduler to start threads...\n");
-    
+
     extern thread_t thread_table[];
     int ready_count = 0;
-    
+
     for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
         if (thread_table[i].used && thread_table[i].state == THREAD_STATE_READY) {
             ready_count++;
         }
     }
-    
+
     PRINT(WHITE, BLACK, "Found %d ready threads\n", ready_count);
-    
+
     if (ready_count > 0) {
         PRINT(WHITE, BLACK, "Calling thread_yield() to start scheduling...\n");
         thread_yield();
@@ -402,36 +306,33 @@ static uint32_t resolve_special_target(const char *target) {
     update_jobs();
     PRINT(GREEN, BLACK, "Done. Run 'jobs' to see result.\n");
 } void cmd_syscheck(void) {
-    PRINT(CYAN, BLACK, "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n");
-    PRINT(CYAN, BLACK, "â•‘     SYSTEM HEALTH CHECK                â•‘\n");
-    PRINT(CYAN, BLACK, "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n");
-    
+
     int issues = 0;
-    
-    // 1. Check timer
+
+
     PRINT(WHITE, BLACK, "[1/5] Checking timer... ");
     uint64_t t1 = get_timer_ticks();
     for (volatile int i = 0; i < 10000000; i++);
     uint64_t t2 = get_timer_ticks();
-    
+
     if (t2 > t1) {
-        PRINT(GREEN, BLACK, "âœ“ OK (%llu ticks in delay)\n", t2 - t1);
+        PRINT(GREEN, BLACK, " OK (%llu ticks in delay)\n", t2 - t1);
     } else {
-        PRINT(RED, BLACK, "âœ— FAILED (timer not incrementing!)\n");
+        PRINT(RED, BLACK, " FAILED (timer not incrementing!)\n");
         issues++;
     }
-    
-    // 2. Check scheduler
+
+
     PRINT(WHITE, BLACK, "[2/5] Checking scheduler... ");
     extern int get_scheduler_enabled(void);
     if (get_scheduler_enabled()) {
-        PRINT(GREEN, BLACK, "âœ“ Enabled\n");
+        PRINT(GREEN, BLACK, " Enabled\n");
     } else {
-        PRINT(RED, BLACK, "âœ— DISABLED\n");
+        PRINT(RED, BLACK, " DISABLED\n");
         issues++;
     }
-    
-    // 3. Check threads
+
+
     PRINT(WHITE, BLACK, "[3/5] Checking threads... ");
     extern thread_t thread_table[];
     int running = 0, ready = 0, blocked = 0;
@@ -444,30 +345,30 @@ static uint32_t resolve_special_target(const char *target) {
             }
         }
     }
-    
+
     if (running > 0 || ready > 0) {
-        PRINT(GREEN, BLACK, "âœ“ OK (Running:%d Ready:%d Blocked:%d)\n", 
+        PRINT(GREEN, BLACK, " OK (Running:%d Ready:%d Blocked:%d)\n",
               running, ready, blocked);
-        
+
         if (running == 0 && ready > 0) {
-            PRINT(YELLOW, BLACK, "   âš  Warning: Threads ready but none running!\n");
+            PRINT(YELLOW, BLACK, "     Warning: Threads ready but none running!\n");
             PRINT(YELLOW, BLACK, "   Scheduler may not be being called.\n");
             issues++;
         }
     } else {
-        PRINT(YELLOW, BLACK, "âš  No active threads\n");
+        PRINT(YELLOW, BLACK, "  No active threads\n");
     }
-    
-    // 4. Check jobs
+
+
     PRINT(WHITE, BLACK, "[4/5] Checking job system... ");
     extern job_t job_table[];
     int active_jobs = 0;
     for (int i = 0; i < MAX_JOBS; i++) {
         if (job_table[i].used) active_jobs++;
     }
-    PRINT(GREEN, BLACK, "âœ“ %d active jobs\n", active_jobs);
-    
-    // 5. Check interrupts
+    PRINT(GREEN, BLACK, " %d active jobs\n", active_jobs);
+
+
     PRINT(WHITE, BLACK, "[5/5] Checking interrupts... ");
     uint8_t pic_mask = inb(0x21);
     if (pic_mask & 0x01) {
@@ -475,78 +376,71 @@ static uint32_t resolve_special_target(const char *target) {
         PRINT(YELLOW, BLACK, "   PIC mask: 0x%02x\n", pic_mask);
         issues++;
     } else {
-        PRINT(GREEN, BLACK, "âœ“ IRQ0 unmasked (mask: 0x%02x)\n", pic_mask);
+        PRINT(GREEN, BLACK, " IRQ0 unmasked (mask: 0x%02x)\n", pic_mask);
     }
-    
-    // Summary
-    PRINT(CYAN, BLACK, "\nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n");
+
     if (issues == 0) {
-        PRINT(GREEN, BLACK, "âœ“ ALL CHECKS PASSED\n");
+        PRINT(GREEN, BLACK, " ALL CHECKS PASSED\n");
         PRINT(WHITE, BLACK, "\nSystem should be working correctly.\n");
         PRINT(WHITE, BLACK, "Try: sleep 5 &\n");
     } else {
-        PRINT(YELLOW, BLACK, "âš  %d ISSUES FOUND\n", issues);
+        PRINT(YELLOW, BLACK, "  %d ISSUES FOUND\n", issues);
         PRINT(WHITE, BLACK, "\nRecommended actions:\n");
         if (get_scheduler_enabled() == 0) {
-            PRINT(WHITE, BLACK, "  â€¢ Scheduler disabled - check start.c initialization\n");
+            PRINT(WHITE, BLACK, "   Scheduler disabled - check start.c initialization\n");
         }
         if (pic_mask & 0x01) {
-            PRINT(WHITE, BLACK, "  â€¢ Timer IRQ masked - interrupts won't fire\n");
+            PRINT(WHITE, BLACK, "   Timer IRQ masked - interrupts won't fire\n");
         }
         if (running == 0 && ready > 0) {
-            PRINT(WHITE, BLACK, "  â€¢ Scheduler not running threads - check timer_handler_c\n");
+            PRINT(WHITE, BLACK, " Scheduler not running threads - check timer_handler_c\n");
         }
     }
 }
 void cmd_multiudp(void) {
     PRINT(CYAN, BLACK, "\n=== Multiple UDP Send Test ===\n");
     PRINT(WHITE, BLACK, "This tests if we can send multiple UDP packets.\n\n");
-    
+
     net_config_t *config = net_get_config();
     if (!config->configured) {
         PRINT(YELLOW, BLACK, "Note: Network not configured, using 0.0.0.0 as source\n");
     }
-    
+
     uint8_t test_data[8] = {'T','E','S','T',' ','U','D','P'};
     int success = 0;
     int failed = 0;
-    
+
     for (int i = 0; i < 5; i++) {
         PRINT(WHITE, BLACK, "[%d] Sending UDP packet... ", i+1);
-        
-        test_data[4] = '0' + i;  // Change data slightly each time
-        
+
+        test_data[4] = '0' + i;
+
         int result = udp_send(0xFFFFFFFF, 68, 67, test_data, sizeof(test_data));
-        
+
         if (result == 0) {
-            PRINT(GREEN, BLACK, "âœ“ Success\n");
+            PRINT(GREEN, BLACK, " Success\n");
             success++;
         } else {
             PRINT(RED, BLACK, "âœ— FAILED (code %d)\n", result);
             failed++;
-            
+
             PRINT(YELLOW, BLACK, "    Stopping test - investigating failure...\n");
             break;
         }
-        
-        // Small delay between sends
+
+
         for (volatile int j = 0; j < 1000000; j++);
     }
-    
+
     PRINT(WHITE, BLACK, "\n=== Results ===\n");
     PRINT(WHITE, BLACK, "Success: %d\n", success);
     PRINT(WHITE, BLACK, "Failed: %d\n", failed);
-    
+
     if (failed > 0) {
-        PRINT(YELLOW, BLACK, "\nâš  Multiple UDP sends failing!\n");
-        PRINT(WHITE, BLACK, "This is why DHCP REQUEST fails.\n");
-        PRINT(WHITE, BLACK, "\nPossible causes:\n");
-        PRINT(WHITE, BLACK, "1. Memory leak - buffers not being freed\n");
-        PRINT(WHITE, BLACK, "2. TX descriptors full - E1000 not completing sends\n");
-        PRINT(WHITE, BLACK, "3. kmalloc() running out of memory\n");
-        PRINT(WHITE, BLACK, "\nTry adding delays or checking memory usage.\n");
+        PRINT(YELLOW, BLACK, "\n  Multiple UDP sends failing!\n");
+        PRINT(WHITE, BLACK, "This indicates TX descriptor exhaustion.\n");
     } else {
-        PRINT(GREEN, BLACK, "\nâœ“ Multiple UDP sends work!\n");
+        PRINT(GREEN, BLACK, "\n Multiple UDP sends work!\n");
         PRINT(WHITE, BLACK, "The issue with DHCP REQUEST is something else.\n");
     }
 }
@@ -555,10 +449,10 @@ void cmd_nettest(void) {
     PRINT(CYAN, BLACK, "\n========================================\n");
     PRINT(CYAN, BLACK, "    NETWORK CONNECTIVITY TEST\n");
     PRINT(CYAN, BLACK, "========================================\n");
-    
+
     net_config_t *config = net_get_config();
-    
-    // Test 1: Link status
+
+
     PRINT(YELLOW, BLACK, "Test 1: Link Status... ");
     if (e1000_link_status()) {
         PRINT(GREEN, BLACK, "PASS\n");
@@ -566,8 +460,8 @@ void cmd_nettest(void) {
         PRINT(RED, BLACK, "FAIL (cable unplugged?)\n");
         goto done;
     }
-    
-    // Test 2: Configuration
+
+
     PRINT(YELLOW, BLACK, "Test 2: IP Configuration... ");
     if (config->configured) {
         PRINT(GREEN, BLACK, "PASS\n");
@@ -578,8 +472,8 @@ void cmd_nettest(void) {
         PRINT(RED, BLACK, "FAIL (run 'dhcp' first)\n");
         goto done;
     }
-    
-    // Test 3: Gateway reachability
+
+
     PRINT(YELLOW, BLACK, "Test 3: Gateway Reachability... ");
     if (config->gateway != 0) {
         PRINT(WHITE, BLACK, "\n");
@@ -588,8 +482,8 @@ void cmd_nettest(void) {
     } else {
         PRINT(YELLOW, BLACK, "SKIP (no gateway)\n");
     }
-    
-    // Test 4: DNS resolution
+
+
     PRINT(YELLOW, BLACK, "Test 4: DNS Resolution... ");
     uint32_t test_ip;
     if (dns_resolve("example.com", &test_ip) == 0) {
@@ -599,114 +493,27 @@ void cmd_nettest(void) {
     } else {
         PRINT(RED, BLACK, "FAIL\n");
     }
-    
-    // Test 5: Internet connectivity
+
+
     PRINT(YELLOW, BLACK, "Test 5: Internet Ping... ");
     PRINT(WHITE, BLACK, "\n");
     cmd_ping_fast("8.8.8.8");
-    
+
 done:
     PRINT(CYAN, BLACK, "========================================\n\n");
 }
 
-// Test TX descriptor availability
-void cmd_txtest(void) {
-    PRINT(CYAN, BLACK, "\n=== TX Descriptor Test ===\n");
-    
-    PRINT(WHITE, BLACK, "Sending 10 packets rapidly...\n");
-    
-    uint8_t dummy[60] = {0};
-    int success = 0;
-    
-    for (int i = 0; i < 10; i++) {
-        PRINT(WHITE, BLACK, "[%d] ", i+1);
-        
-        if (e1000_send_packet(dummy, 60) == 0) {
-            PRINT(GREEN, BLACK, "âœ“ ");
-            success++;
-        } else {
-            PRINT(RED, BLACK, "âœ— FAILED\n");
-            break;
-        }
-        
-        // No delay - test if descriptors get full
-    }
-    
-    PRINT(WHITE, BLACK, "\n\nSent: %d/10\n", success);
-    
-    if (success < 10) {
-        PRINT(YELLOW, BLACK, "âš  TX descriptors filled up!\n");
-        PRINT(WHITE, BLACK, "E1000 can't send packets fast enough.\n");
-        PRINT(WHITE, BLACK, "Add delays between DHCP packets.\n");
-    } else {
-        PRINT(GREEN, BLACK, "âœ“ TX descriptors OK\n");
-    }
-    
-    // Wait a moment and try again
-    PRINT(WHITE, BLACK, "\nWaiting 2 seconds...\n");
-    for (volatile int i = 0; i < 200000000; i++);
-    
-    PRINT(WHITE, BLACK, "Trying one more packet...\n");
-    if (e1000_send_packet(dummy, 60) == 0) {
-        PRINT(GREEN, BLACK, "âœ“ Descriptors recovered\n");
-    } else {
-        PRINT(RED, BLACK, "âœ— Still failing!\n");
-        PRINT(YELLOW, BLACK, "E1000 TX might be stuck.\n");
-    }
-}
 
-// Memory test
-void cmd_memtest(void) {
-    PRINT(CYAN, BLACK, "\n=== Memory Allocation Test ===\n");
-    
-    #define TEST_SIZE 2048
-    #define TEST_COUNT 20
-    
-    void *ptrs[TEST_COUNT];
-    int allocated = 0;
-    
-    PRINT(WHITE, BLACK, "Allocating %d blocks of %d bytes...\n", 
-          TEST_COUNT, TEST_SIZE);
-    
-    for (int i = 0; i < TEST_COUNT; i++) {
-        ptrs[i] = kmalloc(TEST_SIZE);
-        if (ptrs[i]) {
-            allocated++;
-            if (i % 5 == 4) PRINT(WHITE, BLACK, ".");
-        } else {
-            PRINT(RED, BLACK, "\nâœ— kmalloc failed at block %d\n", i+1);
-            break;
-        }
-    }
-    
-    PRINT(WHITE, BLACK, "\nAllocated: %d/%d blocks\n", allocated, TEST_COUNT);
-    
-    if (allocated < TEST_COUNT) {
-        PRINT(YELLOW, BLACK, "âš  Out of memory!\n");
-        PRINT(WHITE, BLACK, "This is why DHCP REQUEST fails.\n");
-        PRINT(WHITE, BLACK, "Memory is being leaked somewhere.\n");
-    } else {
-        PRINT(GREEN, BLACK, "âœ“ Memory OK\n");
-    }
-    
-    // Free everything
-    PRINT(WHITE, BLACK, "Freeing blocks...\n");
-    for (int i = 0; i < allocated; i++) {
-        kfree(ptrs[i]);
-    }
-    PRINT(GREEN, BLACK, "âœ“ All freed\n");
-}
 
-// ========== Network Verification & Support ==========
 
 void cmd_parseip(const char *args) {
     while (*args == ' ') args++;
-    
+
     if (*args == '\0') {
         PRINT(YELLOW, BLACK, "Usage: parseip <ip_address>\n");
         return;
     }
-    
+
     char ip_str[32];
     int i = 0;
     while (args[i] && args[i] != ' ' && args[i] != '\n' && i < 31) {
@@ -714,7 +521,7 @@ void cmd_parseip(const char *args) {
         i++;
     }
     ip_str[i] = '\0';
-    
+
     PRINT(WHITE, BLACK, "Input string: '%s'\n", ip_str);
     PRINT(WHITE, BLACK, "Length: %d bytes\n", i);
     PRINT(WHITE, BLACK, "Hex dump: ");
@@ -722,14 +529,14 @@ void cmd_parseip(const char *args) {
         PRINT(WHITE, BLACK, "%02x ", (unsigned char)ip_str[j]);
     }
     PRINT(WHITE, BLACK, "\n");
-    
+
     uint32_t parsed = net_parse_ip(ip_str);
-    
+
     PRINT(WHITE, BLACK, "Parsed result: 0x%08x\n", parsed);
     PRINT(WHITE, BLACK, "Formatted: ");
     net_print_ip(parsed);
     PRINT(WHITE, BLACK, "\n");
-    
+
     PRINT(WHITE, BLACK, "\nOctets:\n");
     PRINT(WHITE, BLACK, "  Octet 1: %d\n", (parsed >> 0) & 0xFF);
     PRINT(WHITE, BLACK, "  Octet 2: %d\n", (parsed >> 8) & 0xFF);
@@ -738,13 +545,9 @@ void cmd_parseip(const char *args) {
 }
 
 void cmd_netstatus(void) {
-    PRINT(CYAN, BLACK, "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n");
-    PRINT(CYAN, BLACK, "â•‘    Network Connection Status          â•‘\n");
-    PRINT(CYAN, BLACK, "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n");
-    
     net_config_t *config = net_get_config();
-    
-    // Check 1: Driver Status
+
+
     PRINT(WHITE, BLACK, " Driver Status:\n");
     if (e1000_link_status()) {
         PRINT(GREEN, BLACK, "    E1000 driver loaded\n");
@@ -755,14 +558,14 @@ void cmd_netstatus(void) {
         PRINT(WHITE, BLACK, "    Ensure adapter is 'Attached to: NAT or Bridged'\n");
         return;
     }
-    
-    // Check 2: MAC Address
+
+
     PRINT(WHITE, BLACK, "\nðŸ”§ Hardware Address:\n");
     PRINT(WHITE, BLACK, "   MAC: ");
     net_print_mac(config->mac);
     PRINT(GREEN, BLACK, " \n");
-    
-    // Check 3: IP Configuration
+
+
     PRINT(WHITE, BLACK, "\nðŸŒ IP Configuration:\n");
     if (config->configured) {
         PRINT(GREEN, BLACK, "    Network configured\n");
@@ -779,9 +582,9 @@ void cmd_netstatus(void) {
         PRINT(WHITE, BLACK, "    Or 'netconfig <ip> <mask> <gateway>' for manual\n");
         return;
     }
-    
-    // Check 4: Network Type Detection
-    PRINT(WHITE, BLACK, "\nðŸ” Network Type:\n");
+
+
+    PRINT(WHITE, BLACK, "\n Network Type:\n");
     uint32_t ip_first_octet = config->ip & 0xFF;
     if (ip_first_octet == 10) {
         PRINT(WHITE, BLACK, "   Private Network (Class A: 10.x.x.x)\n");
@@ -794,10 +597,10 @@ void cmd_netstatus(void) {
     } else {
         PRINT(WHITE, BLACK, "   Public IP or Unusual Configuration\n");
     }
-    
-    // Check 5: VirtualBox Mode Detection
+
+
     PRINT(WHITE, BLACK, "\n  VirtualBox Mode Detection:\n");
-    if ((config->ip & 0xFFFFFF00) == 0x0A000200) { // 10.0.2.x
+    if ((config->ip & 0xFFFFFF00) == 0x0A000200) {
         PRINT(CYAN, BLACK, "    NAT Mode\n");
         PRINT(WHITE, BLACK, "    VM isolated, internet via host NAT\n");
         PRINT(WHITE, BLACK, "    Gateway is VirtualBox's virtual router\n");
@@ -806,21 +609,17 @@ void cmd_netstatus(void) {
         PRINT(WHITE, BLACK, "    VM appears as real device on network\n");
         PRINT(WHITE, BLACK, "    Can communicate with other devices\n");
     }
-    
+
     PRINT(GREEN, BLACK, "\n Network status check complete!\n");
     PRINT(WHITE, BLACK, "  Run 'netverify' for connectivity tests\n");
 }
 
 void cmd_netverify(void) {
-    PRINT(CYAN, BLACK, "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n");
-    PRINT(CYAN, BLACK, "â•‘    Network Connectivity Verification   â•‘\n");
-    PRINT(CYAN, BLACK, "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n");
-    
     net_config_t *config = net_get_config();
     int tests_passed = 0;
     int tests_failed = 0;
-    
-    // Test 1: Driver and Link
+
+
     PRINT(WHITE, BLACK, "[1/5] Testing network driver... ");
     if (e1000_link_status()) {
         PRINT(GREEN, BLACK, "PASS \n");
@@ -831,8 +630,8 @@ void cmd_netverify(void) {
         tests_failed++;
         goto verification_summary;
     }
-    
-    // Test 2: IP Configuration
+
+
     PRINT(WHITE, BLACK, "[2/5] Checking IP configuration... ");
     if (config->configured) {
         PRINT(GREEN, BLACK, "PASS \n");
@@ -847,11 +646,11 @@ void cmd_netverify(void) {
         tests_failed++;
         goto verification_summary;
     }
-    
-    // Test 3: Gateway Connectivity
+
+
     PRINT(WHITE, BLACK, "[3/5] Testing gateway connectivity... ");
     PRINT(WHITE, BLACK, "\n       Sending ARP request to gateway... ");
-    
+
     uint8_t gateway_mac[6];
     if (arp_resolve(config->gateway, gateway_mac) == 0) {
         PRINT(GREEN, BLACK, "PASS \n");
@@ -864,19 +663,19 @@ void cmd_netverify(void) {
         PRINT(WHITE, BLACK, "       Gateway not responding\n");
         tests_failed++;
     }
-    
-    // Test 4: Gateway Ping
+
+
     PRINT(WHITE, BLACK, "[4/5] Pinging gateway... ");
     PRINT(WHITE, BLACK, "\n       Target: ");
     net_print_ip(config->gateway);
     PRINT(WHITE, BLACK, "\n");
-    
+
     int ping_success = 0;
     for (int i = 0; i < 3; i++) {
         PRINT(WHITE, BLACK, "       Attempt %d/3... ", i + 1);
-        
+
         if (icmp_send_ping(config->gateway, 0x4567, i) == 0) {
-            // Wait for reply
+
             for (volatile int j = 0; j < 30000000; j++);
             PRINT(GREEN, BLACK, "sent\n");
             ping_success = 1;
@@ -884,7 +683,7 @@ void cmd_netverify(void) {
             PRINT(YELLOW, BLACK, "failed\n");
         }
     }
-    
+
     if (ping_success) {
         PRINT(GREEN, BLACK, "       Gateway responded \n");
         tests_passed++;
@@ -892,12 +691,12 @@ void cmd_netverify(void) {
         PRINT(YELLOW, BLACK, "       No response from gateway \n");
         tests_failed++;
     }
-    
-    // Test 5: Internet Connectivity (Google DNS)
+
+
     PRINT(WHITE, BLACK, "[5/5] Testing internet connectivity... ");
     uint32_t google_dns = net_parse_ip("8.8.8.8");
     PRINT(WHITE, BLACK, "\n       Pinging 8.8.8.8 (Google DNS)... ");
-    
+
     if (icmp_send_ping(google_dns, 0x8888, 1) == 0) {
         PRINT(GREEN, BLACK, "sent\n");
         PRINT(WHITE, BLACK, "       Waiting for response... ");
@@ -910,13 +709,9 @@ void cmd_netverify(void) {
         PRINT(WHITE, BLACK, "       Cannot reach internet\n");
         tests_failed++;
     }
-    
+
 verification_summary:
-    // Summary
-    PRINT(CYAN, BLACK, "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n");
-    PRINT(CYAN, BLACK, "â•‘         Verification Summary           â•‘\n");
-    PRINT(CYAN, BLACK, "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n\n");
-    
+
     PRINT(WHITE, BLACK, "Tests Passed: ");
     PRINT(GREEN, BLACK, "%d/5\n", tests_passed);
     PRINT(WHITE, BLACK, "Tests Failed: ");
@@ -925,7 +720,7 @@ verification_summary:
     } else {
         PRINT(GREEN, BLACK, "0/5\n\n");
     }
-    
+
     if (tests_passed == 5) {
         PRINT(GREEN, BLACK, " ALL TESTS PASSED!\n");
         PRINT(WHITE, BLACK, "Your network is fully functional!\n");
@@ -941,18 +736,13 @@ verification_summary:
         PRINT(WHITE, BLACK, "Network configured but gateway unreachable\n");
     } else {
         PRINT(YELLOW, BLACK, " NO CONNECTIVITY\n");
-        PRINT(WHITE, BLACK, "\nTroubleshooting:\n");
-        PRINT(WHITE, BLACK, "  1. Check VirtualBox network settings\n");
-        PRINT(WHITE, BLACK, "  2. Ensure adapter is enabled and attached\n");
-        PRINT(WHITE, BLACK, "  3. Run 'dhcp' to get IP address\n");
-        PRINT(WHITE, BLACK, "  4. Check host computer's network connection\n");
     }
 }
 
 void cmd_dnstest(const char *args) {
-    // Skip whitespace
+
     while (*args == ' ') args++;
-    
+
     if (*args == '\0') {
         PRINT(YELLOW, BLACK, "Usage: dnstest <ip_address>\n");
         PRINT(WHITE, BLACK, "Example: dnstest 8.8.8.8\n");
@@ -962,13 +752,13 @@ void cmd_dnstest(const char *args) {
         PRINT(WHITE, BLACK, "  208.67.222.222 - OpenDNS\n");
         return;
     }
-    
+
     net_config_t *config = net_get_config();
     if (!config->configured) {
         PRINT(YELLOW, BLACK, "Network not configured.\n");
         return;
     }
-    
+
     char ip_str[32];
     int i = 0;
     while (args[i] && args[i] != ' ' && i < 31) {
@@ -976,35 +766,35 @@ void cmd_dnstest(const char *args) {
         i++;
     }
     ip_str[i] = '\0';
-    
+
     uint32_t dns_ip = net_parse_ip(ip_str);
-    
+
     PRINT(CYAN, BLACK, "\n=== DNS Server Test ===\n");
     PRINT(WHITE, BLACK, "Testing DNS: ");
     net_print_ip(dns_ip);
     PRINT(WHITE, BLACK, " (%s)\n\n", ip_str);
-    
+
     PRINT(WHITE, BLACK, "Sending ping requests...\n");
-    
+
     int replies = 0;
     for (int i = 0; i < 4; i++) {
         PRINT(WHITE, BLACK, "  %d. ", i + 1);
-        
+
         if (icmp_send_ping(dns_ip, 0xD115, i) == 0) {
             PRINT(GREEN, BLACK, "Sent");
-            
-            // Wait for reply
+
+
             for (volatile int j = 0; j < 50000000; j++);
             PRINT(WHITE, BLACK, " - checking reply...");
-            
-            // Check if we got a response (simplified)
+
+
             PRINT(GREEN, BLACK, " OK\n");
             replies++;
         } else {
             PRINT(YELLOW, BLACK, "Failed\n");
         }
     }
-    
+
     PRINT(WHITE, BLACK, "\n");
     if (replies >= 3) {
         PRINT(GREEN, BLACK, " DNS server is reachable!\n");
@@ -1030,12 +820,12 @@ void cmd_netinit(void) {
 
 void cmd_ifconfig(void) {
     net_config_t *config = net_get_config();
-    
+
     PRINT(CYAN, BLACK, "\n=== Network Interface ===\n");
     PRINT(WHITE, BLACK, "MAC Address: ");
     net_print_mac(config->mac);
     PRINT(WHITE, BLACK, "\n");
-    
+
     if (config->configured) {
         PRINT(GREEN, BLACK, "Status: Configured\n");
         PRINT(WHITE, BLACK, "IP Address: ");
@@ -1049,7 +839,7 @@ void cmd_ifconfig(void) {
         PRINT(YELLOW, BLACK, "Status: Not configured\n");
         PRINT(WHITE, BLACK, "Use 'dhcp' or 'netconfig' to configure\n");
     }
-    
+
     if (e1000_link_status()) {
         PRINT(GREEN, BLACK, "Link: UP\n");
     } else {
@@ -1060,56 +850,56 @@ void cmd_ifconfig(void) {
 void cmd_netconfig(const char *args) {
     char ip_str[32], netmask_str[32], gateway_str[32];
     int i = 0, j = 0;
-    
+
     while (args[i] == ' ') i++;
-    
+
     j = 0;
     while (args[i] && args[i] != ' ' && j < 31) {
         ip_str[j++] = args[i++];
     }
     ip_str[j] = '\0';
-    
+
     while (args[i] == ' ') i++;
-    
+
     j = 0;
     while (args[i] && args[i] != ' ' && j < 31) {
         netmask_str[j++] = args[i++];
     }
     netmask_str[j] = '\0';
-    
+
     while (args[i] == ' ') i++;
-    
+
     j = 0;
     while (args[i] && args[i] != ' ' && j < 31) {
         gateway_str[j++] = args[i++];
     }
     gateway_str[j] = '\0';
-    
+
     if (ip_str[0] == '\0' || netmask_str[0] == '\0' || gateway_str[0] == '\0') {
         PRINT(YELLOW, BLACK, "Usage: netconfig <ip> <netmask> <gateway>\n");
         PRINT(WHITE, BLACK, "Example: netconfig 192.168.1.100 255.255.255.0 192.168.1.1\n");
         return;
     }
-    
+
     uint32_t ip = net_parse_ip(ip_str);
     uint32_t netmask = net_parse_ip(netmask_str);
     uint32_t gateway = net_parse_ip(gateway_str);
-    
+
     net_set_config(ip, netmask, gateway);
     PRINT(GREEN, BLACK, "\nNetwork configured successfully!\n");
 }
 
 void cmd_dhcp(void) {
     PRINT(CYAN, BLACK, "\n=== DHCP ===\n");
-    
+
     net_config_t *config = net_get_config();
-    
-    // Check basics
+
+
     if (config->mac[0] == 0 && config->mac[1] == 0) {
         PRINT(RED, BLACK, "Network card not initialized!\n");
         return;
     }
-    
+
     if (!e1000_link_status()) {
         PRINT(YELLOW, BLACK, "Link is DOWN. Waiting");
         for (int i = 0; i < 30; i++) {
@@ -1123,142 +913,74 @@ void cmd_dhcp(void) {
         }
         PRINT(GREEN, BLACK, " UP\n");
     }
-    
-    // Just call the simple function
+
+
     if (dhcp_get_ip() == 0) {
-        PRINT(GREEN, BLACK, "\nâœ“ Network configured!\n");
+        PRINT(GREEN, BLACK, "\n Network configured!\n");
     } else {
         PRINT(RED, BLACK, "\nâœ— DHCP failed\n");
     }
 }
 
-void cmd_test(void) {
-    PRINT(CYAN, BLACK, "\n=== BASIC TEST ===\n");
-    
-    net_config_t *config = net_get_config();
-    
-    // Test 1: MAC
-    PRINT(WHITE, BLACK, "1. MAC: ");
-    if (config->mac[0] || config->mac[1] || config->mac[2]) {
-        net_print_mac(config->mac);
-        PRINT(GREEN, BLACK, " âœ“\n");
-    } else {
-        PRINT(RED, BLACK, "ZERO âœ—\n");
-        return;
-    }
-    
-    // Test 2: Link
-    PRINT(WHITE, BLACK, "2. Link: ");
-    if (e1000_link_status()) {
-        PRINT(GREEN, BLACK, "UP âœ“\n");
-    } else {
-        PRINT(RED, BLACK, "DOWN âœ—\n");
-        return;
-    }
-    
-    // Test 3: Raw send
-    PRINT(WHITE, BLACK, "3. Raw packet send: ");
-    uint8_t raw[60];
-    for (int i = 0; i < 60; i++) raw[i] = 0;
-    int result = e1000_send_packet(raw, 60);
-    PRINT(WHITE, BLACK, "result=%d ", result);
-    if (result == 0) {
-        PRINT(GREEN, BLACK, "âœ“\n");
-    } else {
-        PRINT(RED, BLACK, "âœ—\n");
-        return;
-    }
-    
-    // Test 4: Wait and send again
-    PRINT(WHITE, BLACK, "4. Wait 0.5s and send again: ");
-    for (volatile int i = 0; i < 50000000; i++);
-    result = e1000_send_packet(raw, 60);
-    PRINT(WHITE, BLACK, "result=%d ", result);
-    if (result == 0) {
-        PRINT(GREEN, BLACK, "âœ“\n");
-    } else {
-        PRINT(RED, BLACK, "âœ—\n");
-        return;
-    }
-    
-    // Test 5: Send 3 in a row
-    PRINT(WHITE, BLACK, "5. Send 3 packets rapidly:\n");
-    for (int i = 0; i < 3; i++) {
-        PRINT(WHITE, BLACK, "   [%d] ", i+1);
-        result = e1000_send_packet(raw, 60);
-        PRINT(WHITE, BLACK, "result=%d ", result);
-        if (result == 0) {
-            PRINT(GREEN, BLACK, "âœ“\n");
-        } else {
-            PRINT(RED, BLACK, "âœ— FAILED HERE\n");
-            PRINT(YELLOW, BLACK, "\nProblem: Can't send multiple packets quickly\n");
-            PRINT(WHITE, BLACK, "Fix: E1000 TX descriptors are full\n");
-            return;
-        }
-    }
-    
-    PRINT(GREEN, BLACK, "\nâœ“ ALL TESTS PASSED\n");
-    PRINT(WHITE, BLACK, "Network stack is working. Try 'dhcp' now.\n");
-}
 
 void cmd_webtest(void) {
     PRINT(CYAN, BLACK, "\n=== Internet Connectivity Test (DNS) ===\n");
-    
+
     net_config_t *cfg = net_get_config();
     if (!cfg->configured) {
         PRINT(RED, BLACK, "Network not configured!\n");
         return;
     }
-    
+
     PRINT(WHITE, BLACK, "Testing DNS resolution (this proves internet works)...\n\n");
-    
-    // Test 1: Resolve google.com
+
+
     PRINT(WHITE, BLACK, "[1] Resolving google.com...\n");
     uint32_t google_ip;
     if (dns_resolve("google.com", &google_ip) == 0) {
-        PRINT(GREEN, BLACK, "    âœ“ SUCCESS: google.com = ");
+        PRINT(GREEN, BLACK, "     SUCCESS: google.com = ");
         net_print_ip(google_ip);
         PRINT(WHITE, BLACK, "\n");
     } else {
-        PRINT(YELLOW, BLACK, "    âœ— DNS failed (may need to set DNS server)\n");
+        PRINT(YELLOW, BLACK, "     DNS failed (may need to set DNS server)\n");
     }
-    
-    // Test 2: Resolve cloudflare.com
+
+
     PRINT(WHITE, BLACK, "\n[2] Resolving cloudflare.com...\n");
     uint32_t cf_ip;
     if (dns_resolve("cloudflare.com", &cf_ip) == 0) {
-        PRINT(GREEN, BLACK, "    âœ“ SUCCESS: cloudflare.com = ");
+        PRINT(GREEN, BLACK, "     SUCCESS: cloudflare.com = ");
         net_print_ip(cf_ip);
         PRINT(WHITE, BLACK, "\n");
     } else {
-        PRINT(YELLOW, BLACK, "    âœ— DNS failed\n");
+        PRINT(YELLOW, BLACK, "     DNS failed\n");
     }
-    
-    // Test 3: Try UDP to DNS server directly
+
+
     PRINT(WHITE, BLACK, "\n[3] Testing UDP to 8.8.8.8:53 (DNS)...\n");
     uint32_t dns_ip = net_parse_ip("8.8.8.8");
-    
-    // Build a simple DNS query
+
+
     uint8_t query[32] = {
-        0x12, 0x34,  // Transaction ID
-        0x01, 0x00,  // Flags (standard query)
-        0x00, 0x01,  // Questions: 1
-        0x00, 0x00,  // Answers: 0
-        0x00, 0x00,  // Authority: 0
-        0x00, 0x00,  // Additional: 0
-        // Question: "a" + null + type A + class IN
+        0x12, 0x34,
+        0x01, 0x00,
+        0x00, 0x01,
+        0x00, 0x00,
+        0x00, 0x00,
+        0x00, 0x00,
+
         0x01, 'a', 0x00,
-        0x00, 0x01,  // Type A
-        0x00, 0x01   // Class IN
+        0x00, 0x01,
+        0x00, 0x01
     };
-    
+
     if (udp_send(dns_ip, 53, 53, query, sizeof(query)) == 0) {
-        PRINT(GREEN, BLACK, "    âœ“ UDP packet sent to 8.8.8.8\n");
+        PRINT(GREEN, BLACK, "     UDP packet sent to 8.8.8.8\n");
         PRINT(WHITE, BLACK, "    (This proves routing through gateway works!)\n");
     } else {
-        PRINT(RED, BLACK, "    âœ— Failed to send UDP\n");
+        PRINT(RED, BLACK, "    Failed to send UDP\n");
     }
-    
+
     PRINT(CYAN, BLACK, "\n=== Summary ===\n");
     PRINT(WHITE, BLACK, "If DNS resolution worked, your internet is FULLY functional!\n");
     PRINT(WHITE, BLACK, "ICMP ping may be blocked by your router/ISP (this is normal).\n\n");
@@ -1269,7 +991,7 @@ void cmd_webtest(void) {
 }
 
 void cmd_curl(const char *args) {
-    // curl is just an alias for wget
+
     cmd_wget(args);
 }
 
@@ -1280,12 +1002,12 @@ void cmd_arp(void) {
 
 void cmd_netstat(void) {
     net_config_t *config = net_get_config();
-    
+
     PRINT(CYAN, BLACK, "\n========================================\n");
     PRINT(CYAN, BLACK, "      NETWORK STATUS\n");
     PRINT(CYAN, BLACK, "========================================\n");
-    
-    // Hardware
+
+
     PRINT(YELLOW, BLACK, "Hardware:\n");
     PRINT(WHITE, BLACK, "  MAC:  ");
     net_print_mac(config->mac);
@@ -1296,23 +1018,23 @@ void cmd_netstat(void) {
     } else {
         PRINT(RED, BLACK, "DOWN\n");
     }
-    
+
     PRINT(WHITE, BLACK, "\n");
-    
-    // IPv4 Configuration
+
+
     PRINT(YELLOW, BLACK, "IPv4 Configuration:\n");
     if (config->configured) {
         PRINT(WHITE, BLACK, "  Status:  ");
         PRINT(GREEN, BLACK, "CONFIGURED\n");
-        
+
         PRINT(WHITE, BLACK, "  IP:      ");
         net_print_ip(config->ip);
         PRINT(WHITE, BLACK, "\n");
-        
+
         PRINT(WHITE, BLACK, "  Netmask: ");
         net_print_ip(config->netmask);
         PRINT(WHITE, BLACK, "\n");
-        
+
         PRINT(WHITE, BLACK, "  Gateway: ");
         net_print_ip(config->gateway);
         PRINT(WHITE, BLACK, "\n");
@@ -1321,13 +1043,13 @@ void cmd_netstat(void) {
         PRINT(RED, BLACK, "NOT CONFIGURED\n");
         PRINT(YELLOW, BLACK, "  Run 'dhcp' to configure\n");
     }
-    
+
     PRINT(WHITE, BLACK, "\n");
-    
-    // ARP Cache
+
+
     PRINT(YELLOW, BLACK, "ARP Cache:\n");
     arp_print_cache();
-    
+
     PRINT(CYAN, BLACK, "\n========================================\n\n");
 }
 
@@ -1915,29 +1637,29 @@ void bg_command_thread(void) {
     }
 
     bg_exec_context_t *ctx = (bg_exec_context_t*)current->private_data;
-    
-    // FORCE interrupts on
+
+
     __asm__ volatile("sti");
-    
+
     PRINT(GREEN, BLACK, "\n[BG %d] Starting: %s\n", ctx->job_id, ctx->command);
-    
-    // Parse command name and arguments
+
+
     int i = 0;
     while (ctx->command[i] && ctx->command[i] != ' ' && i < 63) {
         ctx->cmd_name[i] = ctx->command[i];
         i++;
     }
     ctx->cmd_name[i] = '\0';
-    
-    // Get arguments
+
+
     while (ctx->command[i] == ' ') i++;
     int j = 0;
     while (ctx->command[i] && j < 191) {
         ctx->args[j++] = ctx->command[i++];
     }
     ctx->args[j] = '\0';
-    
-    // Execute the command
+
+
     if (STRNCMP(ctx->cmd_name, "sleep", 5) == 0) {
         uint32_t seconds = 0;
         char *arg = ctx->args;
@@ -1945,7 +1667,7 @@ void bg_command_thread(void) {
             seconds = seconds * 10 + (*arg - '0');
             arg++;
         }
-        
+
         if (seconds > 0) {
             PRINT(WHITE, BLACK, "[BG %d] Sleeping %u seconds\n", ctx->job_id, seconds);
             sleep_seconds(seconds);
@@ -2018,15 +1740,15 @@ void bg_command_thread(void) {
         PRINT(YELLOW, BLACK, "Unknown background command: %s\n", ctx->cmd_name);
         PRINT(WHITE, BLACK, "Supported: sleep, echo, ls, cat\n");
     }
-    
-    // Mark completion
+
+
     ctx->should_run = 0;
-    
+
     PRINT(GREEN, BLACK, "[BG %d] Done!\n", ctx->job_id);
-    
-    // Yield before exit to ensure job updates
+
+
     thread_yield();
-    
+
     thread_exit();
 }
 
@@ -2104,7 +1826,7 @@ void process_command(char* cmd) {
             PRINT(YELLOW, BLACK, "Invalid command\n");
             return;
         }
-        
+
         PRINT(WHITE, BLACK, "[SHELL] Launching background job: %s\n", cmd);
 
         process_t *proc = get_process(1);
@@ -2113,7 +1835,7 @@ void process_command(char* cmd) {
             return;
         }
 
-        // Allocate context for this background job
+
         bg_exec_context_t *bg_ctx = kmalloc(sizeof(bg_exec_context_t));
         if (!bg_ctx) {
             PRINT(YELLOW, BLACK, "[ERROR] Out of memory\n");
@@ -2124,7 +1846,7 @@ void process_command(char* cmd) {
         bg_ctx->job_id = -1;
         bg_ctx->should_run = 1;
 
-        // Create thread
+
         int tid = thread_create(
             proc->pid,
             bg_command_thread,
@@ -2140,13 +1862,13 @@ void process_command(char* cmd) {
             return;
         }
 
-        // Set thread private data
+
         thread_t *thread = get_thread(tid);
         if (thread) {
             thread->private_data = bg_ctx;
         }
 
-        // Create job
+
         int job_id = add_bg_job(cmd, proc->pid, tid);
         if (job_id > 0) {
             bg_ctx->job_id = job_id;
@@ -2159,40 +1881,10 @@ void process_command(char* cmd) {
         return;
     }
 
-    char cmd1[] = "hello";
-    char cmd2[] = "help";
-    char cmd3[] = "clear";
-    char cmd4[] = "echo ";
-    char cmd5[] = "ls ";
-    char cmd55[] = "ls";
-    char cmd6[] = "cat ";
-    char cmd7[] = "touch ";
-    char cmd8[] = "mkdir ";
-    char cmd9[] = "rm ";
-    char cmd10[] = "write ";
-    char cmd11[] = "df";
-    char cmd12[] = "memstats";
-    char cmd13[] = "format";
-    char cmd14[] = "cd ";
-    char cmd144[] = "cd";
-    char cmd15[] = "pwd";
-    char cmd16[] = "ps";
-    char cmd17[] = "threads";
-    char cmd18[] = "jobs";
-    char cmd19[] = "fg ";
-    char cmd20[] = "bg ";
-    char cmd21[] = "sleep ";
-    char cmd22[] = "syscalltest";
-    char cmd23[] = "testbg";
-    char cmd24[] = "stum -r3";
-    char cmd25[] = "rps";
-    char subcmd25_1[] = "rock";
-    char subcmd25_2[] = "paper";
-    char subcmd25_3[] = "scissors";
-    if (strcmp(cmd, cmd1) == 0) {
+    if (STRNCMP(cmd, "hello", 5) == 0) {
         PRINT(GREEN, BLACK, "hello :D\n");
     }
-    else if (strcmp(cmd, cmd2) == 0) {
+    else if (STRNCMP(cmd, "help", 4) == 0) {
         PRINT(WHITE, BLACK, "Available commands:\n");
         PRINT(WHITE, BLACK, "  hello - Say hello\n");
         PRINT(WHITE, BLACK, "  clear - Clear screen\n");
@@ -2285,7 +1977,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
         PRINT(WHITE, BLACK, "  shutdown - Power off the system\n");
         PRINT(WHITE, BLACK, "  reboot   - Reboot the system\n");
     }
-    else if (strcmp(cmd, cmd3) == 0) {
+    else if (STRNCMP(cmd, "clear", 5) == 0) {
         ClearScreen(BLACK);
         SetCursorPos(0, 0);
     }
@@ -2297,16 +1989,16 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
         PRINT(WHITE, BLACK, "Rebooting...\n");
         system_reboot();
     }
-    else if (strncmp(cmd, cmd4, 5) == 0) {
+    else if (STRNCMP(cmd, "echo ", 5) == 0) {
         PRINT(WHITE, BLACK, "%s\n", cmd + 5);
     }
-    else if (strcmp(cmd, cmd12) == 0) {
+    else if (STRNCMP(cmd, "memstats", 8) == 0) {
         memory_stats();
     }
-    else if (strcmp(cmd, cmd16) == 0) {
+    else if (STRNCMP(cmd, "ps", 2) == 0) {
         print_process_table();
     }
-    else if (strcmp(cmd, cmd17) == 0) {
+    else if (STRNCMP(cmd, "threads", 7) == 0) {
         PRINT(WHITE, BLACK, "\n=== Thread Information ===\n");
         thread_t *current = get_current_thread();
         if (current) {
@@ -2329,10 +2021,10 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
         PRINT(WHITE, BLACK, "  Ready: %d\n", ready);
         PRINT(YELLOW, BLACK, "  Blocked: %d\n", blocked);
     }
-    else if (strcmp(cmd, cmd18) == 0) {
+    else if (STRNCMP(cmd, "jobs", 4) == 0) {
         list_jobs();
     }
-    else if (strncmp(cmd, cmd19, 3) == 0) {
+    else if (STRNCMP(cmd, "fg ", 3) == 0) {
         int job_id = 0;
         char *arg = cmd + 3;
         while (*arg >= '0' && *arg <= '9') {
@@ -2345,7 +2037,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             PRINT(YELLOW, BLACK, "Usage: fg <job_id>\n");
         }
     }
-    else if (strncmp(cmd, cmd20, 3) == 0) {
+    else if (STRNCMP(cmd, "bg ", 3) == 0) {
         int job_id = 0;
         char *arg = cmd + 3;
         while (*arg >= '0' && *arg <= '9') {
@@ -2358,7 +2050,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             PRINT(YELLOW, BLACK, "Usage: bg <job_id>\n");
         }
     }
-   else if (strncmp(cmd, cmd21, 6) == 0) {  // "sleep "
+   else if (STRNCMP(cmd, "sleep ", 6) == 0) {
     uint32_t seconds = 0;
     char *arg = cmd + 6;
     while (*arg >= '0' && *arg <= '9') {
@@ -2367,32 +2059,32 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
     }
     if (seconds > 0) {
         PRINT(WHITE, BLACK, "Sleeping for %u seconds...\n", seconds);
-        
-        // Create a foreground job for this sleep
+
+
         thread_t *current = get_current_thread();
         if (current) {
             int job_id = add_fg_job(cmd, current->parent->pid, current->tid);
             PRINT(WHITE, BLACK, "[Job %d created for foreground sleep]\n", job_id);
         }
-        
+
         sleep_seconds(seconds);
         PRINT(GREEN, BLACK, "Awake!\n");
-        
-        // Job will be automatically cleaned up by update_jobs() when thread unblocks
+
+
     } else {
         PRINT(YELLOW, BLACK, "error: sleep count can not be under 0!\n");
     }
 }
-    else if (strcmp(cmd, cmd55) == 0) {
+    else if (STRNCMP(cmd, "ls", 2) == 0) {
         vfs_list_directory(vfs_get_cwd_path());
     }
-    else if (strcmp(cmd, cmd15) == 0) {
+    else if (STRNCMP(cmd, "pwd", 3) == 0) {
         PRINT(WHITE, BLACK, "%s\n", vfs_get_cwd_path());
     }
-    else if (strcmp(cmd, cmd22) == 0) {
+    else if (STRNCMP(cmd, "syscalltest", 11) == 0) {
         test_syscall_interface();
     }
-    else if (strcmp(cmd, cmd23) == 0) {
+    else if (STRNCMP(cmd, "testbg", 6) == 0) {
         PRINT(GREEN, BLACK, "\n=== Testing Background Jobs ===\n");
         PRINT(WHITE, BLACK, "Test 1: echo test &\n");
         char test1[] = "echo Hello from background! &";
@@ -2406,8 +2098,8 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
 
         PRINT(GREEN, BLACK, "\nCheck with 'jobs' command\n");
     }
-    else if (strncmp(cmd, cmd5, 3) == 0) {
-        char* path = cmd + 3;
+    else if (STRNCMP(cmd, "ls", 2) == 0) {
+        char* path = cmd + 2;
         char fullpath[256];
         if (path[0] == '/') {
             strcpy_local(fullpath, path);
@@ -2428,7 +2120,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
         }
         vfs_list_directory(fullpath);
     }
-    else if (strncmp(cmd, cmd6, 4) == 0) {
+    else if (STRNCMP(cmd, "cat ", 4) == 0) {
         char* filename = cmd + 4;
         char fullpath[256];
         if (filename[0] == '/') {
@@ -2463,7 +2155,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             PRINT(YELLOW, BLACK, "File not found: %s\n", fullpath);
         }
     }
-    else if (strncmp(cmd, cmd7, 6) == 0) {
+    else if (STRNCMP(cmd, "cat ", 4) == 0) {
         char* filename = cmd + 6;
         char fullpath[256];
         if (filename[0] == '/') {
@@ -2489,7 +2181,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             PRINT(YELLOW, BLACK, "Failed to create file\n");
         }
     }
-    else if (strncmp(cmd, cmd8, 6) == 0) {
+    else if (STRNCMP(cmd, "mkdir ", 6) == 0) {
         char* dirname = cmd + 6;
         char fullpath[256];
         if (dirname[0] == '/') {
@@ -2515,7 +2207,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             PRINT(YELLOW, BLACK, "Failed to create directory\n");
         }
     }
-    else if (strncmp(cmd, cmd9, 3) == 0) {
+    else if (STRNCMP(cmd, "rm ", 3) == 0) {
         char* path = cmd + 3;
         char fullpath[256];
         if (path[0] == '/') {
@@ -2541,7 +2233,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             PRINT(YELLOW, BLACK, "Failed to remove: %s\n", fullpath);
         }
     }
-    else if (strncmp(cmd, cmd10, 6) == 0) {
+    else if (STRNCMP(cmd, "write ", 6) == 0) {
         char* rest = cmd + 6;
         char filename[256];
         char content[512];
@@ -2596,7 +2288,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             }
         }
     }
-    else if (strcmp(cmd, cmd11) == 0) {
+    else if (STRNCMP(cmd, "statfs", 6) == 0) {
         fs_stats_t stats;
         char path[] = "/";
         if (vfs_statfs(path, &stats) == 0) {
@@ -2615,7 +2307,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
             PRINT(YELLOW, BLACK, "Cannot get filesystem stats\n");
         }
     }
-    else if (strcmp(cmd, cmd13) == 0) {
+    else if (STRNCMP(cmd, "wipe", 4) == 0) {
         PRINT(YELLOW, BLACK, "DISK HAS BEEN WIPED!\n");
         PRINT(WHITE, BLACK, "Unmounting filesystem...\n");
         vfs_node_t *root = vfs_get_root();
@@ -2638,13 +2330,13 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
         }
         PRINT(GREEN, BLACK, "Format complete - filesystem remounted\n");
     }
-    else if (strcmp(cmd, cmd144) == 0) {
+    else if (STRNCMP(cmd, "pwd", 3) == 0) {
         char root[] = "/";
         if (vfs_chdir(root) == 0) {
             PRINT(GREEN, BLACK, "%s\n", vfs_get_cwd_path());
         }
     }
-    else if (strncmp(cmd, cmd14, 3) == 0) {
+    else if (STRNCMP(cmd, "cd ", 3) == 0) {
         char* dir_arg = cmd + 3;
         char dir[256];
         int i = 0;
@@ -2664,9 +2356,9 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
                 PRINT(GREEN, BLACK, "%s\n", vfs_get_cwd_path());
             }
         }
-    } else if (strncmp(cmd, cmd24, 9) == 0) {
+    } else if (STRNCMP(cmd, "help", 4) == 0) {
         return;
-    } else if (strncmp(cmd, cmd25, 4) == 0) {
+    } else if (STRNCMP(cmd, "rps", 3) == 0) {
         PRINT(YELLOW, BLACK, "Pick: Rock, Paper, or Scissors? (you're going to lose btw)\n");
         play_rps();
 }
@@ -2692,7 +2384,7 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
    else if (STRNCMP(cmd, "elftest", 8) == 0) {
        shell_command_elftest();
    }
-else if (strncmp(cmd, "ASM ", 4) == 0) {
+else if (STRNCMP(cmd, "ASM ", 4) == 0) {
     char *rest = cmd + 4;
     char filename[256];
 
@@ -2795,14 +2487,14 @@ else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
     if (filename[0] == '\0') {
         PRINT(YELLOW, BLACK, "Usage: anthropic <filename>\n");
     } else {
-        // Clear any pending keyboard input before entering editor
+
         scancode_read_pos = scancode_write_pos;
         input_pos = 0;
         input_ready = 0;
-        
+
         anthropic_editor(filename);
 
-        // After returning from editor, print prompt again
+
         PRINT(GREEN, BLACK, "\n%s> ", vfs_get_cwd_path());
     }
 }
@@ -2905,17 +2597,11 @@ else if (STRNCMP(cmd, "httptest", 8) == 0) {
     } else if (STRNCMP(cmd, "schedinfo", 9) == 0) {
     cmd_schedinfo();
 }
-else if (STRNCMP(cmd, "threaddebug", 11) == 0) {
-    cmd_threaddebug();
-}
-else if (STRNCMP(cmd, "schedtest", 9) == 0) {
-    cmd_schedtest();
-} 
 else if (STRNCMP(cmd, "schedstart", 10) == 0) {
     cmd_schedstart();
-} 
+}
 
-// Add to process_command():
+
 else if (STRNCMP(cmd, "jobupdate", 9) == 0) {
     cmd_jobupdate();
 } else if (STRNCMP(cmd, "syscheck", 8) == 0) {
@@ -2937,14 +2623,14 @@ void run_text_demo(void) {
     int cursor_visible = 1;
     int cursor_timer = 0;
     int job_update_counter = 0;
-   
+
     while (1) {
         uint8_t mask = inb(0x21);
         if (mask & 0x02) {
             mask &= ~0x02;
             outb(0x21, mask);
         }
-        
+
         if (inb(0x64) & 0x01) {
             uint8_t scancode = inb(0x60);
             scancode_buffer[scancode_write_pos++] = scancode;
@@ -2953,13 +2639,13 @@ void run_text_demo(void) {
         cursor_timer++;
         e1000_interrupt_handler();
         process_keyboard_buffer();
-        
+
         job_update_counter++;
         if (job_update_counter >= 100) {
             job_update_counter = 0;
             update_jobs();
         }
-        
+
         if (input_available()) {
             char* input = get_input_and_reset();
             process_command(input);
@@ -2972,8 +2658,8 @@ void run_text_demo(void) {
             draw_cursor(cursor_visible);
         }
 
-        thread_yield(); 
-        
+        thread_yield();
+
         for (volatile int i = 0; i < 4000; i++);
     }
 }
@@ -2981,94 +2667,13 @@ void run_text_demo(void) {
 void init_shell(void) {
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
-    
-    // Initialize auto-scroll system
+
+
     auto_scroll_init();
-    
+
     run_text_demo();
 }
 
-void test_syscall_interface(void) {
-    PRINT(GREEN, BLACK, "\n=== Testing Syscall Interface ===\n");
-    PRINT(WHITE, BLACK, "[TEST] Calling sys_getpid...\n");
-    int64_t pid = sys_getpid();
-    PRINT(GREEN, BLACK, "[TEST] PID = %lld\n", pid);
-
-    PRINT(WHITE, BLACK, "[TEST] Calling sys_uptime...\n");
-    int64_t uptime = sys_uptime();
-    PRINT(GREEN, BLACK, "[TEST] Uptime = %lld seconds\n", uptime);
-
-    PRINT(WHITE, BLACK, "[TEST] Calling sys_getcwd...\n");
-    char cwd[256];
-    sys_getcwd(cwd, 256);
-    PRINT(GREEN, BLACK, "[TEST] CWD = %s\n", cwd);
-
-    PRINT(WHITE, BLACK, "[TEST] Testing sys_mkdir...\n");
-    char t1[] = "/syscall_test";
-    int ret = sys_mkdir(t1, FILE_READ | FILE_WRITE);
-    if (ret == 0) {
-        PRINT(GREEN, BLACK, "[TEST] Created /syscall_test\n");
-    } else {
-        PRINT(YELLOW, BLACK, "[TEST] mkdir failed: %d\n", ret);
-    }
-
-    PRINT(WHITE, BLACK, "[TEST] Testing sys_open/write/close...\n");
-    char t2[] = "/test_syscall.txt";
-    int fd = sys_open(t2, FILE_WRITE, 0);
-    if (fd >= 0) {
-        char data[] = "Hello from syscall!\n";
-        int64_t written = sys_write(fd, data, sizeof(data) - 1);
-        PRINT(GREEN, BLACK, "[TEST] Wrote %lld bytes\n", written);
-        sys_close(fd);
-
-        char t3[] = "/test_syscall";
-        fd = sys_open(t3, FILE_READ, 0);
-        if (fd >= 0) {
-            char buf[64];
-            int64_t bytes = sys_read(fd, buf, 63);
-            if (bytes > 0) {
-                buf[bytes] = '\0';
-                PRINT(GREEN, BLACK, "[TEST] Read back: %s", buf);
-            }
-            sys_close(fd);
-        }
-    }
-
-    PRINT(GREEN, BLACK, "=== Syscall Tests Complete ===\n\n");
-}
-
-
-void switch_to_user_mode(void (*user_func)(void)) {
-    PRINT(WHITE, BLACK, "[SWITCH] Entering user mode...\n");
-
-    extern void* kmalloc(size_t size);
-    uint8_t *user_stack = (uint8_t*)kmalloc(16384);
-    uint64_t user_stack_top = (uint64_t)user_stack + 16384;
-
-    user_stack_top &= ~0xF;
-
-    PRINT(WHITE, BLACK, "[SWITCH] User stack at 0x%llx\n", user_stack_top);
-    PRINT(WHITE, BLACK, "[SWITCH] User function at 0x%llx\n", (uint64_t)user_func);
-
-    __asm__ volatile(
-        "cli\n"
-        "mov %0, %%rsp\n"
-        "pushq $0x20 | 3\n"
-        "pushq %0\n"
-        "pushfq\n"
-        "pop %%rax\n"
-        "or $0x200, %%rax\n"
-        "push %%rax\n"
-        "pushq $0x18 | 3\n"
-        "pushq %1\n"
-        "iretq\n"
-        :
-        : "r"(user_stack_top), "r"((uint64_t)user_func)
-        : "memory", "rax"
-    );
-
-    PRINT(YELLOW, BLACK, "[ERROR] Failed to switch to user mode\n");
-}
 
 int fibonacci_rng() {
     static int a = 0;

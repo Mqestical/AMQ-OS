@@ -107,21 +107,21 @@ void irq_common_handler(int irq_num) {
 
 
 
-// And your timer handler in irq.c should be:
+
 void timer_handler_c(void) {
     timer_ticks++;
-    
-    // Call scheduler from scheduler.c
+
+
     extern int get_scheduler_enabled(void);
     if (get_scheduler_enabled()) {
         extern void scheduler_tick(void);
         scheduler_tick();
     }
-    
-    // Update jobs (safe version for interrupt context)
+
+
     extern void update_jobs_safe(void);
     update_jobs_safe();
-    
+
     outb(0x20, 0x20);
 }
 
@@ -199,9 +199,9 @@ void timer_handler_asm(void) {
         "push %r13\n"
         "push %r14\n"
         "push %r15\n"
-        
+
         "call timer_handler_c\n"
-        
+
         "pop %r15\n"
         "pop %r14\n"
         "pop %r13\n"

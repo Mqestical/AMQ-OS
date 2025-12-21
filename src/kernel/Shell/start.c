@@ -16,7 +16,6 @@
 #include "process.h"
 #include "irq.h"
 #include "fg.h"
-#include "syscall.h"
 #include "string_helpers.h"
 #include "mouse.h"
 #include "gdt.h"
@@ -37,87 +36,6 @@ static inline void enable_io_privilege(void) {
     );
 }
 
-void debug_gdt(void) {
-    struct {
-        uint16_t limit;
-        uint64_t base;
-    } __attribute__((packed)) gdtr;
-    
-    __asm__ volatile("sgdt %0" : "=m"(gdtr));
-    
-    PRINT(CYAN, BLACK, "[GDT] Base: 0x");
-    print_unsigned(gdtr.base, 16);
-    PRINT(CYAN, BLACK, " Limit: 0x");
-    print_unsigned(gdtr.limit, 16);
-    printc('\n');
-}
-
-void debug_idt(void) {
-    struct {
-        uint16_t limit;
-        uint64_t base;
-    } __attribute__((packed)) idtr;
-    
-    __asm__ volatile("sidt %0" : "=m"(idtr));
-    
-    PRINT(CYAN, BLACK, "[IDT] Base: 0x");
-    print_unsigned(idtr.base, 16);
-    PRINT(CYAN, BLACK, " Limit: 0x");
-    print_unsigned(idtr.limit, 16);
-    printc('\n');
-}
-
-void debug_tss(void) {
-    uint16_t tr;
-    __asm__ volatile("str %0" : "=r"(tr));
-    
-    PRINT(CYAN, BLACK, "[TSS] TR register: 0x");
-    print_unsigned(tr, 16);
-    printc('\n');
-}
-
-void debug_segments(void) {
-    uint16_t cs, ds, es, fs, gs, ss;
-    
-    __asm__ volatile("mov %%cs, %0" : "=r"(cs));
-    __asm__ volatile("mov %%ds, %0" : "=r"(ds));
-    __asm__ volatile("mov %%es, %0" : "=r"(es));
-    __asm__ volatile("mov %%fs, %0" : "=r"(fs));
-    __asm__ volatile("mov %%gs, %0" : "=r"(gs));
-    __asm__ volatile("mov %%ss, %0" : "=r"(ss));
-    
-    PRINT(GREEN, BLACK, "[SEG] CS=0x");
-    print_unsigned(cs, 16);
-    PRINT(GREEN, BLACK, " DS=0x");
-    print_unsigned(ds, 16);
-    PRINT(GREEN, BLACK, " SS=0x");
-    print_unsigned(ss, 16);
-    printc('\n');
-}
-
-// External GDT access
-extern struct gdt_entry* get_gdt(void);
-
-void dump_gdt_entries(void) {
-    struct gdt_entry *gdt = get_gdt();
-    
-    // Dump entries 0-6 (NULL, KCode, KData, UCode, UData, TSS_low, TSS_high)
-    for (int i = 0; i < 7; i++) {
-        struct gdt_entry *entry = &gdt[i];
-        uint32_t base = entry->base_low | (entry->base_middle << 16) | (entry->base_high << 24);
-        uint32_t limit = entry->limit_low | ((entry->granularity & 0x0F) << 16);
-        
-        PRINT(WHITE, BLACK, "[GDT] Entry ");
-        print_unsigned(i, 10);
-        PRINT(WHITE, BLACK, ": Base=0x");
-        print_unsigned(base, 16);
-        PRINT(WHITE, BLACK, " Limit=0x");
-        print_unsigned(limit, 16);
-        PRINT(WHITE, BLACK, " Access=0x");
-        print_unsigned(entry->access, 16);
-        printc('\n');
-    }
-}
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     InitializeLib(ImageHandle, SystemTable);
@@ -170,28 +88,22 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     PRINT(GREEN, BLACK, "[OK] Stack: base=0x%llx, top=0x%llx\n",
           kernel_stack_base, kernel_stack_top);
 
-    // Initialize GDT first
+
     gdt_init();
     PRINT(GREEN, BLACK, "[OK] GDT initialized\n");
 
-    // Initialize TSS (adds to GDT)
+
     tss_init();
     PRINT(GREEN, BLACK, "[OK] TSS initialized\n");
 
-    // Remap PIC
+
     pic_remap();
     PRINT(GREEN, BLACK, "[OK] PIC remapped\n");
 
-    // Initialize IDT
+
     idt_install();
     PRINT(GREEN, BLACK, "[OK] IDT installed\n");
 
-    PRINT(WHITE, BLACK, "\n[INIT] Initializing syscall interface...\n");
-
-    syscall_init();
-    syscall_register_all();
-
-    PRINT(GREEN, BLACK, "[OK] Syscalls ready\n");
 
     serial_init(COM1);
     PRINT(GREEN, BLACK, "[OK] Serial initialized\n");
@@ -273,7 +185,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     PRINT(WHITE, BLACK, "\n[INIT] Initializing processes...\n");
     process_init();
     PRINT(GREEN, BLACK, "[OK] Process table initialized\n");
-    
+
     PRINT(WHITE, BLACK, "\n[INIT] Initializing scheduler...\n");
     scheduler_init();
     PRINT(GREEN, BLACK, "[OK] Scheduler initialized (DISABLED)\n");
@@ -288,7 +200,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     init_kernel_threads();
     PRINT(GREEN, BLACK, "[OK] Kernel threads created\n");
 
-    // Create shell as a thread
+
 PRINT(WHITE, BLACK, "\n[INIT] Starting shell as thread...\n");
 process_t *init_proc = get_process(1);
 if (!init_proc) {
@@ -301,7 +213,7 @@ extern void shell_thread_entry(void);
 int shell_tid = thread_create(
     init_proc->pid,
     shell_thread_entry,
-    131072,  // 128KB stack for shell
+    131072,
     50000000,
     1000000000,
     1000000000
@@ -317,16 +229,7 @@ if (shell_tid < 0) {
     PRINT(GREEN, BLACK, "[OK] Scheduler ENABLED\n");
 
     ClearScreen(BLACK);
-    
-    PRINT(CYAN, BLACK, "\n=== SYSTEM DIAGNOSTIC ===\n");
-    debug_gdt();
-    debug_idt();
-    debug_tss();
-    debug_segments();
-    printc('\n');
-    dump_gdt_entries();
-    PRINT(CYAN, BLACK, "=========================\n\n");
-    
+
     PRINT(GREEN, BLACK, "=== Boot Complete ===\n");
 
     jobs_set_active(1);
@@ -337,11 +240,11 @@ if (shell_tid < 0) {
     PRINT(GREEN, BLACK, "[OK] Shell thread created (TID=%d)\n", shell_tid);
     PRINT(GREEN, BLACK, "\n=== Boot Complete ===\n");
 
-    // **FIX: Explicitly start first thread**
+
     PRINT(YELLOW, BLACK, "[INIT] Starting first thread...\n");
-    schedule();  // <-- ADD THIS LINE
-    
-    // Should never reach here if schedule() works
+    schedule();
+
+
     PRINT(RED, BLACK, "[FATAL] Returned from schedule()!\n");
     while(1) __asm__ volatile("hlt");
 

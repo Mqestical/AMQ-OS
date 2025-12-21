@@ -3,14 +3,14 @@
 #include "print.h"
 #include "string_helpers.h"
 
-// Global process table
+
 process_t process_table[MAX_PROCESSES];
 
 static uint32_t next_pid = 1;
 
-// ============================================================================
-// PROCESS INITIALIZATION
-// ============================================================================
+
+
+
 
 void process_init(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -32,9 +32,9 @@ void process_init(void) {
     PRINT(MAGENTA, BLACK, "[PROCESS] Process management initialized\n");
 }
 
-// ============================================================================
-// PROCESS MANAGEMENT
-// ============================================================================
+
+
+
 
 static int find_free_process(void) {
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -81,9 +81,9 @@ process_t* get_process(uint32_t pid) {
     return NULL;
 }
 
-// ============================================================================
-// PROCESS TABLE DISPLAY
-// ============================================================================
+
+
+
 
 void print_process_table(void) {
     PRINT(WHITE, BLACK, "\n=== Process Table ===\n");

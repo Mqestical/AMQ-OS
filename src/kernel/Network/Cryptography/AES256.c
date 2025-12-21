@@ -2,7 +2,7 @@
 #include "AES256.h"
 #include "string_helpers.h"
 
-// AES S-box
+
 static const uint8_t sbox[256] = {
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
     0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -22,7 +22,7 @@ static const uint8_t sbox[256] = {
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 };
 
-// AES inverse S-box
+
 static const uint8_t inv_sbox[256] = {
     0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
     0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
@@ -42,12 +42,12 @@ static const uint8_t inv_sbox[256] = {
     0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
 };
 
-// Round constants
+
 static const uint8_t rcon[15] = {
     0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d
 };
 
-// Galois field multiplication
+
 static uint8_t gmul(uint8_t a, uint8_t b) {
     uint8_t p = 0;
     for (int i = 0; i < 8; i++) {
@@ -60,50 +60,50 @@ static uint8_t gmul(uint8_t a, uint8_t b) {
     return p;
 }
 
-// Key expansion
+
 void aes256_init(aes256_ctx_t *ctx, const uint8_t *key) {
     ctx->nr = AES256_ROUNDS;
-    int nk = 8;  // 256-bit key = 8 words
-    int nb = 4;  // 128-bit block = 4 words
-    
-    // Copy key
+    int nk = 8;
+    int nb = 4;
+
+
     for (int i = 0; i < nk; i++) {
         ctx->round_keys[i] = ((uint32_t)key[4*i] << 24) |
                              ((uint32_t)key[4*i+1] << 16) |
                              ((uint32_t)key[4*i+2] << 8) |
                              ((uint32_t)key[4*i+3]);
     }
-    
-    // Key expansion
+
+
     for (int i = nk; i < nb * (ctx->nr + 1); i++) {
         uint32_t temp = ctx->round_keys[i - 1];
-        
+
         if (i % nk == 0) {
-            // RotWord
+
             temp = (temp << 8) | (temp >> 24);
-            
-            // SubWord
+
+
             temp = ((uint32_t)sbox[(temp >> 24) & 0xFF] << 24) |
                    ((uint32_t)sbox[(temp >> 16) & 0xFF] << 16) |
                    ((uint32_t)sbox[(temp >> 8) & 0xFF] << 8) |
                    ((uint32_t)sbox[temp & 0xFF]);
-            
-            // XOR with Rcon
+
+
             temp ^= ((uint32_t)rcon[i/nk] << 24);
         }
         else if (i % nk == 4) {
-            // SubWord
+
             temp = ((uint32_t)sbox[(temp >> 24) & 0xFF] << 24) |
                    ((uint32_t)sbox[(temp >> 16) & 0xFF] << 16) |
                    ((uint32_t)sbox[(temp >> 8) & 0xFF] << 8) |
                    ((uint32_t)sbox[temp & 0xFF]);
         }
-        
+
         ctx->round_keys[i] = ctx->round_keys[i - nk] ^ temp;
     }
 }
 
-// SubBytes
+
 static void sub_bytes(uint8_t *state) {
     for (int i = 0; i < 16; i++) {
         state[i] = sbox[state[i]];
@@ -116,26 +116,26 @@ static void inv_sub_bytes(uint8_t *state) {
     }
 }
 
-// ShiftRows
+
 static void shift_rows(uint8_t *state) {
     uint8_t temp;
-    
-    // Row 1: shift left by 1
+
+
     temp = state[1];
     state[1] = state[5];
     state[5] = state[9];
     state[9] = state[13];
     state[13] = temp;
-    
-    // Row 2: shift left by 2
+
+
     temp = state[2];
     state[2] = state[10];
     state[10] = temp;
     temp = state[6];
     state[6] = state[14];
     state[14] = temp;
-    
-    // Row 3: shift left by 3 (or right by 1)
+
+
     temp = state[15];
     state[15] = state[11];
     state[11] = state[7];
@@ -145,23 +145,23 @@ static void shift_rows(uint8_t *state) {
 
 static void inv_shift_rows(uint8_t *state) {
     uint8_t temp;
-    
-    // Row 1: shift right by 1
+
+
     temp = state[13];
     state[13] = state[9];
     state[9] = state[5];
     state[5] = state[1];
     state[1] = temp;
-    
-    // Row 2: shift right by 2
+
+
     temp = state[2];
     state[2] = state[10];
     state[10] = temp;
     temp = state[6];
     state[6] = state[14];
     state[14] = temp;
-    
-    // Row 3: shift right by 3 (or left by 1)
+
+
     temp = state[3];
     state[3] = state[7];
     state[7] = state[11];
@@ -169,14 +169,14 @@ static void inv_shift_rows(uint8_t *state) {
     state[15] = temp;
 }
 
-// MixColumns
+
 static void mix_columns(uint8_t *state) {
     for (int i = 0; i < 4; i++) {
         uint8_t a0 = state[i];
         uint8_t a1 = state[i + 4];
         uint8_t a2 = state[i + 8];
         uint8_t a3 = state[i + 12];
-        
+
         state[i] = gmul(a0, 2) ^ gmul(a1, 3) ^ a2 ^ a3;
         state[i + 4] = a0 ^ gmul(a1, 2) ^ gmul(a2, 3) ^ a3;
         state[i + 8] = a0 ^ a1 ^ gmul(a2, 2) ^ gmul(a3, 3);
@@ -190,7 +190,7 @@ static void inv_mix_columns(uint8_t *state) {
         uint8_t a1 = state[i + 4];
         uint8_t a2 = state[i + 8];
         uint8_t a3 = state[i + 12];
-        
+
         state[i] = gmul(a0, 14) ^ gmul(a1, 11) ^ gmul(a2, 13) ^ gmul(a3, 9);
         state[i + 4] = gmul(a0, 9) ^ gmul(a1, 14) ^ gmul(a2, 11) ^ gmul(a3, 13);
         state[i + 8] = gmul(a0, 13) ^ gmul(a1, 9) ^ gmul(a2, 14) ^ gmul(a3, 11);
@@ -198,7 +198,7 @@ static void inv_mix_columns(uint8_t *state) {
     }
 }
 
-// AddRoundKey
+
 static void add_round_key(uint8_t *state, const uint32_t *key) {
     for (int i = 0; i < 4; i++) {
         state[i] ^= (key[i] >> 24) & 0xFF;
@@ -210,29 +210,29 @@ static void add_round_key(uint8_t *state, const uint32_t *key) {
 
 void aes256_encrypt_block(aes256_ctx_t *ctx, const uint8_t *in, uint8_t *out) {
     uint8_t state[16];
-    
-    // Copy input to state
+
+
     for (int i = 0; i < 16; i++) {
         state[i] = in[i];
     }
-    
-    // Initial round
+
+
     add_round_key(state, &ctx->round_keys[0]);
-    
-    // Main rounds
+
+
     for (int round = 1; round < ctx->nr; round++) {
         sub_bytes(state);
         shift_rows(state);
         mix_columns(state);
         add_round_key(state, &ctx->round_keys[round * 4]);
     }
-    
-    // Final round (no MixColumns)
+
+
     sub_bytes(state);
     shift_rows(state);
     add_round_key(state, &ctx->round_keys[ctx->nr * 4]);
-    
-    // Copy state to output
+
+
     for (int i = 0; i < 16; i++) {
         out[i] = state[i];
     }
@@ -240,29 +240,29 @@ void aes256_encrypt_block(aes256_ctx_t *ctx, const uint8_t *in, uint8_t *out) {
 
 void aes256_decrypt_block(aes256_ctx_t *ctx, const uint8_t *in, uint8_t *out) {
     uint8_t state[16];
-    
-    // Copy input to state
+
+
     for (int i = 0; i < 16; i++) {
         state[i] = in[i];
     }
-    
-    // Initial round
+
+
     add_round_key(state, &ctx->round_keys[ctx->nr * 4]);
-    
-    // Main rounds
+
+
     for (int round = ctx->nr - 1; round > 0; round--) {
         inv_shift_rows(state);
         inv_sub_bytes(state);
         add_round_key(state, &ctx->round_keys[round * 4]);
         inv_mix_columns(state);
     }
-    
-    // Final round (no InvMixColumns)
+
+
     inv_shift_rows(state);
     inv_sub_bytes(state);
     add_round_key(state, &ctx->round_keys[0]);
-    
-    // Copy state to output
+
+
     for (int i = 0; i < 16; i++) {
         out[i] = state[i];
     }
@@ -272,23 +272,23 @@ void aes256_cbc_encrypt(aes256_ctx_t *ctx, const uint8_t *iv,
                         const uint8_t *in, uint8_t *out, size_t len) {
     uint8_t block[AES256_BLOCK_SIZE];
     uint8_t prev[AES256_BLOCK_SIZE];
-    
-    // Initialize with IV
+
+
     for (int i = 0; i < AES256_BLOCK_SIZE; i++) {
         prev[i] = iv[i];
     }
-    
-    // Process blocks
+
+
     for (size_t i = 0; i < len; i += AES256_BLOCK_SIZE) {
-        // XOR with previous ciphertext
+
         for (int j = 0; j < AES256_BLOCK_SIZE; j++) {
             block[j] = in[i + j] ^ prev[j];
         }
-        
-        // Encrypt
+
+
         aes256_encrypt_block(ctx, block, &out[i]);
-        
-        // Save ciphertext for next block
+
+
         for (int j = 0; j < AES256_BLOCK_SIZE; j++) {
             prev[j] = out[i + j];
         }
@@ -299,23 +299,23 @@ void aes256_cbc_decrypt(aes256_ctx_t *ctx, const uint8_t *iv,
                         const uint8_t *in, uint8_t *out, size_t len) {
     uint8_t block[AES256_BLOCK_SIZE];
     uint8_t prev[AES256_BLOCK_SIZE];
-    
-    // Initialize with IV
+
+
     for (int i = 0; i < AES256_BLOCK_SIZE; i++) {
         prev[i] = iv[i];
     }
-    
-    // Process blocks
+
+
     for (size_t i = 0; i < len; i += AES256_BLOCK_SIZE) {
-        // Decrypt
+
         aes256_decrypt_block(ctx, &in[i], block);
-        
-        // XOR with previous ciphertext
+
+
         for (int j = 0; j < AES256_BLOCK_SIZE; j++) {
             out[i + j] = block[j] ^ prev[j];
         }
-        
-        // Save ciphertext for next block
+
+
         for (int j = 0; j < AES256_BLOCK_SIZE; j++) {
             prev[j] = in[i + j];
         }
@@ -326,28 +326,28 @@ void aes256_ctr(aes256_ctx_t *ctx, const uint8_t *nonce,
                 const uint8_t *in, uint8_t *out, size_t len) {
     uint8_t counter[AES256_BLOCK_SIZE];
     uint8_t keystream[AES256_BLOCK_SIZE];
-    
-    // Initialize counter with nonce
+
+
     for (int i = 0; i < AES256_BLOCK_SIZE; i++) {
         counter[i] = nonce[i];
     }
-    
+
     size_t offset = 0;
     while (offset < len) {
-        // Encrypt counter to get keystream
+
         aes256_encrypt_block(ctx, counter, keystream);
-        
-        // XOR with input
+
+
         size_t n = (len - offset < AES256_BLOCK_SIZE) ? (len - offset) : AES256_BLOCK_SIZE;
         for (size_t i = 0; i < n; i++) {
             out[offset + i] = in[offset + i] ^ keystream[i];
         }
-        
-        // Increment counter
+
+
         for (int i = AES256_BLOCK_SIZE - 1; i >= 0; i--) {
             if (++counter[i] != 0) break;
         }
-        
+
         offset += n;
     }
 }
@@ -355,24 +355,24 @@ void aes256_ctr(aes256_ctx_t *ctx, const uint8_t *nonce,
 size_t aes256_pad_pkcs7(uint8_t *data, size_t len, size_t max_len) {
     size_t pad = AES256_BLOCK_SIZE - (len % AES256_BLOCK_SIZE);
     if (len + pad > max_len) return 0;
-    
+
     for (size_t i = 0; i < pad; i++) {
         data[len + i] = (uint8_t)pad;
     }
-    
+
     return len + pad;
 }
 
 size_t aes256_unpad_pkcs7(const uint8_t *data, size_t len) {
     if (len == 0 || len % AES256_BLOCK_SIZE != 0) return 0;
-    
+
     uint8_t pad = data[len - 1];
     if (pad == 0 || pad > AES256_BLOCK_SIZE) return 0;
-    
-    // Verify padding
+
+
     for (size_t i = len - pad; i < len; i++) {
         if (data[i] != pad) return 0;
     }
-    
+
     return len - pad;
 }

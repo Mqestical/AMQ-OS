@@ -4,18 +4,18 @@
 static struct TSS64 tss;
 
 void tss_init(void) {
-    // Zero out the TSS
+
     for (int i = 0; i < sizeof(tss) / 8; i++) {
         ((uint64_t*)&tss)[i] = 0;
     }
 
-    // Set io_map_base to indicate no I/O permission bitmap
+
     tss.io_map_base = sizeof(struct TSS64);
 
-    // Install TSS into GDT
+
     gdt_set_tss(&tss);
 
-    // Load TSS selector into TR register
+
     tss_load();
 }
 

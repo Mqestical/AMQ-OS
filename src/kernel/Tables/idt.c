@@ -6,7 +6,7 @@
 #include "handler.h"
 #include "string_helpers.h"
 #include "keyboard.h"
-#include "gdt.h"  // Use shared GDT
+#include "gdt.h"
 
 #define IDT_ENTRIES 256
 
@@ -55,7 +55,7 @@ void idt_install() {
     idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
     idtp.base = (uint64_t)&idt;
 
-    // Clear IDT
+
     for(int i = 0; i < IDT_ENTRIES; i++) {
         idt[i].offset_low = 0;
         idt[i].selector = 0;
@@ -66,7 +66,7 @@ void idt_install() {
         idt[i].zero = 0;
     }
 
-    // Install exception handlers (0-31)
+
     idt_set_gate(0, (uint64_t)isr0, KERNEL_CS, 0x8E);
     idt_set_gate(1, (uint64_t)isr1, KERNEL_CS, 0x8E);
     idt_set_gate(2, (uint64_t)isr2, KERNEL_CS, 0x8E);
@@ -100,17 +100,17 @@ void idt_install() {
     idt_set_gate(30, (uint64_t)isr30, KERNEL_CS, 0x8E);
     idt_set_gate(31, (uint64_t)isr31, KERNEL_CS, 0x8E);
 
-    // Install generic handler for remaining vectors
+
     for(int i = 32; i < 256; i++) {
         idt_set_gate(i, (uint64_t)generic_handler, KERNEL_CS, 0x8E);
     }
 
-    // Install specific IRQ handlers
+
     extern void timer_handler_asm(void);
     idt_set_gate(32, (uint64_t)timer_handler_asm, KERNEL_CS, 0x8E);
     idt_set_gate(33, (uint64_t)keyboard_handler, KERNEL_CS, 0x8E);
 
-    // Load IDT
+
     __asm__ volatile("lidt %0" : : "m"(idtp));
 
     PRINT(MAGENTA, BLACK, "[IDT] IDT installed (256 entries)\n");

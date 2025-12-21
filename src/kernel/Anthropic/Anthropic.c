@@ -62,17 +62,17 @@ static void update_mouse_position_only(void) {
         int timeout = 100000;
         while ((inb(0x64) & 2) && timeout--);
         outb(0x64, 0xD4);
-        
+
         timeout = 100000;
         while ((inb(0x64) & 2) && timeout--);
         outb(0x60, 0xF4);
-        
+
         timeout = 100000;
         while (!(inb(0x64) & 1) && timeout--);
         if (inb(0x64) & 1) {
             inb(0x60);
         }
-        
+
         mouse_initialized = 1;
         packet_index = 0;
         internal_cursor_x = fb.width / 2;
@@ -82,7 +82,7 @@ static void update_mouse_position_only(void) {
     if (inb(0x64) & 0x01) {
         uint8_t status = inb(0x64);
         uint8_t data = inb(0x60);
-        
+
         if (status & 0x20) {
             packet[packet_index++] = data;
 
@@ -121,17 +121,17 @@ static void disable_mouse(void) {
     int timeout = 100000;
     while ((inb(0x64) & 2) && timeout--);
     outb(0x64, 0xD4);
-    
+
     timeout = 100000;
     while ((inb(0x64) & 2) && timeout--);
     outb(0x60, 0xF5);
-    
+
     timeout = 100000;
     while (!(inb(0x64) & 1) && timeout--);
     if (inb(0x64) & 1) {
         inb(0x60);
     }
-    
+
     timeout = 10000;
     while (timeout-- > 0 && (inb(0x64) & 0x01)) {
         inb(0x60);
@@ -338,9 +338,9 @@ static int editor_load_file(editor_state_t* ed) {
     return 0;
 }
 
-// WORKING SAVE METHOD - builds entire file in buffer then writes once
+
 static int editor_save_file(editor_state_t* ed) {
-    // Build full path
+
     char fullpath[256];
     if (ed->filename[0] == '/') {
         STRCPY(fullpath, ed->filename);
@@ -355,7 +355,7 @@ static int editor_save_file(editor_state_t* ed) {
         STRCAT(fullpath, ed->filename);
     }
 
-    // Allocate buffer for entire file
+
     uint8_t* buffer = (uint8_t*)kmalloc(MAX_LINES * MAX_LINE_LENGTH);
     if (!buffer) {
         PRINT(YELLOW, BLACK, "[EDITOR] Out of memory for save buffer\n");
@@ -364,16 +364,16 @@ static int editor_save_file(editor_state_t* ed) {
 
     int buffer_pos = 0;
 
-    // Convert all lines to buffer
+
     for (int i = 0; i < ed->line_count; i++) {
         int line_len = STRLEN(ed->lines[i]);
 
-        // Copy line content byte by byte
+
         for (int j = 0; j < line_len; j++) {
             buffer[buffer_pos++] = ed->lines[i][j];
         }
 
-        // Add newline after each line except the last
+
         if (i < ed->line_count - 1) {
             buffer[buffer_pos++] = '\n';
         }
@@ -381,7 +381,7 @@ static int editor_save_file(editor_state_t* ed) {
 
     PRINT(WHITE, BLACK, "[EDITOR] Converted %d lines to %d bytes\n", ed->line_count, buffer_pos);
 
-    // Delete old file and create new one
+
     vfs_unlink(fullpath);
     vfs_create(fullpath, FILE_READ | FILE_WRITE);
     int fd = vfs_open(fullpath, FILE_WRITE);
@@ -392,7 +392,7 @@ static int editor_save_file(editor_state_t* ed) {
         return -1;
     }
 
-    // Write entire buffer in ONE call
+
     int written = vfs_write(fd, buffer, buffer_pos);
     vfs_close(fd);
     kfree(buffer);
@@ -736,11 +736,11 @@ static void editor_handle_key(editor_state_t* ed, uint8_t scancode, int shift_he
 
     if (ch) {
         int len = STRLEN(ed->lines[ed->cursor_line]);
-        
+
         if (ed->cursor_col > len) {
             ed->cursor_col = len;
         }
-        
+
         if (len < MAX_LINE_LENGTH - 1) {
             for (int i = len; i > ed->cursor_col; i--) {
                 ed->lines[ed->cursor_line][i] = ed->lines[ed->cursor_line][i - 1];
@@ -935,17 +935,17 @@ void anthropic_editor(const char* filename) {
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
 
-    // CRITICAL: Disable mouse FIRST
+
     disable_mouse();
-    
-    // Delay to let mouse drain
+
+
     for (volatile int i = 0; i < 100000; i++);
 
-    // Clear buffers
+
     __asm__ volatile("cli");
     scancode_read_pos = 0;
     scancode_write_pos = 0;
-    
+
     for (int i = 0; i < 256; i++) {
         scancode_buffer[i] = 0;
     }
@@ -953,12 +953,12 @@ void anthropic_editor(const char* filename) {
 
     mouse_initialized = 0;
     mouse_button_state = 0;
-    
-    // Clear shell input buffer
+
+
     extern char input_buffer[];
     extern volatile int input_pos;
     extern volatile int input_ready;
-    
+
     input_pos = 0;
     input_ready = 0;
     input_buffer[0] = '\0';

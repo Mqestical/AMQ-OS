@@ -112,8 +112,8 @@ void printc(char c) {
     if (c == '\n') {
         cursor.x = 0;
         cursor.y += 8;
-        
-        // CHECK IF WE NEED TO SCROLL
+
+
         auto_scroll_check();
         return;
     }
@@ -133,7 +133,7 @@ void printc(char c) {
         return;
     }
 
-    // Line wrap
+
     if (cursor.x + 8 > fb.width) {
         cursor.x = 0;
         cursor.y += 8;

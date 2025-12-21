@@ -5,69 +5,69 @@
 #include "string_helpers.h"
 #include "TSS.h"
 
-// Thread table
+
 thread_t thread_table[MAX_THREADS_GLOBAL];
 
-// Scheduler state
+
 static thread_t *current_thread = NULL;
 static thread_t *idle_thread = NULL;
 static uint32_t next_tid = 1;
 static volatile int scheduler_enabled = 0;
 static volatile int in_scheduler = 0;
 
-// Simple ready queue
+
 static thread_t *ready_queue_head = NULL;
 static thread_t *ready_queue_tail = NULL;
 
-// Export scheduler state
+
 int get_scheduler_enabled(void) {
     return scheduler_enabled;
 }
 
 void debug_context_switch(void) {
     thread_t *current = get_current_thread();
-    
+
     if (!current) {
         PRINT(YELLOW, BLACK, "[DEBUG] No current thread\n");
         return;
     }
-    
+
     PRINT(CYAN, BLACK, "\n=== Context Switch Debug ===\n");
     PRINT(WHITE, BLACK, "Current thread: TID=%u\n", current->tid);
     PRINT(WHITE, BLACK, "  State: %d\n", current->state);
     PRINT(WHITE, BLACK, "  RSP: 0x%llx\n", current->context.rsp);
     PRINT(WHITE, BLACK, "  RIP: 0x%llx\n", current->context.rip);
     PRINT(WHITE, BLACK, "  Stack base: 0x%llx\n", (uint64_t)current->stack_base);
-    PRINT(WHITE, BLACK, "  Stack top:  0x%llx\n", 
+    PRINT(WHITE, BLACK, "  Stack top:  0x%llx\n",
           (uint64_t)current->stack_base + current->stack_size);
-    
-    // Verify RSP is in bounds
+
+
     uint64_t stack_start = (uint64_t)current->stack_base;
     uint64_t stack_end = stack_start + current->stack_size;
-    
+
     if (current->context.rsp >= stack_start && current->context.rsp < stack_end) {
         PRINT(GREEN, BLACK, "  RSP within stack\n");
     } else {
         PRINT(RED, BLACK, "RSP OUTSIDE STACK!\n");
     }
-    
-    // Check next thread
+
+
     if (ready_queue_head) {
         thread_t *next = ready_queue_head;
         PRINT(WHITE, BLACK, "\nNext thread: TID=%u\n", next->tid);
         PRINT(WHITE, BLACK, "  RSP: 0x%llx\n", next->context.rsp);
         PRINT(WHITE, BLACK, "  RIP: 0x%llx\n", next->context.rip);
-        
+
         stack_start = (uint64_t)next->stack_base;
         stack_end = stack_start + next->stack_size;
-        
+
         if (next->context.rsp >= stack_start && next->context.rsp < stack_end) {
             PRINT(GREEN, BLACK, "  RSP within stack\n");
         } else {
             PRINT(RED, BLACK, " â€” RSP OUTSIDE STACK!\n");
         }
-        
-        // Dump what's at the RSP
+
+
         PRINT(WHITE, BLACK, "\n  Stack at RSP:\n");
         uint64_t *sp = (uint64_t*)next->context.rsp;
         for (int i = 0; i < 8; i++) {
@@ -77,7 +77,7 @@ void debug_context_switch(void) {
 }
 
 void scheduler_init(void) {
-    // Zero out thread table
+
     for (int i = 0; i < MAX_THREADS_GLOBAL; i++) {
         thread_table[i].used = 0;
         thread_table[i].tid = 0;
@@ -104,8 +104,8 @@ void scheduler_init(void) {
 void scheduler_enable(void) {
     scheduler_enabled = 1;
     PRINT(MAGENTA, BLACK, "[SCHED] Scheduler ENABLED\n");
-    
-    // CRITICAL: If we have ready threads but no current thread, start one NOW
+
+
     if (!current_thread && ready_queue_head) {
         PRINT(YELLOW, BLACK, "[SCHED] No current thread, forcing initial schedule...\n");
         schedule();
@@ -128,9 +128,9 @@ static int find_free_thread_slot(void) {
 
 void ready_queue_add(thread_t *thread) {
     if (!thread) return;
-    
+
     thread->next = NULL;
-    
+
     if (!ready_queue_head) {
         ready_queue_head = thread;
         ready_queue_tail = thread;
@@ -142,7 +142,7 @@ void ready_queue_add(thread_t *thread) {
 
 void ready_queue_remove(thread_t *thread) {
     if (!thread || !ready_queue_head) return;
-    
+
     if (ready_queue_head == thread) {
         ready_queue_head = thread->next;
         if (ready_queue_tail == thread) {
@@ -151,7 +151,7 @@ void ready_queue_remove(thread_t *thread) {
         thread->next = NULL;
         return;
     }
-    
+
     thread_t *current = ready_queue_head;
     while (current->next) {
         if (current->next == thread) {
@@ -167,7 +167,7 @@ void ready_queue_remove(thread_t *thread) {
 }
 
 static void thread_wrapper(void) {
-    // Ensure segments are valid
+
     __asm__ volatile(
         "mov $0x10, %%rax\n"
         "mov %%rax, %%ds\n"
@@ -175,83 +175,83 @@ static void thread_wrapper(void) {
         "mov %%rax, %%ss\n"
         ::: "rax", "memory"
     );
-    
+
     thread_t *current = current_thread;
-    
+
     if (!current) {
         PRINT(YELLOW, BLACK, "[THREAD] No current thread in wrapper!\n");
         while(1) __asm__ volatile("hlt");
     }
-    
+
     PRINT(GREEN, BLACK, "[THREAD] TID=%u started execution\n", current->tid);
-    
-    // Enable interrupts for this thread
+
+
     __asm__ volatile("sti");
-    
-    // FIX: Align stack to 16 bytes before calling entry
-    // The stack must be 16-byte aligned + 8 when we call
+
+
+
     __asm__ volatile(
-        "and $-16, %%rsp\n"  // Align to 16 bytes
-        "sub $8, %%rsp\n"    // Then subtract 8 (so after call pushes ret addr, it's aligned)
+        "and $-16, %%rsp\n"
+        "sub $8, %%rsp\n"
         ::: "rsp", "memory"
     );
-    
+
     void (*entry)(void) = (void (*)(void))current->entry_point;
     if (entry) {
         entry();
     }
-    
+
     PRINT(WHITE, BLACK, "[THREAD] TID=%u exited normally\n", current->tid);
     thread_exit();
 }
 
 static void setup_thread_context(thread_t *thread, void (*entry)(void)) {
-    // Clear context
+
     for (int i = 0; i < sizeof(cpu_context_t); i++) {
         ((uint8_t*)&thread->context)[i] = 0;
     }
-    
-    // Calculate aligned stack top
+
+
     uint64_t stack_top = (uint64_t)thread->stack_base + thread->stack_size;
-    stack_top &= ~0xFULL;  // 16-byte align
-    
-    // The stack layout must match what switch_to_thread expects:
-    // When switch_to_thread returns to this thread, it will:
-    //   1. popfq (restore flags)
-    //   2. pop rbx, rbp, r12, r13, r14, r15
-    //   3. ret (pop return address and jump)
-    //
-    // So we need to build the stack in REVERSE order:
-    
+    stack_top &= ~0xFULL;
+
+
+
+
+
+
+
+
+
     uint64_t *stack = (uint64_t*)stack_top;
-    
-    // Build stack from high to low addresses:
-    
-    stack--;  // Return address (popped LAST by ret)
+
+
+
+    stack--;
     *stack = (uint64_t)thread_wrapper;
-    
-    stack--;  // r15 (popped 7th)
+
+    stack--;
     *stack = 0;
-    
-    stack--;  // r14 (popped 6th)
+
+    stack--;
     *stack = 0;
-    
-    stack--;  // r13 (popped 5th)
+
+    stack--;
     *stack = 0;
-    
-    stack--;  // r12 (popped 4th)
+
+    stack--;
     *stack = 0;
-    
-    stack--;  // rbp (popped 3rd)
+
+    stack--;
     *stack = 0;
-    
-    stack--;  // rbx (popped 2nd)
+
+    stack--;
     *stack = 0;
-    
-    stack--;  // rflags (popped FIRST by popfq)
-    *stack = 0x202;  // Interrupts enabled, reserved bit
-    
-    // RSP now points to the rflags value
+
+    stack--;
+    *stack = 0x202;
+
+
     thread->context.rsp = (uint64_t)stack;
     thread->context.rip = (uint64_t)thread_wrapper;
     thread->context.rflags = 0x202;
@@ -261,45 +261,45 @@ static void setup_thread_context(thread_t *thread, void (*entry)(void)) {
 
 int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
                   uint64_t runtime, uint64_t deadline, uint64_t period) {
-    
+
     if (!entry_point) {
         PRINT(YELLOW, BLACK, "[THREAD] NULL entry point\n");
         return -1;
     }
-    
+
     process_t *proc = get_process(pid);
     if (!proc) {
         PRINT(YELLOW, BLACK, "[THREAD] Process %u not found\n", pid);
         return -1;
     }
-    
+
     if (proc->thread_count >= MAX_THREADS_PER_PROCESS) {
         PRINT(YELLOW, BLACK, "[THREAD] Max threads for process %u\n", pid);
         return -1;
     }
-    
+
     int slot = find_free_thread_slot();
     if (slot < 0) {
         PRINT(YELLOW, BLACK, "[THREAD] No free thread slots\n");
         return -1;
     }
-    
+
     thread_t *thread = &thread_table[slot];
-    
-    // Allocate stack
+
+
     thread->stack_size = stack_size;
     thread->stack_base = kmalloc(stack_size);
     if (!thread->stack_base) {
         PRINT(YELLOW, BLACK, "[THREAD] Stack allocation failed\n");
         return -1;
     }
-    
-    // Zero stack (for debugging)
+
+
     for (uint32_t i = 0; i < stack_size; i++) {
         ((uint8_t*)thread->stack_base)[i] = 0xCC;
     }
-    
-    // Initialize thread
+
+
     thread->tid = next_tid++;
     thread->parent = proc;
     thread->state = THREAD_STATE_READY;
@@ -307,34 +307,34 @@ int thread_create(uint32_t pid, void (*entry_point)(void), uint32_t stack_size,
     thread->next = NULL;
     thread->private_data = NULL;
     thread->entry_point = (uint64_t)entry_point;
-    
-    // Setup context
+
+
     setup_thread_context(thread, entry_point);
-    
-    // Scheduling parameters
+
+
     thread->sched.runtime = runtime;
     thread->sched.deadline = deadline;
     thread->sched.period = period;
     thread->sched.absolute_deadline = 0;
     thread->sched.remaining_runtime = runtime;
     thread->last_scheduled = 0;
-    
-    // Add to process
+
+
     proc->threads[proc->thread_count++] = thread;
-    
-    // Add to ready queue
+
+
     ready_queue_add(thread);
-    
-    PRINT(MAGENTA, BLACK, "[THREAD] Created TID=%u for PID=%u (entry=0x%llx)\n", 
+
+    PRINT(MAGENTA, BLACK, "[THREAD] Created TID=%u for PID=%u (entry=0x%llx)\n",
           thread->tid, proc->pid, thread->entry_point);
-    PRINT(CYAN, BLACK, "[THREAD] TID=%u added, ready_head=%u\n", 
+    PRINT(CYAN, BLACK, "[THREAD] TID=%u added, ready_head=%u\n",
       thread->tid, ready_queue_head ? ready_queue_head->tid : 0);
-    // CRITICAL: If scheduler is enabled and no current thread, start this one
+
     if (scheduler_enabled && !current_thread) {
         PRINT(YELLOW, BLACK, "[THREAD] Scheduler enabled, auto-starting first thread\n");
         schedule();
     }
-    
+
     return thread->tid;
 }
 
@@ -357,17 +357,17 @@ void thread_block(uint32_t tid) {
         PRINT(YELLOW, BLACK, "[THREAD] Block: TID=%u not found\n", tid);
         return;
     }
-    
+
     if (thread->state == THREAD_STATE_BLOCKED) {
-        return;  // Already blocked
+        return;
     }
-    
+
     thread->state = THREAD_STATE_BLOCKED;
     ready_queue_remove(thread);
-    
+
     PRINT(WHITE, BLACK, "[THREAD] Blocked TID=%u\n", tid);
-    
-    // If blocking current thread, schedule next
+
+
     if (thread == current_thread) {
         schedule();
     }
@@ -379,14 +379,14 @@ void thread_unblock(uint32_t tid) {
         PRINT(YELLOW, BLACK, "[THREAD] Unblock: TID=%u not found\n", tid);
         return;
     }
-    
+
     if (thread->state != THREAD_STATE_BLOCKED) {
-        return;  // Not blocked
+        return;
     }
-    
+
     thread->state = THREAD_STATE_READY;
     ready_queue_add(thread);
-    
+
     PRINT(WHITE, BLACK, "[THREAD] Unblocked TID=%u\n", tid);
 }
 
@@ -395,25 +395,25 @@ void thread_exit(void) {
         PRINT(YELLOW, BLACK, "[THREAD] Exit: no current thread\n");
         while(1) __asm__ volatile("hlt");
     }
-    
+
     uint32_t tid = current_thread->tid;
     PRINT(WHITE, BLACK, "[THREAD] Exiting TID=%u\n", tid);
-    
+
     current_thread->state = THREAD_STATE_TERMINATED;
     current_thread->used = 0;
-    
-    // Free stack
+
+
     if (current_thread->stack_base) {
         kfree(current_thread->stack_base);
         current_thread->stack_base = NULL;
     }
-    
-    // Remove from process
+
+
     process_t *proc = current_thread->parent;
     if (proc) {
         for (int i = 0; i < proc->thread_count; i++) {
             if (proc->threads[i] == current_thread) {
-                // Shift remaining threads
+
                 for (int j = i; j < proc->thread_count - 1; j++) {
                     proc->threads[j] = proc->threads[j + 1];
                 }
@@ -422,20 +422,20 @@ void thread_exit(void) {
                 break;
             }
         }
-        
-        // Mark process as terminated if no threads left
+
+
         if (proc->thread_count == 0) {
             proc->state = PROCESS_STATE_TERMINATED;
             PRINT(WHITE, BLACK, "[THREAD] Process %u terminated (no threads)\n", proc->pid);
         }
     }
-    
+
     current_thread = NULL;
-    
-    // Schedule next thread
+
+
     schedule();
-    
-    // Should never reach here
+
+
     PRINT(YELLOW, BLACK, "[FATAL] Thread exit returned!\n");
     while(1) __asm__ volatile("hlt");
 }
@@ -443,13 +443,13 @@ void thread_exit(void) {
 void thread_yield(void) {
     if (!scheduler_enabled) return;
     if (!current_thread) {
-        // No current thread but scheduler enabled? Try to start one
+
         if (ready_queue_head) {
             schedule();
         }
         return;
     }
-    
+
     schedule();
 }
 
@@ -459,61 +459,61 @@ void schedule(void) {
         PRINT(RED, BLACK, "[SCHED] SCHEDULER DISABLED!\n");
         return;
     }
-    
+
     if (in_scheduler) return;
     in_scheduler = 1;
-    
+
     thread_t *prev = current_thread;
-    
-    // Add current thread back to queue FIRST (if it's still runnable)
+
+
     if (prev && prev->state == THREAD_STATE_RUNNING) {
         prev->state = THREAD_STATE_READY;
         ready_queue_add(prev);
     }
-    
-    // Get next thread
+
+
     thread_t *next = ready_queue_head;
-    
-    // **FIX: If no ready threads, just return**
+
+
     if (!next) {
         PRINT(YELLOW, BLACK, "[SCHED] No ready threads - staying in current\n");
         in_scheduler = 0;
-        
-        // If current thread is blocked, we're deadlocked
+
+
         if (prev && prev->state == THREAD_STATE_BLOCKED) {
             PRINT(RED, BLACK, "[SCHED] DEADLOCK: Current blocked, no ready threads!\n");
             PRINT(YELLOW, BLACK, "[SCHED] System will halt until interrupt unblocks a thread\n");
-            
-            // Clear current so timer can wake us up
+
+
             current_thread = NULL;
-            
-            // Enable interrupts and halt
+
+
             __asm__ volatile("sti; hlt");
-            
-            // When we wake up, try scheduling again
+
+
             in_scheduler = 0;
             schedule();
         }
         return;
     }
-    
-    // Remove from ready queue
+
+
     ready_queue_head = next->next;
     if (ready_queue_tail == next) {
         ready_queue_tail = NULL;
     }
     next->next = NULL;
     next->state = THREAD_STATE_RUNNING;
-    
-    // SPECIAL CASE: First thread (no previous context)
+
+
     if (!prev) {
         current_thread = next;
         in_scheduler = 0;
-        
+
         PRINT(MAGENTA, BLACK, "[SCHED] Starting first thread TID=%u\n", next->tid);
-        
+
         uint64_t new_rsp = next->context.rsp;
-        
+
         __asm__ volatile(
             "mov %0, %%rsp\n"
             "mov $0x10, %%rax\n"
@@ -534,28 +534,28 @@ void schedule(void) {
             : "memory", "rax"
         );
     }
-    
-    // Same thread? Nothing to do
+
+
     if (prev == next) {
         in_scheduler = 0;
         return;
     }
-    
+
     current_thread = next;
     in_scheduler = 0;
-    
-    // Context switch
+
+
     switch_to_thread(&prev->context, &next->context);
     __asm__ volatile("sti");
 }
 void scheduler_tick(void) {
     if (!scheduler_enabled) return;
-    
-    // Don't interrupt scheduler
+
+
     if (in_scheduler) return;
-    
-    // ALWAYS schedule if we have ready threads
-    // This ensures blocked threads get switched out
+
+
+
     if (ready_queue_head) {
         schedule();
     }

@@ -2,25 +2,25 @@
 #include "print.h"
 #include "string_helpers.h"
 #include "sleep.h"
-// ============================================================================
-// IDLE THREAD
-// ============================================================================
 
-// In threads_init.c
+
+
+
+
 void idle_thread_entry(void) {
     PRINT(MAGENTA, BLACK, "[IDLE] Started\n");
     while (1) {
-        // Just yield CPU to other threads
+
         thread_yield();
-        
-        // Small busy loop so we don't yield TOO fast
+
+
         for (volatile int i = 0; i < 1000; i++);
     }
 }
 
-// ============================================================================
-// TEST THREAD
-// ============================================================================
+
+
+
 
 void test_thread_entry(void) {
     PRINT(YELLOW, BLACK, "[TEST] Thread started!\n");
@@ -39,14 +39,14 @@ void test_thread_entry(void) {
     }
 }
 
-// ============================================================================
-// KERNEL THREAD INITIALIZATION
-// ============================================================================
+
+
+
 
 void init_kernel_threads(void) {
     PRINT(MAGENTA, BLACK, "\n=== Initializing Kernel Threads ===\n");
 
-    // Create init process
+
     char initproc[] = "init";
     int init_pid = process_create(initproc, 0);
     if (init_pid < 0) {
@@ -56,29 +56,21 @@ void init_kernel_threads(void) {
 
     const uint32_t THREAD_STACK_SIZE = 65536;
 
-    // Create idle thread
+
     int idle_tid = thread_create(init_pid, idle_thread_entry,
-                                  THREAD_STACK_SIZE, 
-                                  10000000,    // runtime
-                                  1000000000,  // deadline
-                                  1000000000); // period
+                                  THREAD_STACK_SIZE,
+                                  10000000,
+                                  1000000000,
+                                  1000000000);
     if (idle_tid < 0) {
         PRINT(YELLOW, BLACK, "[ERROR] Failed to create idle thread\n");
         return;
     }
     PRINT(MAGENTA, BLACK, "[OK] Idle thread TID=%d\n", idle_tid);
 
-    // Create test thread
-   /* int test_tid = thread_create(init_pid, test_thread_entry,
-                                  THREAD_STACK_SIZE,
-                                  10000000,
-                                  1000000000,
-                                  1000000000);
-    if (test_tid < 0) {
-        PRINT(YELLOW, BLACK, "[ERROR] Failed to create test thread\n");
-        return;
-    }*/
-    //PRINT(MAGENTA, BLACK, "[OK] Test thread TID=%d\n", test_tid);
+
+
+
 
     PRINT(MAGENTA, BLACK, "[INFO] Created 2 kernel threads\n");
 }
