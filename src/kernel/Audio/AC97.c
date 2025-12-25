@@ -4,6 +4,7 @@
 #include "print.h"
 #include "string_helpers.h"
 #include "sleep.h"
+#include "process.h"
 
 #define PCI_CONFIG_ADDRESS  0xCF8
 #define PCI_CONFIG_DATA     0xCFC
@@ -305,13 +306,7 @@ static void ac97_setup_bd_list(ac97_stream_t *stream) {
         stream->bd_list[i].buffer_addr = stream->buffer_phys[i];
         stream->bd_list[i].length = samples;
 
-
-
-        if (i == AC97_BD_COUNT - 1) {
-            stream->bd_list[i].flags = AC97_BD_FLAG_IOC | AC97_BD_FLAG_BUP;
-        } else {
-            stream->bd_list[i].flags = AC97_BD_FLAG_IOC;
-        }
+        stream->bd_list[i].flags = AC97_BD_FLAG_IOC; 
     }
 }
 
@@ -1381,7 +1376,9 @@ void ac97_debug_playback(void) {
     PRINT(WHITE, BLACK, "Buffer has data: %s\n", has_data ? "YES" : "NO");
 
     PRINT(CYAN, BLACK, "===========================\n\n");
-}int audio_beep(uint32_t frequency, uint32_t duration_ms) {
+
+}
+int audio_beep(uint32_t frequency, uint32_t duration_ms) {
     if (!g_ac97_device || !g_ac97_device->initialized) {
         PRINT(YELLOW, BLACK, "[BEEP] Device not initialized\n");
         return -1;
@@ -1391,48 +1388,65 @@ void ac97_debug_playback(void) {
     print_unsigned(frequency, 10);
     PRINT(CYAN, BLACK, " Hz ===\n");
 
-
+    // Stop any existing playback
     if (g_ac97_device->playback_stream.running) {
         ac97_play_stop();
-
+        // Give hardware time to stop
+        for (volatile int i = 0; i < 100000; i++);
     }
 
-
+    // Reset DMA
     PRINT(WHITE, BLACK, "[BEEP] Resetting DMA...\n");
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RR);
+    for (volatile int i = 0; i < 10000; i++);  // Wait for reset
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
-    outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
+    outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);  // Clear status
 
-
+    // Initialize playback
     if (ac97_play_init(AC97_FORMAT_STEREO_16, AC97_RATE_48000) != 0) {
         PRINT(YELLOW, BLACK, "[BEEP] Init failed\n");
         return -1;
     }
 
     ac97_stream_t *stream = &g_ac97_device->playback_stream;
-
-
     outl(g_ac97_device->nabm_bar + AC97_PO_BDBAR, stream->bd_list_phys);
 
-
+    // Calculate how many samples we need
     const int sample_rate = 48000;
     const int samples_per_cycle = sample_rate / frequency;
     const int16_t amplitude = 20000;
-
-
     int total_samples = (sample_rate * duration_ms) / 1000;
+    
+    // Limit to what fits in our buffers
+    int max_samples = (AC97_BUFFER_SIZE / 4) * 2;  // 2 buffers, stereo 16-bit
+    if (total_samples > max_samples) {
+        total_samples = max_samples;
+    }
+
     int samples_written = 0;
 
+    // Fill buffers with beep waveform
     for (int buf = 0; buf < 2 && samples_written < total_samples; buf++) {
         int16_t *buffer = (int16_t*)stream->buffers[buf];
         int samples_in_buffer = AC97_BUFFER_SIZE / 4;
 
         for (int i = 0; i < samples_in_buffer && samples_written < total_samples; i++) {
+            // Generate square wave
             int16_t value = ((samples_written % samples_per_cycle) < (samples_per_cycle / 2))
                             ? amplitude : -amplitude;
-            buffer[i * 2] = value;
-            buffer[i * 2 + 1] = value;
+            buffer[i * 2] = value;      // Left channel
+            buffer[i * 2 + 1] = value;  // Right channel
             samples_written++;
+        }
+
+        // Zero out remaining samples in last buffer
+        if (samples_written >= total_samples) {
+            int remaining = samples_in_buffer - (samples_written % samples_in_buffer);
+            int start_idx = samples_written % samples_in_buffer;
+            for (int i = start_idx; i < samples_in_buffer; i++) {
+                buffer[i * 2] = 0;
+                buffer[i * 2 + 1] = 0;
+            }
         }
 
         PRINT(WHITE, BLACK, "[BEEP] Filled buffer ");
@@ -1440,49 +1454,61 @@ void ac97_debug_playback(void) {
         PRINT(WHITE, BLACK, "\n");
     }
 
-
-    int16_t *check = (int16_t*)stream->buffers[0];
-    PRINT(WHITE, BLACK, "[BEEP] First 4 samples: ");
-    for (int i = 0; i < 4; i++) {
-        if (check[i] >= 0) {
-            print_unsigned(check[i], 10);
-        } else {
-            PRINT(WHITE, BLACK, "-");
-            print_unsigned(-check[i], 10);
-        }
-        PRINT(WHITE, BLACK, " ");
+    // CRITICAL: Ensure BD list has NO BUP flags
+    for (int i = 0; i < 2; i++) {
+        stream->bd_list[i].flags = AC97_BD_FLAG_IOC;  // No BUP!
     }
-    PRINT(WHITE, BLACK, "\n");
 
+    // Calculate how many buffers we actually need
+    int buffers_needed = (samples_written + (AC97_BUFFER_SIZE / 4) - 1) / (AC97_BUFFER_SIZE / 4);
+    if (buffers_needed > 2) buffers_needed = 2;
+    if (buffers_needed == 0) buffers_needed = 1;
 
-    outb(g_ac97_device->nabm_bar + AC97_PO_LVI, 1);
-
-
+    // Set LVI to last buffer we filled
+    outb(g_ac97_device->nabm_bar + AC97_PO_LVI, buffers_needed - 1);
     outw(g_ac97_device->nabm_bar + AC97_PO_SR, 0x1E);
 
+    PRINT(WHITE, BLACK, "[BEEP] Using %d buffers\n", buffers_needed);
 
-
-    outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RPBM);
+    // Start playback (with interrupts enabled)
+    outb(g_ac97_device->nabm_bar + AC97_PO_CR, AC97_CR_RPBM | AC97_CR_IOCE);
     stream->running = 1;
 
     PRINT(MAGENTA, BLACK, "[BEEP] Playing...\n");
 
-
+    // Wait for completion with proper thread yielding
     extern volatile uint64_t timer_ticks;
-    uint64_t timeout = timer_ticks + duration_ms + 20;
-
-    while (timer_ticks < timeout) {
+    uint64_t start_time = timer_ticks;
+    uint64_t timeout_ticks = duration_ms + 100;  // Add 100ms safety margin
+    
+    int completed = 0;
+    while ((timer_ticks - start_time) < timeout_ticks) {
+        // Check if DMA has halted (playback complete)
         uint16_t sr = inw(g_ac97_device->nabm_bar + AC97_PO_SR);
-        if (sr & 0x01) {
-            PRINT(WHITE, BLACK, "[BEEP] Completed\n");
+        
+        if (sr & 0x01) {  // DCH bit set = DMA Controller Halted
+            PRINT(WHITE, BLACK, "[BEEP] Playback completed naturally\n");
+            completed = 1;
             break;
         }
-        __asm__ volatile("hlt");
+
+        // Yield to other threads
+        thread_yield();
+        
+        // Small busy delay to avoid yielding too aggressively
+        for (volatile int i = 0; i < 1000; i++);
     }
 
-
+    // Force stop DMA
     outb(g_ac97_device->nabm_bar + AC97_PO_CR, 0);
     stream->running = 0;
+
+    // Wait for hardware to actually stop
+    for (volatile int i = 0; i < 50000; i++);
+
+    if (!completed) {
+        PRINT(YELLOW, BLACK, "[BEEP] Timeout - forced stop\n");
+    }
 
     PRINT(MAGENTA, BLACK, "[BEEP] Done\n\n");
     return 0;
