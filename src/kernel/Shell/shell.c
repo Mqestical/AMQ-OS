@@ -34,6 +34,7 @@
 #include "IO.h"
 #define CURSOR_BLINK_RATE 50000
 
+extern void gui_thread_entry(void);
 void bg_command_thread(void);
 void bring_to_foreground(int job_id);
 void send_to_background(int job_id);
@@ -387,13 +388,13 @@ static uint32_t resolve_special_target(const char *target) {
         PRINT(YELLOW, BLACK, "  %d ISSUES FOUND\n", issues);
         PRINT(WHITE, BLACK, "\nRecommended actions:\n");
         if (get_scheduler_enabled() == 0) {
-            PRINT(WHITE, BLACK, "   Scheduler disabled - check start.c initialization\n");
+            PRINT(WHITE, BLACK, "   Scheduler disabled");
         }
         if (pic_mask & 0x01) {
             PRINT(WHITE, BLACK, "   Timer IRQ masked - interrupts won't fire\n");
         }
         if (running == 0 && ready > 0) {
-            PRINT(WHITE, BLACK, " Scheduler not running threads - check timer_handler_c\n");
+            PRINT(WHITE, BLACK, " Scheduler not running threads");
         }
     }
 }
@@ -918,7 +919,7 @@ void cmd_dhcp(void) {
     if (dhcp_get_ip() == 0) {
         PRINT(GREEN, BLACK, "\n Network configured!\n");
     } else {
-        PRINT(RED, BLACK, "\nâœ— DHCP failed\n");
+        PRINT(RED, BLACK, "\n DHCP failed\n");
     }
 }
 
@@ -2450,8 +2451,48 @@ else if (STRNCMP(cmd, "ASM ", 4) == 0) {
 }
 
 else if (STRNCMP(cmd, "gui", 3) == 0) {
-   extern void gui_main(void);
-   gui_main();
+    PRINT(CYAN, BLACK, "\n=== Starting GUI Thread ===\n");
+    
+    // Get the init process (PID 1)
+    process_t *proc = get_process(1);
+    if (!proc) {
+        PRINT(YELLOW, BLACK, "[ERROR] Init process not found\n");
+        return;
+    }
+    
+    // Create GUI thread
+    PRINT(WHITE, BLACK, "[GUI] Creating GUI thread...\n");
+    int tid = thread_create(
+        proc->pid,           // Parent process PID
+        gui_thread_entry,    // Entry point function
+        131072,              // Stack size: 128KB
+        50000000,            // Quantum (time slice)
+        1000000000,          // CPU time limit
+        1000000000           // IO time limit
+    );
+    
+    if (tid < 0) {
+        PRINT(YELLOW, BLACK, "[ERROR] Failed to create GUI thread\n");
+        PRINT(WHITE, BLACK, "Error code: %d\n", tid);
+        return;
+    }
+    
+    // Add as foreground job so we can track it
+    int job_id = add_fg_job("gui", proc->pid, tid);
+    
+    PRINT(GREEN, BLACK, "[GUI] GUI thread created successfully!\n");
+    PRINT(GREEN, BLACK, "      Thread ID: %d\n", tid);
+    PRINT(GREEN, BLACK, "      Job ID: %d\n", job_id);
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "GUI Controls:\n");
+    PRINT(WHITE, BLACK, "  - Press ESC to exit GUI and return to shell\n");
+    PRINT(WHITE, BLACK, "  - Use mouse to interact with desktop\n");
+    PRINT(WHITE, BLACK, "  - Right-click for context menu\n");
+    PRINT(WHITE, BLACK, "\n");
+    PRINT(WHITE, BLACK, "Shell Commands:\n");
+    PRINT(WHITE, BLACK, "  - Use 'jobs' to check GUI status\n");
+    PRINT(WHITE, BLACK, "  - Use 'fg %d' to bring GUI to foreground (if needed)\n", job_id);
+    PRINT(WHITE, BLACK, "\n");
 }
 
 else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
@@ -2660,21 +2701,30 @@ void run_text_demo(void) {
     int cursor_timer = 0;
     int job_update_counter = 0;
 
-    while (1) {
+      while (1) {
+        extern volatile int gui_owns_input;
+
         uint8_t mask = inb(0x21);
         if (mask & 0x02) {
             mask &= ~0x02;
             outb(0x21, mask);
         }
 
-        if (inb(0x64) & 0x01) {
-            uint8_t scancode = inb(0x60);
-            scancode_buffer[scancode_write_pos++] = scancode;
+        // Only read keyboard/mouse if GUI doesn't own input
+        if (!gui_owns_input) {
+            if (inb(0x64) & 0x01) {
+                uint8_t scancode = inb(0x60);
+                scancode_buffer[scancode_write_pos++] = scancode;
+            }
         }
 
         cursor_timer++;
         e1000_interrupt_handler();
-        process_keyboard_buffer();
+        
+        // Only process keyboard if GUI doesn't own input
+        if (!gui_owns_input) {
+            process_keyboard_buffer();
+        }
 
         job_update_counter++;
         if (job_update_counter >= 100) {
@@ -2682,7 +2732,8 @@ void run_text_demo(void) {
             update_jobs();
         }
 
-        if (input_available()) {
+        // Only check for input if GUI doesn't own input
+        if (!gui_owns_input && input_available()) {
             char* input = get_input_and_reset();
             process_command(input);
             PRINT(GREEN, BLACK, "%s> ", vfs_get_cwd_path());
@@ -2691,7 +2742,10 @@ void run_text_demo(void) {
         if (cursor_timer >= CURSOR_BLINK_RATE) {
             cursor_timer = 0;
             cursor_visible = !cursor_visible;
-            draw_cursor(cursor_visible);
+            // Only draw cursor if GUI doesn't own input
+            if (!gui_owns_input) {
+                draw_cursor(cursor_visible);
+            }
         }
 
         thread_yield();

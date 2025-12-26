@@ -3,6 +3,8 @@
 #include "desktop_icons.h"
 #include "string_helpers.h"
 #include "vfs.h"
+#include "process.h"
+#include "gui.h"
 #define WIDTH 1366
 #define HEIGHT 768
 #define TASKBAR_HEIGHT 48
@@ -21,6 +23,8 @@ static int saved_cx, saved_cy;
 static int last_button_state = 0;
 
 int isgui = 0;
+volatile int gui_owns_input = 0;
+
 desktop_state_t desktop;
 static void update_mouse_position_only(void);
 static void save_cursor_area(int x, int y);
@@ -41,6 +45,55 @@ typedef struct {
     int dragging;
     int drag_offset_x, drag_offset_y;
 } input_dialog_t;
+
+
+void gui_thread_entry(void) {
+    PRINT(GREEN, BLACK, "[GUI] Starting as thread\n");
+    
+    // Enable interrupts for this thread
+    __asm__ volatile("sti");
+    
+    // Check interrupt flag
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0" : "=r"(flags));
+    PRINT(WHITE, BLACK, "[GUI] RFLAGS = 0x%llx (IF=%d)\n", flags, !!(flags & 0x200));
+    
+    // Claim exclusive input ownership
+    gui_owns_input = 1;
+    
+    // Clear the input buffer before starting
+    __asm__ volatile("cli");
+    scancode_read_pos = 0;
+    scancode_write_pos = 0;
+    for (int i = 0; i < 256; i++) {
+        scancode_buffer[i] = 0;
+    }
+    __asm__ volatile("sti");
+    
+    PRINT(GREEN, BLACK, "[GUI] Input buffer claimed\n");
+    
+    // Run the GUI
+    gui_main();
+    
+    // Release input ownership
+    gui_owns_input = 0;
+    
+    // Clear buffer again for shell
+    __asm__ volatile("cli");
+    scancode_read_pos = 0;
+    scancode_write_pos = 0;
+    for (int i = 0; i < 256; i++) {
+        scancode_buffer[i] = 0;
+    }
+    __asm__ volatile("sti");
+    
+    PRINT(GREEN, BLACK, "[GUI] Input buffer released\n");
+    
+    // If GUI exits, clean up and exit thread
+    PRINT(GREEN, BLACK, "[GUI] Exiting\n");
+    thread_exit();
+}
+
 
 static void dialog_save_cursor_area(input_dialog_t* dialog, int x, int y) {
     for (int dy = 0; dy < 16 && (y + dy) < fb.height; dy++) {
@@ -411,11 +464,17 @@ static void update_mouse_position_only(void) {
         internal_cursor_y = fb.height / 2;
     }
 
+    // CRITICAL: Only read if GUI owns input
+    if (!gui_owns_input) {
+        return;
+    }
+
     if (inb(0x64) & 0x01) {
         uint8_t status = inb(0x64);
         uint8_t data = inb(0x60);
 
         if (status & 0x20) {
+            // Mouse data
             packet[packet_index++] = data;
 
             if (packet_index == 3) {
@@ -423,7 +482,7 @@ static void update_mouse_position_only(void) {
                 uint8_t b2 = packet[1];
                 uint8_t b3 = packet[2];
 
-                mouse_button_state = b1 & 0x03;  // Track both left (bit 0) and right (bit 1)
+                mouse_button_state = b1 & 0x03;
 
                 int delta_x = b2;
                 int delta_y = b3;
@@ -444,7 +503,10 @@ static void update_mouse_position_only(void) {
                 packet_index = 0;
             }
         } else {
-            scancode_buffer[scancode_write_pos++] = data;
+            // Keyboard data - store in buffer only if GUI owns input
+            if (gui_owns_input) {
+                scancode_buffer[scancode_write_pos++] = data;
+            }
         }
     }
 }
@@ -623,10 +685,11 @@ static void handle_context_menu_action(context_menu_item_t action, desktop_state
         default:
             break;
     }
-}
-void gui_main(void) {
+}void gui_main(void) {
     isgui = 1;
     uint32_t dark_cyan = 0x008B8B;
+    
+    // Clear screen except taskbar
     for (int y = 0; y < fb.height - TASKBAR_HEIGHT; y++) {
         for (int x = 0; x < fb.width; x++) {
             put_pixel(x, y, dark_cyan);
@@ -636,7 +699,6 @@ void gui_main(void) {
     SetCursorPos(0, 0);
     
     // Initialize desktop icons
-    
     desktop_init(&desktop);
     
     // Initialize context menu
@@ -646,7 +708,6 @@ void gui_main(void) {
     // Check if VFS root is available
     vfs_node_t *root = vfs_get_root();
     if (root != NULL) {
-        // Load icons from root directory
         char desktop_path[] = "/";
         if (desktop_load_directory(&desktop, desktop_path) >= 0) {
             desktop_sort_icons(&desktop);
@@ -709,14 +770,12 @@ void gui_main(void) {
                     handle_context_menu_action((context_menu_item_t)item, &desktop);
                 }
                 
-                // Hide menu after click (or if clicked outside)
                 context_menu_hide(&context_menu);
                 restore_cursor_area();
                 redraw_desktop(&desktop);
                 save_cursor_area(mx, my);
                 draw_cursor(mx, my);
             } else {
-                // Check if clicking on an icon
                 int icon_index = desktop_icon_at_position(&desktop, mx, my);
                 if (icon_index >= 0) {
                     desktop_select_icon(&desktop, icon_index);
@@ -733,14 +792,11 @@ void gui_main(void) {
         }
         
         if (right_click) {
-            // Check if right-clicking on empty space
             int icon_index = desktop_icon_at_position(&desktop, mx, my);
             
             if (icon_index < 0) {
-                // Right-clicked on empty desktop
                 context_menu_show(&context_menu, mx, my);
                 
-                // Make sure menu doesn't go off screen
                 if (context_menu.x + CONTEXT_MENU_WIDTH > fb.width) {
                     context_menu.x = fb.width - CONTEXT_MENU_WIDTH;
                 }
@@ -755,31 +811,37 @@ void gui_main(void) {
                 
                 PRINT(CYAN, BLACK, "[GUI] Context menu opened at (%d, %d)\n", mx, my);
             } else {
-                // Right-clicked on an icon (could implement icon-specific menu later)
                 PRINT(CYAN, BLACK, "[GUI] Right-clicked on icon: %s\n", desktop.icons[icon_index].name);
             }
         }
         
         last_button_state = mouse_button_state;
 
+        // Check for escape key to exit
         while (scancode_read_pos != scancode_write_pos) {
             uint8_t scancode = scancode_buffer[scancode_read_pos++];
             
             if (scancode == 0xE0) continue;
             if (scancode & 0x80) continue;
             
-            if (scancode == 0x01) {
+            if (scancode == 0x01) {  // ESC key
                 running = 0;
             }
         }
+        
+        // Yield to other threads
+        thread_yield();
+        
+        // Small delay
+        for (volatile int i = 0; i < 4000; i++);
     }
 
     restore_cursor_area();
-    
     disable_mouse();
     
     for (volatile int i = 0; i < 100000; i++);
     
+    // Clean up keyboard buffer
     __asm__ volatile("cli");
     scancode_read_pos = 0;
     scancode_write_pos = 0;
@@ -794,4 +856,6 @@ void gui_main(void) {
     
     ClearScreen(BLACK);
     SetCursorPos(0, 0);
+    
+    isgui = 0;
 }

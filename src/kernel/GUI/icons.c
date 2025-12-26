@@ -46,18 +46,24 @@ icon_type_t get_icon_type_from_name(const char *name, uint8_t is_directory) {
     }
     
     // Check file extensions
-    if (str_ends_with(name, ".elf") || str_ends_with(name, ".ELF")) {
+    char elf1[] = ".elf";
+    char elf2[] = ".ELF";
+    char asm1[] = ".asm";
+    char asm2[] = ".s";
+    char asm3[] = ".ASM";
+    char asm4[] = ".S";
+    char txt1[] = ".txt";
+    char txt2[] = ".TXT";
+    if (str_ends_with(name, elf1) || str_ends_with(name, elf2)) {
         return ICON_TYPE_FILE_ELF;
-    }
-    if (str_ends_with(name, ".asm") || str_ends_with(name, ".s") || 
-        str_ends_with(name, ".ASM") || str_ends_with(name, ".S")) {
+    } else if (str_ends_with(name, asm1) || str_ends_with(name, asm2) ||
+               str_ends_with(name, asm3) || str_ends_with(name, asm4)) {
         return ICON_TYPE_FILE_ASM;
-    }
-    if (str_ends_with(name, ".txt") || str_ends_with(name, ".TXT")) {
+    } else if (str_ends_with(name, txt1) || str_ends_with(name, txt2)) {
         return ICON_TYPE_FILE_TXT;
+    } else {
+        return ICON_TYPE_FILE_GENERIC;
     }
-    
-    return ICON_TYPE_FILE_GENERIC;
 }
 
 // Initialize desktop state
