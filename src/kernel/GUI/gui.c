@@ -1,6 +1,7 @@
 #include "print.h"
 #include "IO.h"
-
+#include "desktop_icons.h"
+#include "string_helpers.h"
 #define WIDTH 1366
 #define HEIGHT 768
 #define TASKBAR_HEIGHT 48
@@ -16,6 +17,8 @@ static int mouse_initialized = 0;
 static uint32_t saved_pixels[16*16];
 static int cursor_saved = 0;
 static int saved_cx, saved_cy;
+
+int isgui = 0;
 
 static void update_mouse_position_only(void) {
     static uint8_t packet[3];
@@ -161,6 +164,7 @@ static void draw_taskbar(void) {
 }
 
 void gui_main(void) {
+    isgui = 1;
     uint32_t dark_cyan = 0x008B8B;
     for (int y = 0; y < fb.height - TASKBAR_HEIGHT; y++) {
         for (int x = 0; x < fb.width; x++) {
@@ -169,7 +173,26 @@ void gui_main(void) {
     }
     draw_taskbar();
     SetCursorPos(0, 0);
-
+    
+    // Initialize desktop icons
+    desktop_state_t desktop;
+    desktop_init(&desktop);
+    
+    // Check if VFS root is available
+    vfs_node_t *root = vfs_get_root();
+    if (root != NULL) {
+        // Load icons from root directory
+        char desktop_path[] = "/";
+        if (desktop_load_directory(&desktop, desktop_path) >= 0) {
+            desktop_sort_icons(&desktop);
+            desktop_arrange_icons(&desktop, fb.width, fb.height, TASKBAR_HEIGHT);
+            desktop_draw_icons(&desktop);
+        } else {
+            PRINT(YELLOW, BLACK, "[GUI] Failed to load desktop icons\n");
+        }
+    } else {
+        PRINT(YELLOW, BLACK, "[GUI] VFS not mounted, no icons to display\n");
+    }
     int running = 1;
     int last_mx = -1;
     int last_my = -1;

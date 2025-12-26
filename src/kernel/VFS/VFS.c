@@ -12,6 +12,7 @@ static file_descriptor_t vfs_fd_table[MAX_OPEN_FILES];
 static filesystem_t *registered_filesystems[16];
 static int num_filesystems = 0;
 
+
 int str_len(const char *str) {
     int len = 0;
     while (str[len]) len++;
@@ -35,9 +36,6 @@ static void str_cpy(char *dest, const char *src, int max_len) {
 }
 
 void vfs_init(void) {
-    PRINT(WHITE, BLACK,"[VFS] vfs_init called\n");
-    PRINT(WHITE, BLACK, "[VFS] Initial root_node value: %p\n", root_node);
-    PRINT(WHITE, BLACK, "[VFS] Initial num_filesystems value: %d\n", num_filesystems);
 
     root_node = NULL;
     num_filesystems = 0;

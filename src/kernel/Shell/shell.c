@@ -1704,6 +1704,9 @@ void bg_command_thread(void) {
             vfs_list_directory(fullpath);
         }
     }
+
+
+
     else if (STRNCMP(ctx->cmd_name, "cat", 3) == 0) {
         char fullpath[256];
         if (ctx->args[0] == '/') {
@@ -2120,6 +2123,34 @@ PRINT(WHITE, BLACK, "  jobdebug     - Debug job system state\n");
         }
         vfs_list_directory(fullpath);
     }
+
+    else if (STRNCMP(cmd, "touch ", 6) == 0) {
+        char* filename = cmd + 6;
+        char fullpath[256];
+        if (filename[0] == '/') {
+            strcpy_local(fullpath, filename);
+        } else {
+            const char* cwd = vfs_get_cwd_path();
+            strcpy_local(fullpath, cwd);
+            int len = strlen_local(fullpath);
+            if (len > 0 && fullpath[len-1] != '/') {
+                fullpath[len] = '/';
+                fullpath[len+1] = '\0';
+            }
+            int i = strlen_local(fullpath);
+            int j = 0;
+            while (filename[j] && i < 255) {
+                fullpath[i++] = filename[j++];
+            }
+            fullpath[i] = '\0';
+        }
+        if (vfs_create(fullpath, FILE_READ | FILE_WRITE) == 0) {
+            PRINT(MAGENTA, BLACK, "Created file: %s\n\n\n", fullpath);
+        } else {
+            PRINT(YELLOW, BLACK, "Failed to create file\n");
+        }
+    }
+
     else if (STRNCMP(cmd, "cat ", 4) == 0) {
         char* filename = cmd + 4;
         char fullpath[256];

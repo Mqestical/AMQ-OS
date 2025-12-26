@@ -14,7 +14,7 @@ Buffer stderr_buf;
 
 FileDescriptor fd_table[256];
 extern char font8x8_basic[128][8];
-
+extern int isgui;
 void init_fds() {
     fd_table[STDIN].type = 0;
     fd_table[STDIN].buffer = &stdin_buf;
@@ -109,6 +109,9 @@ void SetColors(uint32_t fg, uint32_t bg) {
 }
 
 void printc(char c) {
+    if (isgui) {
+        return;
+    }
     if (c == '\n') {
         cursor.x = 0;
         cursor.y += 8;
