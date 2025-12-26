@@ -32,6 +32,7 @@
 #include "command_history.h"
 #include "keyboard.h"
 #include "IO.h"
+
 #define CURSOR_BLINK_RATE 50000
 
 extern void gui_thread_entry(void);

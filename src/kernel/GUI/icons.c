@@ -506,33 +506,19 @@ void context_menu_draw(context_menu_t *menu) {
                 put_pixel(menu->x + dx, item_y + dy, hover_color);
             }
         }
-        draw_char(text_x, text_y, 'O', hover_text, hover_color);
-        draw_char(text_x + 8, text_y, 'p', hover_text, hover_color);
-        draw_char(text_x + 16, text_y, 'e', hover_text, hover_color);
-        draw_char(text_x + 24, text_y, 'n', hover_text, hover_color);
-        draw_char(text_x + 32, text_y, ' ', hover_text, hover_color);
-        draw_char(text_x + 40, text_y, 'T', hover_text, hover_color);
-        draw_char(text_x + 48, text_y, 'e', hover_text, hover_color);
-        draw_char(text_x + 56, text_y, 'r', hover_text, hover_color);
-        draw_char(text_x + 64, text_y, 'm', hover_text, hover_color);
-        draw_char(text_x + 72, text_y, 'i', hover_text, hover_color);
-        draw_char(text_x + 80, text_y, 'n', hover_text, hover_color);
-        draw_char(text_x + 88, text_y, 'a', hover_text, hover_color);
-        draw_char(text_x + 96, text_y, 'l', hover_text, hover_color);
+        draw_char(text_x, text_y, 'R', hover_text, hover_color);
+        draw_char(text_x + 8, text_y, 'e', hover_text, hover_color);
+        draw_char(text_x + 16, text_y, 't', hover_text, hover_color);
+        draw_char(text_x + 24, text_y, 'u', hover_text, hover_color);
+        draw_char(text_x + 32, text_y, 'r', hover_text, hover_color);
+        draw_char(text_x + 40, text_y, 'n', hover_text, hover_color);
     } else {
-        draw_char(text_x, text_y, 'O', text_color, bg_color);
-        draw_char(text_x + 8, text_y, 'p', text_color, bg_color);
-        draw_char(text_x + 16, text_y, 'e', text_color, bg_color);
-        draw_char(text_x + 24, text_y, 'n', text_color, bg_color);
-        draw_char(text_x + 32, text_y, ' ', text_color, bg_color);
-        draw_char(text_x + 40, text_y, 'T', text_color, bg_color);
-        draw_char(text_x + 48, text_y, 'e', text_color, bg_color);
-        draw_char(text_x + 56, text_y, 'r', text_color, bg_color);
-        draw_char(text_x + 64, text_y, 'm', text_color, bg_color);
-        draw_char(text_x + 72, text_y, 'i', text_color, bg_color);
-        draw_char(text_x + 80, text_y, 'n', text_color, bg_color);
-        draw_char(text_x + 88, text_y, 'a', text_color, bg_color);
-        draw_char(text_x + 96, text_y, 'l', text_color, bg_color);
+            draw_char(text_x, text_y, 'R', text_color, bg_color);
+        draw_char(text_x + 8, text_y, 'e', text_color, bg_color);
+        draw_char(text_x + 16, text_y, 't', text_color, bg_color);
+        draw_char(text_x + 24, text_y, 'u', text_color, bg_color);
+        draw_char(text_x + 32, text_y, 'r', text_color, bg_color);
+        draw_char(text_x + 40, text_y, 'n', text_color, bg_color);
     }
 }
 
