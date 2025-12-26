@@ -63,7 +63,6 @@ void text_editor_init(text_editor_t* editor, const char* filepath) {
         editor->buffer.filepath[0] = '\0';
     }
 }
-
 void text_editor_draw(text_editor_t* editor) {
     if (!editor->visible) return;
     
@@ -90,6 +89,30 @@ void text_editor_draw(text_editor_t* editor) {
         }
     }
     
+    // Draw close button (X) in top right
+    int close_btn_size = 20;
+    int close_btn_x = editor->x + editor->width - close_btn_size - 5;
+    int close_btn_y = editor->y + 5;
+    
+    // Close button background (red)
+    for (int dy = 0; dy < close_btn_size; dy++) {
+        for (int dx = 0; dx < close_btn_size; dx++) {
+            put_pixel(close_btn_x + dx, close_btn_y + dy, 0xDC2626);
+        }
+    }
+    
+    // Draw X
+    uint32_t x_color = 0xFFFFFF;
+    for (int i = 0; i < 12; i++) {
+        // Top-left to bottom-right diagonal
+        put_pixel(close_btn_x + 4 + i, close_btn_y + 4 + i, x_color);
+        put_pixel(close_btn_x + 5 + i, close_btn_y + 4 + i, x_color);
+        
+        // Top-right to bottom-left diagonal
+        put_pixel(close_btn_x + 15 - i, close_btn_y + 4 + i, x_color);
+        put_pixel(close_btn_x + 14 - i, close_btn_y + 4 + i, x_color);
+    }
+    
     // Draw title text "AMQ Editor"
     const char title[] = "AMQ Editor";
     int title_x = editor->x + 10;
@@ -110,7 +133,7 @@ void text_editor_draw(text_editor_t* editor) {
     
     // Draw modified indicator
     if (editor->buffer.modified) {
-        draw_char(editor->x + editor->width - 20, title_y, '*', 0xFF6B6B, title_bg);
+        draw_char(editor->x + editor->width - 35, title_y, '*', 0xFF6B6B, title_bg);
     }
     
     // Draw toolbar
@@ -464,7 +487,6 @@ void text_editor_handle_key(text_editor_t* editor, uint8_t scancode) {
         text_editor_insert_char(editor, ch);
     }
 }
-
 int text_editor_run(text_editor_t* editor, desktop_state_t* desktop,
                     void (*update_mouse)(void),
                     void (*redraw_desktop_fn)(desktop_state_t*),
@@ -558,9 +580,19 @@ int text_editor_run(text_editor_t* editor, desktop_state_t* desktop,
         
         // Handle mouse clicks
         if (button && !last_mouse_button) {
-            // Title bar drag
-            if (mx >= editor->x && mx < editor->x + editor->width &&
-                my >= editor->y && my < editor->y + EDITOR_TITLE_HEIGHT) {
+            // Calculate close button bounds
+            int close_btn_size = 20;
+            int close_btn_x = editor->x + editor->width - close_btn_size - 5;
+            int close_btn_y = editor->y + 5;
+            
+            // Check close button click
+            if (mx >= close_btn_x && mx < close_btn_x + close_btn_size &&
+                my >= close_btn_y && my < close_btn_y + close_btn_size) {
+                running = 0;
+            }
+            // Title bar drag (but not on close button)
+            else if (mx >= editor->x && mx < editor->x + editor->width &&
+                     my >= editor->y && my < editor->y + EDITOR_TITLE_HEIGHT) {
                 editor->dragging = 1;
                 editor->drag_offset_x = mx - editor->x;
                 editor->drag_offset_y = my - editor->y;
