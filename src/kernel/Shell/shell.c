@@ -2418,6 +2418,11 @@ else if (STRNCMP(cmd, "ASM ", 4) == 0) {
     }
 }
 
+else if (STRNCMP(cmd, "gui", 3) == 0) {
+   extern void gui_main(void);
+   gui_main();
+}
+
 else if (STRNCMP(cmd, "asmfile ", 8) == 0) {
     char *rest = cmd + 8;
     char source[256];
