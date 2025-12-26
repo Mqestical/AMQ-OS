@@ -3,6 +3,7 @@
 #include "vfs.h"
 #include "string_helpers.h"
 #include "memory.h"
+
 // Helper function to copy strings safely
 static void safe_strcpy(char *dest, const char *src, int max_len) {
     int i;
@@ -265,7 +266,8 @@ static void draw_elf_icon(int x, int y) {
     draw_file_icon(x, y, 0x00FF00);  // Green accent for executables
     
     // Draw "EXE" text
-    draw_string(x + 14, y + 24, "EX", 0x000000, 0x00FF00);
+    char exec_text[] = "EXE";
+    draw_string(x + 14, y + 24, exec_text, 0x000000, 0x00FF00);
 }
 
 // Draw ASM file icon
@@ -273,7 +275,8 @@ static void draw_asm_icon(int x, int y) {
     draw_file_icon(x, y, 0x0080FF);  // Blue accent for assembly
     
     // Draw "AS" text
-    draw_string(x + 14, y + 24, "AS", 0x000000, 0x0080FF);
+    char asm_text[] = "AS";
+    draw_string(x + 14, y + 24, asm_text, 0x000000, 0x0080FF);
 }
 
 // Draw TXT file icon
@@ -363,5 +366,199 @@ void desktop_select_icon(desktop_state_t *state, int index) {
         state->selected_index = index;
     } else {
         state->selected_index = -1;
+    }
+}
+
+// Context menu functions
+void context_menu_init(context_menu_t *menu) {
+    menu->x = 0;
+    menu->y = 0;
+    menu->visible = 0;
+    menu->selected_item = -1;
+}
+
+void context_menu_show(context_menu_t *menu, int x, int y) {
+    menu->x = x;
+    menu->y = y;
+    menu->visible = 1;
+    menu->selected_item = -1;
+}
+
+void context_menu_hide(context_menu_t *menu) {
+    menu->visible = 0;
+    menu->selected_item = -1;
+}
+
+void context_menu_draw(context_menu_t *menu) {
+    if (!menu->visible) return;
+    
+    uint32_t bg_color = 0xF0F0F0;
+    uint32_t border_color = 0x808080;
+    uint32_t text_color = 0x000000;
+    uint32_t hover_color = 0x0078D7;
+    uint32_t hover_text = 0xFFFFFF;
+    
+    // Draw background
+    for (int dy = 0; dy < CONTEXT_MENU_HEIGHT; dy++) {
+        for (int dx = 0; dx < CONTEXT_MENU_WIDTH; dx++) {
+            put_pixel(menu->x + dx, menu->y + dy, bg_color);
+        }
+    }
+    
+    // Draw border
+    for (int dx = 0; dx < CONTEXT_MENU_WIDTH; dx++) {
+        put_pixel(menu->x + dx, menu->y, border_color);
+        put_pixel(menu->x + dx, menu->y + CONTEXT_MENU_HEIGHT - 1, border_color);
+    }
+    for (int dy = 0; dy < CONTEXT_MENU_HEIGHT; dy++) {
+        put_pixel(menu->x, menu->y + dy, border_color);
+        put_pixel(menu->x + CONTEXT_MENU_WIDTH - 1, menu->y + dy, border_color);
+    }
+    
+    // Item 0: "Create File"
+    int item_y = menu->y + 5;
+    int text_x = menu->x + 10;
+    int text_y = item_y + 8;
+    
+    if (menu->selected_item == 0) {
+        for (int dy = 0; dy < CONTEXT_MENU_ITEM_HEIGHT - 2; dy++) {
+            for (int dx = 2; dx < CONTEXT_MENU_WIDTH - 2; dx++) {
+                put_pixel(menu->x + dx, item_y + dy, hover_color);
+            }
+        }
+        draw_char(text_x, text_y, 'C', hover_text, hover_color);
+        draw_char(text_x + 8, text_y, 'r', hover_text, hover_color);
+        draw_char(text_x + 16, text_y, 'e', hover_text, hover_color);
+        draw_char(text_x + 24, text_y, 'a', hover_text, hover_color);
+        draw_char(text_x + 32, text_y, 't', hover_text, hover_color);
+        draw_char(text_x + 40, text_y, 'e', hover_text, hover_color);
+        draw_char(text_x + 48, text_y, ' ', hover_text, hover_color);
+        draw_char(text_x + 56, text_y, 'F', hover_text, hover_color);
+        draw_char(text_x + 64, text_y, 'i', hover_text, hover_color);
+        draw_char(text_x + 72, text_y, 'l', hover_text, hover_color);
+        draw_char(text_x + 80, text_y, 'e', hover_text, hover_color);
+    } else {
+        draw_char(text_x, text_y, 'C', text_color, bg_color);
+        draw_char(text_x + 8, text_y, 'r', text_color, bg_color);
+        draw_char(text_x + 16, text_y, 'e', text_color, bg_color);
+        draw_char(text_x + 24, text_y, 'a', text_color, bg_color);
+        draw_char(text_x + 32, text_y, 't', text_color, bg_color);
+        draw_char(text_x + 40, text_y, 'e', text_color, bg_color);
+        draw_char(text_x + 48, text_y, ' ', text_color, bg_color);
+        draw_char(text_x + 56, text_y, 'F', text_color, bg_color);
+        draw_char(text_x + 64, text_y, 'i', text_color, bg_color);
+        draw_char(text_x + 72, text_y, 'l', text_color, bg_color);
+        draw_char(text_x + 80, text_y, 'e', text_color, bg_color);
+    }
+    
+    // Item 1: "Create Folder"
+    item_y = menu->y + 5 + CONTEXT_MENU_ITEM_HEIGHT;
+    text_y = item_y + 8;
+    
+    if (menu->selected_item == 1) {
+        for (int dy = 0; dy < CONTEXT_MENU_ITEM_HEIGHT - 2; dy++) {
+            for (int dx = 2; dx < CONTEXT_MENU_WIDTH - 2; dx++) {
+                put_pixel(menu->x + dx, item_y + dy, hover_color);
+            }
+        }
+        draw_char(text_x, text_y, 'C', hover_text, hover_color);
+        draw_char(text_x + 8, text_y, 'r', hover_text, hover_color);
+        draw_char(text_x + 16, text_y, 'e', hover_text, hover_color);
+        draw_char(text_x + 24, text_y, 'a', hover_text, hover_color);
+        draw_char(text_x + 32, text_y, 't', hover_text, hover_color);
+        draw_char(text_x + 40, text_y, 'e', hover_text, hover_color);
+        draw_char(text_x + 48, text_y, ' ', hover_text, hover_color);
+        draw_char(text_x + 56, text_y, 'F', hover_text, hover_color);
+        draw_char(text_x + 64, text_y, 'o', hover_text, hover_color);
+        draw_char(text_x + 72, text_y, 'l', hover_text, hover_color);
+        draw_char(text_x + 80, text_y, 'd', hover_text, hover_color);
+        draw_char(text_x + 88, text_y, 'e', hover_text, hover_color);
+        draw_char(text_x + 96, text_y, 'r', hover_text, hover_color);
+    } else {
+        draw_char(text_x, text_y, 'C', text_color, bg_color);
+        draw_char(text_x + 8, text_y, 'r', text_color, bg_color);
+        draw_char(text_x + 16, text_y, 'e', text_color, bg_color);
+        draw_char(text_x + 24, text_y, 'a', text_color, bg_color);
+        draw_char(text_x + 32, text_y, 't', text_color, bg_color);
+        draw_char(text_x + 40, text_y, 'e', text_color, bg_color);
+        draw_char(text_x + 48, text_y, ' ', text_color, bg_color);
+        draw_char(text_x + 56, text_y, 'F', text_color, bg_color);
+        draw_char(text_x + 64, text_y, 'o', text_color, bg_color);
+        draw_char(text_x + 72, text_y, 'l', text_color, bg_color);
+        draw_char(text_x + 80, text_y, 'd', text_color, bg_color);
+        draw_char(text_x + 88, text_y, 'e', text_color, bg_color);
+        draw_char(text_x + 96, text_y, 'r', text_color, bg_color);
+    }
+    
+    // Item 2: "Open Terminal"
+    item_y = menu->y + 5 + 2 * CONTEXT_MENU_ITEM_HEIGHT;
+    text_y = item_y + 8;
+    
+    if (menu->selected_item == 2) {
+        for (int dy = 0; dy < CONTEXT_MENU_ITEM_HEIGHT - 2; dy++) {
+            for (int dx = 2; dx < CONTEXT_MENU_WIDTH - 2; dx++) {
+                put_pixel(menu->x + dx, item_y + dy, hover_color);
+            }
+        }
+        draw_char(text_x, text_y, 'O', hover_text, hover_color);
+        draw_char(text_x + 8, text_y, 'p', hover_text, hover_color);
+        draw_char(text_x + 16, text_y, 'e', hover_text, hover_color);
+        draw_char(text_x + 24, text_y, 'n', hover_text, hover_color);
+        draw_char(text_x + 32, text_y, ' ', hover_text, hover_color);
+        draw_char(text_x + 40, text_y, 'T', hover_text, hover_color);
+        draw_char(text_x + 48, text_y, 'e', hover_text, hover_color);
+        draw_char(text_x + 56, text_y, 'r', hover_text, hover_color);
+        draw_char(text_x + 64, text_y, 'm', hover_text, hover_color);
+        draw_char(text_x + 72, text_y, 'i', hover_text, hover_color);
+        draw_char(text_x + 80, text_y, 'n', hover_text, hover_color);
+        draw_char(text_x + 88, text_y, 'a', hover_text, hover_color);
+        draw_char(text_x + 96, text_y, 'l', hover_text, hover_color);
+    } else {
+        draw_char(text_x, text_y, 'O', text_color, bg_color);
+        draw_char(text_x + 8, text_y, 'p', text_color, bg_color);
+        draw_char(text_x + 16, text_y, 'e', text_color, bg_color);
+        draw_char(text_x + 24, text_y, 'n', text_color, bg_color);
+        draw_char(text_x + 32, text_y, ' ', text_color, bg_color);
+        draw_char(text_x + 40, text_y, 'T', text_color, bg_color);
+        draw_char(text_x + 48, text_y, 'e', text_color, bg_color);
+        draw_char(text_x + 56, text_y, 'r', text_color, bg_color);
+        draw_char(text_x + 64, text_y, 'm', text_color, bg_color);
+        draw_char(text_x + 72, text_y, 'i', text_color, bg_color);
+        draw_char(text_x + 80, text_y, 'n', text_color, bg_color);
+        draw_char(text_x + 88, text_y, 'a', text_color, bg_color);
+        draw_char(text_x + 96, text_y, 'l', text_color, bg_color);
+    }
+}
+
+int context_menu_get_item_at(context_menu_t *menu, int mouse_x, int mouse_y) {
+    if (!menu->visible) return -1;
+    
+    // Check if mouse is within menu bounds
+    if (mouse_x < menu->x || mouse_x >= menu->x + CONTEXT_MENU_WIDTH ||
+        mouse_y < menu->y || mouse_y >= menu->y + CONTEXT_MENU_HEIGHT) {
+        return -1;
+    }
+    
+    // Calculate which item was clicked
+    int relative_y = mouse_y - menu->y - 5;
+    if (relative_y < 0) return -1;
+    
+    int item = relative_y / CONTEXT_MENU_ITEM_HEIGHT;
+    if (item >= 0 && item < 3) {
+        return item;
+    }
+    
+    return -1;
+}
+
+void context_menu_update_hover(context_menu_t *menu, int mouse_x, int mouse_y) {
+    if (!menu->visible) {
+        menu->selected_item = -1;
+        return;
+    }
+    
+    int item = context_menu_get_item_at(menu, mouse_x, mouse_y);
+    if (item != menu->selected_item) {
+        menu->selected_item = item;
     }
 }

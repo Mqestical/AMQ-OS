@@ -2,6 +2,7 @@
 #include "IO.h"
 #include "desktop_icons.h"
 #include "string_helpers.h"
+#include "vfs.h"
 #define WIDTH 1366
 #define HEIGHT 768
 #define TASKBAR_HEIGHT 48
@@ -17,6 +18,7 @@ static int mouse_initialized = 0;
 static uint32_t saved_pixels[16*16];
 static int cursor_saved = 0;
 static int saved_cx, saved_cy;
+static int last_button_state = 0;
 
 int isgui = 0;
 
@@ -57,7 +59,7 @@ static void update_mouse_position_only(void) {
                 uint8_t b2 = packet[1];
                 uint8_t b3 = packet[2];
 
-                mouse_button_state = b1 & 0x01;
+                mouse_button_state = b1 & 0x03;  // Track both left (bit 0) and right (bit 1)
 
                 int delta_x = b2;
                 int delta_y = b3;
@@ -117,6 +119,8 @@ static void save_cursor_area(int x, int y) {
     saved_cy = y;
 }
 
+
+
 static void restore_cursor_area(void) {
     if (!cursor_saved) return;
 
@@ -163,6 +167,38 @@ static void draw_taskbar(void) {
     }
 }
 
+static void redraw_desktop(desktop_state_t *desktop) {
+    uint32_t dark_cyan = 0x008B8B;
+    for (int y = 0; y < fb.height - TASKBAR_HEIGHT; y++) {
+        for (int x = 0; x < fb.width; x++) {
+            put_pixel(x, y, dark_cyan);
+        }
+    }
+    draw_taskbar();
+    desktop_draw_icons(desktop);
+}
+
+static void handle_context_menu_action(context_menu_item_t action, desktop_state_t *desktop) {
+    switch (action) {
+        case CONTEXT_MENU_CREATE_FILE:
+            PRINT(GREEN, BLACK, "[GUI] Create File selected\n");
+            // TODO: Implement file creation dialog
+            break;
+            
+        case CONTEXT_MENU_CREATE_FOLDER:
+            PRINT(GREEN, BLACK, "[GUI] Create Folder selected\n");
+            // TODO: Implement folder creation dialog
+            break;
+            
+        case CONTEXT_MENU_OPEN_TERMINAL:
+            PRINT(GREEN, BLACK, "[GUI] Open Terminal selected (not implemented yet)\n");
+            break;
+            
+        default:
+            break;
+    }
+}
+
 void gui_main(void) {
     isgui = 1;
     uint32_t dark_cyan = 0x008B8B;
@@ -177,6 +213,10 @@ void gui_main(void) {
     // Initialize desktop icons
     desktop_state_t desktop;
     desktop_init(&desktop);
+    
+    // Initialize context menu
+    context_menu_t context_menu;
+    context_menu_init(&context_menu);
     
     // Check if VFS root is available
     vfs_node_t *root = vfs_get_root();
@@ -193,6 +233,7 @@ void gui_main(void) {
     } else {
         PRINT(YELLOW, BLACK, "[GUI] VFS not mounted, no icons to display\n");
     }
+    
     int running = 1;
     int last_mx = -1;
     int last_my = -1;
@@ -210,6 +251,20 @@ void gui_main(void) {
         mx = internal_cursor_x;
         my = internal_cursor_y;
 
+        // Update context menu hover state
+        if (context_menu.visible) {
+            int old_selected = context_menu.selected_item;
+            context_menu_update_hover(&context_menu, mx, my);
+            
+            if (old_selected != context_menu.selected_item) {
+                restore_cursor_area();
+                redraw_desktop(&desktop);
+                context_menu_draw(&context_menu);
+                save_cursor_area(mx, my);
+                draw_cursor(mx, my);
+            }
+        }
+
         if (mx != last_mx || my != last_my) {
             restore_cursor_area();
             save_cursor_area(mx, my);
@@ -217,6 +272,70 @@ void gui_main(void) {
             last_mx = mx;
             last_my = my;
         }
+
+        // Handle mouse button events
+        int left_click = (mouse_button_state & 0x01) && !(last_button_state & 0x01);
+        int right_click = (mouse_button_state & 0x02) && !(last_button_state & 0x02);
+        
+        if (left_click) {
+            if (context_menu.visible) {
+                int item = context_menu_get_item_at(&context_menu, mx, my);
+                if (item >= 0) {
+                    handle_context_menu_action((context_menu_item_t)item, &desktop);
+                }
+                
+                // Hide menu after click (or if clicked outside)
+                context_menu_hide(&context_menu);
+                restore_cursor_area();
+                redraw_desktop(&desktop);
+                save_cursor_area(mx, my);
+                draw_cursor(mx, my);
+            } else {
+                // Check if clicking on an icon
+                int icon_index = desktop_icon_at_position(&desktop, mx, my);
+                if (icon_index >= 0) {
+                    desktop_select_icon(&desktop, icon_index);
+                    PRINT(CYAN, BLACK, "[GUI] Selected icon: %s\n", desktop.icons[icon_index].name);
+                } else {
+                    desktop_select_icon(&desktop, -1);
+                }
+                
+                restore_cursor_area();
+                redraw_desktop(&desktop);
+                save_cursor_area(mx, my);
+                draw_cursor(mx, my);
+            }
+        }
+        
+        if (right_click) {
+            // Check if right-clicking on empty space
+            int icon_index = desktop_icon_at_position(&desktop, mx, my);
+            
+            if (icon_index < 0) {
+                // Right-clicked on empty desktop
+                context_menu_show(&context_menu, mx, my);
+                
+                // Make sure menu doesn't go off screen
+                if (context_menu.x + CONTEXT_MENU_WIDTH > fb.width) {
+                    context_menu.x = fb.width - CONTEXT_MENU_WIDTH;
+                }
+                if (context_menu.y + CONTEXT_MENU_HEIGHT > fb.height - TASKBAR_HEIGHT) {
+                    context_menu.y = fb.height - TASKBAR_HEIGHT - CONTEXT_MENU_HEIGHT;
+                }
+                
+                restore_cursor_area();
+                context_menu_draw(&context_menu);
+                save_cursor_area(mx, my);
+                draw_cursor(mx, my);
+                
+                PRINT(CYAN, BLACK, "[GUI] Context menu opened at (%d, %d)\n", mx, my);
+            } else {
+                // Right-clicked on an icon (could implement icon-specific menu later)
+                PRINT(CYAN, BLACK, "[GUI] Right-clicked on icon: %s\n", desktop.icons[icon_index].name);
+            }
+        }
+        
+        last_button_state = mouse_button_state;
 
         while (scancode_read_pos != scancode_write_pos) {
             uint8_t scancode = scancode_buffer[scancode_read_pos++];
