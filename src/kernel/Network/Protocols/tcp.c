@@ -231,7 +231,7 @@ void tcp_receive(uint32_t src_ip, uint8_t *data, uint16_t length) {
 
     PRINT(CYAN, BLACK, "[TCP] RX from ");
     net_print_ip(src_ip);
-    PRINT(WHITE, BLACK, ":%d -> :%d flags=0x%02x seq=%u ack=%u\n",
+    PRINT(WHITE, BLACK, ":%d -> :%d flags=0x%llx seq=%u ack=%u\n",
           src_port, dest_port, tcp->flags, seq, ack);
 
 

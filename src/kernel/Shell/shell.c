@@ -80,6 +80,11 @@ typedef struct {
     int should_run;
 } bg_exec_context_t;
 
+void elf_net(void) {
+    PRINT(CYAN, BLACK, "\n[ELF NET] Starting ELF network test\n");
+    return;
+}
+
 void draw_cursor(int visible) {
     cursor.bg_color = BLACK;
     if (visible) {
@@ -2450,6 +2455,17 @@ else if (STRNCMP(cmd, "ASM ", 4) == 0) {
         create_elf_from_asm(filename, code_buf);
     }
 }
+else if (STRNCMP(cmd, "mknetcall", 9) == 0) {
+    uint64_t addr = (uint64_t)&elf_net;
+    PRINT(WHITE, BLACK, "elf_net address: 0x%llx\n", addr);
+    
+    char asm_code[256]= "mov rax, 100\ncall rax\nret";  // No trailing \n
+    
+    PRINT(CYAN, BLACK, "Assembly code:\n%s\n", asm_code);
+    
+    create_elf_from_asm("netcall.elf", asm_code);
+    PRINT(GREEN, BLACK, "Created netcall.elf!\n");
+}
 
 else if (STRNCMP(cmd, "gui", 3) == 0) {
     PRINT(CYAN, BLACK, "\n=== Starting GUI Thread ===\n");
@@ -3029,29 +3045,6 @@ void shell_command_elfload(const char *args) {
             name = &fullpath[i + 1];
         }
     }
-
-    int pid = process_create(name, load_info.base_addr);
-    if (pid < 0) {
-        PRINT(YELLOW, BLACK, "Failed to create process\n");
-        kfree(elf_buffer);
-        return;
-    }
-
-    void (*entry)(void) = (void (*)(void))load_info.entry_point;
-    int tid = thread_create(pid, entry, 131072, 50000000, 1000000000, 1000000000);
-
-    if (tid < 0) {
-        PRINT(YELLOW, BLACK, "Failed to create thread\n");
-        kfree(elf_buffer);
-        return;
-    }
-
-    extern int add_fg_job(const char *command, uint32_t pid, uint32_t tid);
-    int job_id = add_fg_job(fullpath, pid, tid);
-
-    PRINT(GREEN, BLACK, "[ELFLOAD] Created process %d (thread %d, job %d)\n",
-          pid, tid, job_id);
-    PRINT(GREEN, BLACK, "[ELFLOAD] Program is now running\n");
 
 }
 

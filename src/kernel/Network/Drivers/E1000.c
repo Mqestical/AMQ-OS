@@ -89,7 +89,7 @@ int e1000_init(void) {
     e1000_dev.mac_addr[4] = mac[2] & 0xFF;
     e1000_dev.mac_addr[5] = mac[2] >> 8;
 
-    PRINT(GREEN, BLACK, "[E1000] MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+    PRINT(GREEN, BLACK, "[E1000] MAC: %llx:%llx:%llx:%llx:%llx:%llx\n",
           e1000_dev.mac_addr[0], e1000_dev.mac_addr[1],
           e1000_dev.mac_addr[2], e1000_dev.mac_addr[3],
           e1000_dev.mac_addr[4], e1000_dev.mac_addr[5]);

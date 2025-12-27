@@ -40,6 +40,24 @@ static void asm_emit_bytes(asm_context_t *ctx, const uint8_t *bytes, size_t coun
     }
 }
 
+static void asm_call_rel32(asm_context_t *ctx, int32_t offset) {
+    asm_emit(ctx, 0xE8);  // CALL rel32 opcode
+    for (int i = 0; i < 4; i++) {
+        asm_emit(ctx, (offset >> (i * 8)) & 0xFF);
+    }
+}
+
+static void asm_call_reg(asm_context_t *ctx, int reg) {
+    uint8_t rex = 0x48;
+    if (reg >= 8) {
+        rex |= 0x01;
+        reg -= 8;
+    }
+    asm_emit(ctx, rex);
+    asm_emit(ctx, 0xFF);
+    asm_emit(ctx, 0xD0 | reg);  // CALL r64
+}
+
 
 static int parse_register(const char *reg) {
 
@@ -373,9 +391,7 @@ static void asm_shr_reg_imm8(asm_context_t *ctx, int reg, int8_t imm) {
 int asm_line(asm_context_t *ctx, const char *line) {
     if (ctx->error) return -1;
 
-
     while (*line == ' ' || *line == '\t') line++;
-
 
     if (*line == '\0' || *line == ';' || *line == '#') {
         return 0;
@@ -386,7 +402,6 @@ int asm_line(asm_context_t *ctx, const char *line) {
     char arg2[64];
     int i = 0;
 
-
     while (line[i] && line[i] != ' ' && line[i] != '\t' && i < 31) {
         mnemonic[i] = line[i];
         if (mnemonic[i] >= 'A' && mnemonic[i] <= 'Z') {
@@ -396,21 +411,7 @@ int asm_line(asm_context_t *ctx, const char *line) {
     }
     mnemonic[i] = '\0';
 
-PRINT(YELLOW, BLACK, "[DEBUG] Parsed mnemonic: '%s'\n", mnemonic);
-PRINT(WHITE, BLACK, "[DEBUG] Length: ");
-print_unsigned(i, 10);
-PRINT(WHITE, BLACK, "\n");
-for (int d = 0; d < i; d++) {
-    PRINT(WHITE, BLACK, "[DEBUG] mnemonic[");
-    print_unsigned(d, 10);
-    PRINT(WHITE, BLACK, "] = 0x");
-    print_unsigned((unsigned char)mnemonic[d], 16);
-    PRINT(WHITE, BLACK, "\n");
-}
-
-
     while (line[i] == ' ' || line[i] == '\t') i++;
-
 
     int j = 0;
     while (line[i] && line[i] != ',' && line[i] != ' ' && line[i] != '\t' &&
@@ -419,9 +420,7 @@ for (int d = 0; d < i; d++) {
     }
     arg1[j] = '\0';
 
-
     while (line[i] == ' ' || line[i] == '\t' || line[i] == ',') i++;
-
 
     j = 0;
     while (line[i] && line[i] != ' ' && line[i] != '\t' &&
@@ -430,8 +429,7 @@ for (int d = 0; d < i; d++) {
     }
     arg2[j] = '\0';
 
-
-    if (STRNCMP(mnemonic, "mov", 3)) {
+    if (STRNCMP(mnemonic, "mov", 3) == 0) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
 
@@ -451,7 +449,7 @@ for (int d = 0; d < i; d++) {
             }
         }
     }
-    else if (STRNCMP(mnemonic, "add", 3)) {
+    else if (STRNCMP(mnemonic, "add", 3) == 0) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
 
@@ -472,7 +470,7 @@ for (int d = 0; d < i; d++) {
             }
         }
     }
-    else if (STRNCMP(mnemonic, "sub", 3)) {
+    else if (STRNCMP(mnemonic, "sub", 3) == 0) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
 
@@ -493,7 +491,7 @@ for (int d = 0; d < i; d++) {
             }
         }
     }
-    else if (STRNCMP(mnemonic, "xor", 3)) {
+    else if (STRNCMP(mnemonic, "xor", 3) == 0) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
         if (reg1 < 0 || reg2 < 0) {
@@ -502,7 +500,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_xor_reg_reg(ctx, reg1, reg2);
     }
-    else if (STRNCMP(mnemonic, "or", 2)) {
+    else if (STRNCMP(mnemonic, "or", 2) == 0) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
         if (reg1 < 0 || reg2 < 0) {
@@ -511,7 +509,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_or_reg_reg(ctx, reg1, reg2);
     }
-    else if (STRNCMP(mnemonic, "and", 3)) {
+    else if (STRNCMP(mnemonic, "and", 3) == 0) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
         if (reg1 < 0 || reg2 < 0) {
@@ -520,7 +518,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_and_reg_reg(ctx, reg1, reg2);
     }
-    else if (STRNCMP(mnemonic, "cmp", 3)) {
+    else if (STRNCMP(mnemonic, "cmp", 3) == 0) {
         int reg1 = parse_register(arg1);
         int reg2 = parse_register(arg2);
 
@@ -541,7 +539,16 @@ for (int d = 0; d < i; d++) {
             }
         }
     }
-    else if (STRNCMP(mnemonic, "push", 4)) {
+    else if (STRNCMP(mnemonic, "call", 4) == 0) {
+        int reg = parse_register(arg1);
+        if (reg >= 0) {
+            asm_call_reg(ctx, reg);
+        } else {
+            int64_t offset = parse_immediate(arg1);
+            asm_call_rel32(ctx, (int32_t)offset);
+        }
+    }
+    else if (STRNCMP(mnemonic, "push", 4) == 0) {
         int reg = parse_register(arg1);
         if (reg < 0) {
             ASM_ERROR(ctx, "Invalid register");
@@ -549,7 +556,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_push_reg(ctx, reg);
     }
-    else if (STRNCMP(mnemonic, "pop", 3)) {
+    else if (STRNCMP(mnemonic, "pop", 3) == 0) {
         int reg = parse_register(arg1);
         if (reg < 0) {
             ASM_ERROR(ctx, "Invalid register");
@@ -557,7 +564,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_pop_reg(ctx, reg);
     }
-    else if (STRNCMP(mnemonic, "inc", 3)) {
+    else if (STRNCMP(mnemonic, "inc", 3) == 0) {
         int reg = parse_register(arg1);
         if (reg < 0) {
             ASM_ERROR(ctx, "Invalid register");
@@ -565,7 +572,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_inc_reg(ctx, reg);
     }
-    else if (STRNCMP(mnemonic, "dec", 3)) {
+    else if (STRNCMP(mnemonic, "dec", 3) == 0) {
         int reg = parse_register(arg1);
         if (reg < 0) {
             ASM_ERROR(ctx, "Invalid register");
@@ -573,7 +580,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_dec_reg(ctx, reg);
     }
-    else if (STRNCMP(mnemonic, "neg", 3)) {
+    else if (STRNCMP(mnemonic, "neg", 3) == 0) {
         int reg = parse_register(arg1);
         if (reg < 0) {
             ASM_ERROR(ctx, "Invalid register");
@@ -581,7 +588,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_neg_reg(ctx, reg);
     }
-    else if (STRNCMP(mnemonic, "not", 3)) {
+    else if (STRNCMP(mnemonic, "not", 3) == 0) {
         int reg = parse_register(arg1);
         if (reg < 0) {
             ASM_ERROR(ctx, "Invalid register");
@@ -589,7 +596,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_not_reg(ctx, reg);
     }
-    else if (STRNCMP(mnemonic, "shl", 3)) {
+    else if (STRNCMP(mnemonic, "shl", 3) == 0) {
         int reg = parse_register(arg1);
         if (reg < 0) {
             ASM_ERROR(ctx, "Invalid register");
@@ -602,7 +609,7 @@ for (int d = 0; d < i; d++) {
         }
         asm_shl_reg_imm8(ctx, reg, (int8_t)imm);
     }
-    else if (STRNCMP(mnemonic, "shr", 3)) {
+    else if (STRNCMP(mnemonic, "shr", 3) == 0) {
         int reg = parse_register(arg1);
         if (reg < 0) {
             ASM_ERROR(ctx, "Invalid register");
@@ -615,13 +622,13 @@ for (int d = 0; d < i; d++) {
         }
         asm_shr_reg_imm8(ctx, reg, (int8_t)imm);
     }
-    else if (STRNCMP(mnemonic, "syscall", 7)) {
+    else if (STRNCMP(mnemonic, "syscall", 7) == 0) {
         asm_syscall(ctx);
     }
-    else if (STRNCMP(mnemonic, "ret", 3)) {
+    else if (STRNCMP(mnemonic, "ret", 3) == 0) {
         asm_ret(ctx);
     }
-    else if (STRNCMP(mnemonic, "nop", 3)) {
+    else if (STRNCMP(mnemonic, "nop", 3) == 0) {
         asm_nop(ctx);
     }
     else {
@@ -631,6 +638,7 @@ for (int d = 0; d < i; d++) {
 
     return 0;
 }
+
 int asm_program(asm_context_t *ctx, const char *program) {
     char line[256];
     int line_idx = 0;

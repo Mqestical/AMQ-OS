@@ -65,7 +65,7 @@ void net_receive_packet(uint8_t *data, uint16_t length) {
     uint16_t ethertype = net_htons(frame->ethertype);
 
 
-    PRINT(YELLOW, BLACK, "[NET] RX EtherType: 0x%04x\n", ethertype);
+    PRINT(YELLOW, BLACK, "[NET] RX EtherType: 0x%llx\n", ethertype);
 
     switch (ethertype) {
         case ETH_TYPE_ARP:
@@ -113,7 +113,7 @@ void net_receive_packet(uint8_t *data, uint16_t length) {
             break;
 
         default:
-            PRINT(YELLOW, BLACK, "[NET] Unknown EtherType: 0x%04x\n", ethertype);
+            PRINT(YELLOW, BLACK, "[NET] Unknown EtherType: 0x%llx\n", ethertype);
             break;
     }
 }
@@ -299,7 +299,7 @@ void net_print_ip(uint32_t ip) {
 }
 
 void net_print_mac(uint8_t *mac) {
-    PRINT(WHITE, BLACK, "%02x:%02x:%02x:%02x:%02x:%02x",
+    PRINT(WHITE, BLACK, "%llx:%llx:%llx:%llx:%llx:%llx",
           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 

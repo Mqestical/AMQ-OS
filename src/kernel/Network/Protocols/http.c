@@ -41,11 +41,11 @@ static void hex_dump(const char *label, const uint8_t *data, int len) {
     for (int i = 0; i < len; i++) {
         // Print offset
         if (i % 16 == 0) {
-            PRINT(YELLOW, BLACK, "%04x: ", i);
+            PRINT(YELLOW, BLACK, "%llx: ", i);
         }
         
         // Print hex
-        PRINT(WHITE, BLACK, "%02x ", data[i]);
+        PRINT(WHITE, BLACK, "%llx ", data[i]);
         
         // Print ASCII representation at end of line
         if (i % 16 == 15 || i == len - 1) {
@@ -136,7 +136,7 @@ static int validate_http_request(const char *request, int len) {
             PRINT(GREEN, BLACK, "[VALIDATION] ✓ Ends with \\r\\n\\r\\n\n");
         } else {
             PRINT(RED, BLACK, "[VALIDATION] ✗ Doesn't end with \\r\\n\\r\\n\n");
-            PRINT(YELLOW, BLACK, "[VALIDATION] Last 4 bytes: 0x%02x 0x%02x 0x%02x 0x%02x\n",
+            PRINT(YELLOW, BLACK, "[VALIDATION] Last 4 bytes: 0x%llx 0x%llx 0x%llx 0x%llx\n",
                   (uint8_t)request[len-4], (uint8_t)request[len-3], 
                   (uint8_t)request[len-2], (uint8_t)request[len-1]);
             errors++;
