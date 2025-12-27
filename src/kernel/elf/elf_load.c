@@ -742,8 +742,8 @@ void elf_print_program_headers(elf_context_t *ctx) {
             default:         PRINT(WHITE, BLACK, "0x%x ", phdr->p_type); break;
         }
 
-        PRINT(WHITE, BLACK, "0x%016llx 0x%016llx ", phdr->p_vaddr, phdr->p_paddr);
-        PRINT(WHITE, BLACK, "0x%08llx 0x%08llx ", phdr->p_filesz, phdr->p_memsz);
+        PRINT(WHITE, BLACK, "0x%llx 0x%llx ", phdr->p_vaddr, phdr->p_paddr);
+        PRINT(WHITE, BLACK, "0x%llx 0x%llx ", phdr->p_filesz, phdr->p_memsz);
 
         PRINT(WHITE, BLACK, "%c%c%c\n",
               (phdr->p_flags & PF_R) ? 'R' : '-',
@@ -760,7 +760,7 @@ void elf_print_section_headers(elf_context_t *ctx) {
         const char *name = elf_get_section_name(ctx, shdr);
 
         PRINT(WHITE, BLACK, "[%2d] %-20s ", i, name ? name : "(null)");
-        PRINT(WHITE, BLACK, "0x%016llx 0x%08llx ", shdr->sh_addr, shdr->sh_size);
+        PRINT(WHITE, BLACK, "0x%llx 0x%llx ", shdr->sh_addr, shdr->sh_size);
 
         PRINT(WHITE, BLACK, "%c%c%c\n",
               (shdr->sh_flags & SHF_WRITE) ? 'W' : '-',
@@ -776,7 +776,7 @@ void elf_print_symbols(elf_context_t *ctx) {
         elf_symbol_t *sym = ctx->symbol_hash[i];
 
         while (sym) {
-            PRINT(WHITE, BLACK, "%-30s 0x%016llx %4llu %s %s\n",
+            PRINT(WHITE, BLACK, "%-30s 0x%llx %4llu %s %s\n",
                   sym->name, sym->value, sym->size,
                   (sym->type == STT_FUNC) ? "FUNC" :
                   (sym->type == STT_OBJECT) ? "OBJ " :

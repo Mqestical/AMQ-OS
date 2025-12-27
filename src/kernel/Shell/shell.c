@@ -227,6 +227,30 @@ void replace_input_line(const char *new_input) {
     }
 }
 
+static void u64_to_hex(uint64_t val, char *out) {
+    const char *hex = "0123456789abcdef";
+    char buf[16];
+    int i = 0;
+
+    if (val == 0) {
+        out[0] = '0';
+        out[1] = 0;
+        return;
+    }
+
+    while (val) {
+        buf[i++] = hex[val & 0xF];
+        val >>= 4;
+    }
+
+    // reverse
+    int j = 0;
+    while (i--)
+        out[j++] = buf[i];
+    out[j] = 0;
+}
+
+
 void cmd_schedinfo(void) {
     extern int get_scheduler_enabled(void);
     extern thread_t thread_table[];
@@ -2456,14 +2480,19 @@ else if (STRNCMP(cmd, "ASM ", 4) == 0) {
     }
 }
 else if (STRNCMP(cmd, "mknetcall", 9) == 0) {
-    uint64_t addr = (uint64_t)&elf_net;
-    PRINT(WHITE, BLACK, "elf_net address: 0x%llx\n", addr);
-    
-    char asm_code[256]= "mov rax, 100\ncall rax\nret";  // No trailing \n
-    
+    uint64_t funcaddr = 2101009168; // Address of netcall_handler in kernel
+    if (funcaddr != &elf_net) {
+        PRINT(YELLOW, BLACK, "[ERROR] netcall_handler address mismatch!\n");
+        PRINT(WHITE, BLACK, "Expected: %p, Found: %p\n", (void*)funcaddr, (void*)&elf_net);
+        return;
+    }
+    char asm_code[128] = "mov rax, 2101009168\ncall rax\nret";
+
+    //STRCPY(asm_code, "mov rax, %d\ncall rax\nret");
+
     PRINT(CYAN, BLACK, "Assembly code:\n%s\n", asm_code);
-    
-    create_elf_from_asm("netcall.elf", asm_code);
+    char netcallelf[] = "netcall.elf";
+    create_elf_from_asm(netcallelf, asm_code);
     PRINT(GREEN, BLACK, "Created netcall.elf!\n");
 }
 
@@ -2764,7 +2793,6 @@ void run_text_demo(void) {
                 draw_cursor(cursor_visible);
             }
         }
-
         thread_yield();
 
         for (volatile int i = 0; i < 4000; i++);
