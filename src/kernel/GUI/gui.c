@@ -15,6 +15,9 @@
 #define DOUBLE_CLICK_TIME 500000  // milliseconds
 #define DOUBLE_CLICK_DISTANCE 5  // pixels
 
+// Windows key scancode
+#define SCANCODE_LWIN 0x5B  // Left Windows key (extended scancode)
+
 extern volatile uint8_t scancode_buffer[256];
 extern volatile uint8_t scancode_read_pos;
 extern volatile uint8_t scancode_write_pos;
@@ -38,6 +41,9 @@ static int last_clicked_icon = -1;
 
 // Simple tick counter for double-click detection
 static volatile uint64_t tick_counter = 0;
+
+// Track extended scancode sequence
+static int extended_scancode = 0;
 
 int isgui = 0;
 volatile int gui_owns_input = 0;
@@ -379,9 +385,12 @@ void gui_main(void) {
         my = internal_cursor_y;
 
         int old_hover = taskbar.hover_item;
+        int old_start_hover = taskbar.start_button_hover;
+        
         taskbar_update_hover(&taskbar, mx, my, fb.height);
+        taskbar_update_start_button_hover(&taskbar, mx, my, fb.height);
 
-        if (old_hover != taskbar.hover_item) {
+        if (old_hover != taskbar.hover_item || old_start_hover != taskbar.start_button_hover) {
             restore_cursor_area();
             redraw_desktop(&desktop);
             save_cursor_area(mx, my);
@@ -401,6 +410,18 @@ void gui_main(void) {
             }
         }
 
+        if (taskbar.start_menu.visible) {
+            int old_menu_hover = taskbar.start_menu.hover_item;
+            start_menu_update_hover(&taskbar.start_menu, mx, my);
+
+            if (old_menu_hover != taskbar.start_menu.hover_item) {
+                restore_cursor_area();
+                redraw_desktop(&desktop);
+                save_cursor_area(mx, my);
+                draw_cursor(mx, my);
+            }
+        }
+
         if (mx != last_mx || my != last_my) {
             restore_cursor_area();
             save_cursor_area(mx, my);
@@ -414,89 +435,174 @@ void gui_main(void) {
 
         /* ---------------- LEFT CLICK ---------------- */
         if (left_click) {
-            int taskbar_item = taskbar_get_item_at(&taskbar, mx, my, fb.height);
-
-            if (taskbar_item >= 0) {
-                taskbar_remove_item(&taskbar, taskbar_item);
-            } 
-            else if (context_menu.visible) {
-                int item = context_menu_get_item_at(&context_menu, mx, my);
-                if (item >= 0) {
-                    handle_context_menu_action(
-                        (context_menu_item_t)item, &desktop,
-                        update_mouse_position_only,
-                        redraw_desktop,
-                        dialog_save_cursor_area,
-                        dialog_restore_cursor_area,
-                        draw_cursor,
-                        get_internal_cursor_x,
-                        get_internal_cursor_y,
-                        restore_cursor_area,
-                        &taskbar
-                    );
-                }
-                context_menu_hide(&context_menu);
-            } 
-            else {
-                int icon_index = desktop_icon_at_position(&desktop, mx, my);
-                if (icon_index >= 0) {
-                    if (is_double_click(mx, my, icon_index)) {
-                        desktop_icon_t *icon = &desktop.icons[icon_index];
-
-                        if (icon->is_directory) {
-                            PRINT(CYAN, BLACK, "[GUI] Folder: %s\n", icon->name);
-                        } else {
-                            PRINT(CYAN, BLACK, "[GUI] Open file: %s\n", icon->full_path);
-                            open_file_in_editor(icon);
-                        }
-
-                        last_click_time = 0;
-                        last_clicked_icon = -1;
-                    } else {
-                        desktop_select_icon(&desktop, icon_index);
-                        last_click_time = get_tick_count();
-                        last_click_x = mx;
-                        last_click_y = my;
-                        last_clicked_icon = icon_index;
-                    }
+            // Check if Start button was clicked
+            if (taskbar_is_start_button_clicked(&taskbar, mx, my, fb.height)) {
+                if (taskbar.start_menu.visible) {
+                    start_menu_hide(&taskbar.start_menu);
                 } else {
-                    desktop_select_icon(&desktop, -1);
-                    last_clicked_icon = -1;
+                    // Show start menu at bottom left
+                    int menu_y = fb.height - TASKBAR_HEIGHT - START_MENU_HEIGHT - 5;
+                    start_menu_show(&taskbar.start_menu, 5, menu_y);
+                }
+                
+                restore_cursor_area();
+                redraw_desktop(&desktop);
+                save_cursor_area(mx, my);
+                draw_cursor(mx, my);
+            }
+            // Check if Start menu item was clicked
+            else if (taskbar.start_menu.visible) {
+                int menu_item = start_menu_get_item_at(&taskbar.start_menu, mx, my);
+                if (menu_item >= 0) {
+                    // Menu item clicked - just close menu for now
+                    start_menu_hide(&taskbar.start_menu);
+                    restore_cursor_area();
+                    redraw_desktop(&desktop);
+                    save_cursor_area(mx, my);
+                    draw_cursor(mx, my);
+                } else {
+                    // Click outside menu, hide it
+                    start_menu_hide(&taskbar.start_menu);
+                    restore_cursor_area();
+                    redraw_desktop(&desktop);
+                    save_cursor_area(mx, my);
+                    draw_cursor(mx, my);
                 }
             }
+            // Check taskbar items
+            else {
+                int taskbar_item = taskbar_get_item_at(&taskbar, mx, my, fb.height);
 
-            restore_cursor_area();
-            redraw_desktop(&desktop);
-            save_cursor_area(mx, my);
-            draw_cursor(mx, my);
-        }
+                if (taskbar_item >= 0) {
+                    taskbar_remove_item(&taskbar, taskbar_item);
+                } 
+                else if (context_menu.visible) {
+                    int item = context_menu_get_item_at(&context_menu, mx, my);
+                    if (item >= 0) {
+                        handle_context_menu_action(
+                            (context_menu_item_t)item, &desktop,
+                            update_mouse_position_only,
+                            redraw_desktop,
+                            dialog_save_cursor_area,
+                            dialog_restore_cursor_area,
+                            draw_cursor,
+                            get_internal_cursor_x,
+                            get_internal_cursor_y,
+                            restore_cursor_area,
+                            &taskbar
+                        );
+                    }
+                    context_menu_hide(&context_menu);
+                } 
+                else {
+                    int icon_index = desktop_icon_at_position(&desktop, mx, my);
+                    if (icon_index >= 0) {
+                        if (is_double_click(mx, my, icon_index)) {
+                            desktop_icon_t *icon = &desktop.icons[icon_index];
 
-        /* ---------------- RIGHT CLICK ---------------- */
-        if (right_click) {
-            int icon_index = desktop_icon_at_position(&desktop, mx, my);
+                            if (icon->is_directory) {
+                                PRINT(CYAN, BLACK, "[GUI] Folder: %s\n", icon->name);
+                            } else {
+                                PRINT(CYAN, BLACK, "[GUI] Open file: %s\n", icon->full_path);
+                                open_file_in_editor(icon);
+                            }
 
-            if (icon_index < 0) {
-                context_menu_show(&context_menu, mx, my);
-
-                if (context_menu.x + CONTEXT_MENU_WIDTH > fb.width)
-                    context_menu.x = fb.width - CONTEXT_MENU_WIDTH;
-
-                if (context_menu.y + CONTEXT_MENU_HEIGHT > fb.height - TASKBAR_HEIGHT)
-                    context_menu.y = fb.height - TASKBAR_HEIGHT - CONTEXT_MENU_HEIGHT;
+                            last_click_time = 0;
+                            last_clicked_icon = -1;
+                        } else {
+                            desktop_select_icon(&desktop, icon_index);
+                            last_click_time = get_tick_count();
+                            last_click_x = mx;
+                            last_click_y = my;
+                            last_clicked_icon = icon_index;
+                        }
+                    } else {
+                        desktop_select_icon(&desktop, -1);
+                        last_clicked_icon = -1;
+                    }
+                }
 
                 restore_cursor_area();
-                context_menu_draw(&context_menu);
+                redraw_desktop(&desktop);
                 save_cursor_area(mx, my);
                 draw_cursor(mx, my);
             }
         }
 
+        /* ---------------- RIGHT CLICK ---------------- */
+        if (right_click) {
+            // Hide start menu if it's open
+            if (taskbar.start_menu.visible) {
+                start_menu_hide(&taskbar.start_menu);
+                restore_cursor_area();
+                redraw_desktop(&desktop);
+                save_cursor_area(mx, my);
+                draw_cursor(mx, my);
+            } else {
+                int icon_index = desktop_icon_at_position(&desktop, mx, my);
+
+                if (icon_index < 0) {
+                    context_menu_show(&context_menu, mx, my);
+
+                    if (context_menu.x + CONTEXT_MENU_WIDTH > fb.width)
+                        context_menu.x = fb.width - CONTEXT_MENU_WIDTH;
+
+                    if (context_menu.y + CONTEXT_MENU_HEIGHT > fb.height - TASKBAR_HEIGHT)
+                        context_menu.y = fb.height - TASKBAR_HEIGHT - CONTEXT_MENU_HEIGHT;
+
+                    restore_cursor_area();
+                    context_menu_draw(&context_menu);
+                    save_cursor_area(mx, my);
+                    draw_cursor(mx, my);
+                }
+            }
+        }
+
         last_button_state = mouse_button_state;
 
+        /* ---------------- KEYBOARD INPUT ---------------- */
         while (scancode_read_pos != scancode_write_pos) {
             uint8_t scancode = scancode_buffer[scancode_read_pos++];
-            if (scancode == 0xE0 || (scancode & 0x80)) continue;
-            if (scancode == 0x01) running = 0;
+            
+            // Handle extended scancode prefix (0xE0)
+            if (scancode == 0xE0) {
+                extended_scancode = 1;
+                continue;
+            }
+            
+            // Skip key release events (high bit set)
+            if (scancode & 0x80) {
+                extended_scancode = 0;
+                continue;
+            }
+            
+            // Check for Windows key (with extended prefix)
+            if (extended_scancode && scancode == SCANCODE_LWIN) {
+                PRINT(CYAN, BLACK, "[GUI] Windows key pressed!\n");
+                
+                // Toggle start menu
+                if (taskbar.start_menu.visible) {
+                    start_menu_hide(&taskbar.start_menu);
+                } else {
+                    int menu_y = fb.height - TASKBAR_HEIGHT - START_MENU_HEIGHT - 5;
+                    start_menu_show(&taskbar.start_menu, 5, menu_y);
+                }
+                
+                restore_cursor_area();
+                redraw_desktop(&desktop);
+                save_cursor_area(mx, my);
+                draw_cursor(mx, my);
+                
+                extended_scancode = 0;
+                continue;
+            }
+            
+            extended_scancode = 0;
+            
+            // ESC to exit
+            if (scancode == 0x01) {
+                running = 0;
+            }
         }
 
         thread_yield();
