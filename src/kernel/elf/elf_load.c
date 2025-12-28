@@ -15,23 +15,22 @@ static uint64_t align_up(uint64_t addr, uint64_t align) {
 static void *elf_map_memory(uint64_t vaddr, size_t size, uint32_t prot_flags) {
     uint64_t aligned_addr = align_down(vaddr, 4096);
     size_t aligned_size = align_up(size + (vaddr - aligned_addr), 4096);
-
     size_t num_pages = aligned_size / 4096;
+    
+    // Allocate physical pages
     void *phys = pmm_alloc_pages(num_pages);
-
-    if (!phys) {
-        return NULL;
-    }
-
+    if (!phys) return NULL;
+    
+    // Zero the memory
     uint8_t *ptr = (uint8_t *)phys;
     for (size_t i = 0; i < aligned_size; i++) {
         ptr[i] = 0;
     }
-
-
-    return phys;
+    
+    // For now, just return physical = virtual (identity mapping)
+    // This works if your kernel is identity mapped
+    return (void*)aligned_addr;  // ← Return VIRTUAL address
 }
-
 
 int elf_validate(void *elf_data, size_t size) {
     if (!elf_data || size < sizeof(Elf64_Ehdr)) {
@@ -266,13 +265,14 @@ int elf_load_segments(elf_context_t *ctx, elf_load_info_t *info) {
             }
 
             if (phdr->p_filesz > 0) {
-                uint8_t *src = (uint8_t *)ctx->elf_data + phdr->p_offset;
-                uint8_t *dst = (uint8_t *)mem + (vaddr - align_down(vaddr, 4096));
-
-                for (size_t j = 0; j < phdr->p_filesz; j++) {
-                    dst[j] = src[j];
-                }
-            }
+    uint8_t *src = (uint8_t *)ctx->elf_data + phdr->p_offset;
+    // Write directly to physical memory!
+    uint8_t *phys_dst = (uint8_t *)mem;
+    
+    for (size_t j = 0; j < phdr->p_filesz; j++) {
+        phys_dst[j] = src[j];
+    }
+}
 
             if (phdr->p_memsz > phdr->p_filesz) {
                 uint8_t *bss_start = (uint8_t *)mem + (vaddr - align_down(vaddr, 4096)) + phdr->p_filesz;

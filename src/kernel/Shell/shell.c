@@ -1548,7 +1548,6 @@ void cmd_pianotest(void) {
 
     PRINT(CYAN, BLACK, "=== Piano Tests Complete ===\n");
 }
-
 void create_elf_from_asm(const char *output_path, const char *asm_code) {
     asm_context_t asm_ctx;
     asm_init(&asm_ctx);
@@ -1571,22 +1570,45 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         return;
     }
 
-    PRINT(GREEN, BLACK, "[ASM] Generated");
+    PRINT(GREEN, BLACK, "[ASM] Generated ");
     print_unsigned(code_size, 16);
-     PRINT(GREEN, BLACK, "bytes of machine code\n");
+    PRINT(GREEN, BLACK, " bytes of machine code\n");
 
+    // Allocate executable memory for the code
+    size_t code_pages = (code_size + 4095) / 4096;
+    void *exec_mem = pmm_alloc_pages(code_pages);
+    if (!exec_mem) {
+        PRINT(YELLOW, BLACK, "[ASM] Failed to allocate executable memory\n");
+        return;
+    }
+
+    // Copy code to executable memory
+    uint8_t *exec_ptr = (uint8_t *)exec_mem;
+    for (size_t i = 0; i < code_size; i++) {
+        exec_ptr[i] = code[i];
+    }
+
+    PRINT(WHITE, BLACK, "[ASM] Code will execute from: 0x%llx\n", (uint64_t)exec_mem);
+
+    // Create ELF file structure
     size_t total_size = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + code_size;
     uint8_t *elf = kmalloc(total_size);
 
     if (!elf) {
         PRINT(YELLOW, BLACK, "[ASM] Out of memory\n");
+        // Free the allocated pages
+        for (size_t i = 0; i < code_pages; i++) {
+            pmm_free_page((void*)((uint64_t)exec_mem + (i * 4096)));
+        }
         return;
     }
 
+    // Zero the ELF buffer
     for (size_t i = 0; i < total_size; i++) {
         elf[i] = 0;
     }
 
+    // Setup ELF header
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)elf;
     ehdr->e_ident[EI_MAG0] = 0x7F;
     ehdr->e_ident[EI_MAG1] = 'E';
@@ -1598,27 +1620,36 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
     ehdr->e_type = ET_EXEC;
     ehdr->e_machine = EM_X86_64;
     ehdr->e_version = EV_CURRENT;
-    ehdr->e_entry = 0x400000;
+    
+    // Use actual allocated memory address as entry point
+    ehdr->e_entry = (uint64_t)exec_mem;
+    
     ehdr->e_phoff = sizeof(Elf64_Ehdr);
     ehdr->e_ehsize = sizeof(Elf64_Ehdr);
     ehdr->e_phentsize = sizeof(Elf64_Phdr);
     ehdr->e_phnum = 1;
 
+    // Setup program header
     Elf64_Phdr *phdr = (Elf64_Phdr *)(elf + sizeof(Elf64_Ehdr));
     phdr->p_type = PT_LOAD;
     phdr->p_flags = PF_R | PF_X;
     phdr->p_offset = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
-    phdr->p_vaddr = 0x400000;
-    phdr->p_paddr = 0x400000;
+    
+    // Use actual memory addresses instead of 0x400000
+    phdr->p_vaddr = (uint64_t)exec_mem;
+    phdr->p_paddr = (uint64_t)exec_mem;
+    
     phdr->p_filesz = code_size;
     phdr->p_memsz = code_size;
     phdr->p_align = 0x1000;
 
+    // Copy code into ELF file
     uint8_t *code_section = elf + sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
     for (size_t i = 0; i < code_size; i++) {
         code_section[i] = code[i];
     }
 
+    // Build full path
     char fullpath[256];
     if (output_path[0] == '/') {
         strcpy_local(fullpath, output_path);
@@ -1638,6 +1669,7 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         fullpath[i] = '\0';
     }
 
+    // Write ELF to file
     int fd = vfs_open(fullpath, FILE_WRITE);
     if (fd < 0) {
         vfs_create(fullpath, FILE_READ | FILE_WRITE);
@@ -1649,17 +1681,29 @@ void create_elf_from_asm(const char *output_path, const char *asm_code) {
         vfs_close(fd);
         if (written > 0) {
             PRINT(GREEN, BLACK, "[ASM] Created ELF: %s (%d bytes)\n", fullpath, written);
+            PRINT(WHITE, BLACK, "[ASM] Entry point: 0x%llx\n", (uint64_t)exec_mem);
             PRINT(WHITE, BLACK, "[ASM] Test with: elfinfo %s\n", output_path);
             PRINT(WHITE, BLACK, "[ASM] Run with: elfload %s\n", output_path);
         } else {
             PRINT(YELLOW, BLACK, "[ASM] Failed to write file\n");
+            // Free the allocated pages on error
+            for (size_t i = 0; i < code_pages; i++) {
+                pmm_free_page((void*)((uint64_t)exec_mem + (i * 4096)));
+            }
         }
     } else {
         PRINT(YELLOW, BLACK, "[ASM] Failed to create file\n");
+        // Free the allocated pages on error
+        for (size_t i = 0; i < code_pages; i++) {
+            pmm_free_page((void*)((uint64_t)exec_mem + (i * 4096)));
+        }
     }
 
     kfree(elf);
+    // NOTE: We're NOT freeing exec_mem on success because the ELF will execute from it!
+    // This is a memory leak, but necessary for the code to run
 }
+
 void bg_command_thread(void) {
     thread_t *current = get_current_thread();
     if (!current || !current->private_data) {
@@ -3113,7 +3157,7 @@ void shell_command_elfload(const char *args) {
         kfree(elf_buffer);
         return;
     }
-
+    
     PRINT(GREEN, BLACK, "[ELFLOAD] Successfully loaded:\n");
     PRINT(GREEN, BLACK, "  Base address: 0x%llx\n", load_info.base_addr);
     PRINT(GREEN, BLACK, "  Entry point:  0x%llx\n", load_info.entry_point);
@@ -3123,7 +3167,8 @@ void shell_command_elfload(const char *args) {
     if (load_info.has_tls) {
         PRINT(WHITE, BLACK, "  TLS size: %llu bytes\n", load_info.tls_size);
     }
-
+    void(*entry)(void) = (void (*)(void))load_info.entry_point;
+    entry();
     const char *name = fullpath;
     for (int i = 0; fullpath[i]; i++) {
         if (fullpath[i] == '/') {
