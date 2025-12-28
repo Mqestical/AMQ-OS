@@ -234,7 +234,7 @@ static void u64_to_hex(uint64_t val, char *out) {
 
     if (val == 0) {
         out[0] = '0';
-        out[1] = 0;
+        out[1] = 0;  // ← Make sure this is '\0' not 0
         return;
     }
 
@@ -245,11 +245,12 @@ static void u64_to_hex(uint64_t val, char *out) {
 
     // reverse
     int j = 0;
-    while (i--)
+    while (i > 0) {  // ← Changed from i--
+        i--;
         out[j++] = buf[i];
-    out[j] = 0;
+    }
+    out[j] = '\0';  // ← Make sure null terminator is there
 }
-
 
 void cmd_schedinfo(void) {
     extern int get_scheduler_enabled(void);
@@ -2478,22 +2479,78 @@ else if (STRNCMP(cmd, "ASM ", 4) == 0) {
 
         create_elf_from_asm(filename, code_buf);
     }
-}
-else if (STRNCMP(cmd, "mknetcall", 9) == 0) {
-    uint64_t funcaddr = 2101009168; // Address of netcall_handler in kernel
-    if (funcaddr != &elf_net) {
-        PRINT(YELLOW, BLACK, "[ERROR] netcall_handler address mismatch!\n");
-        PRINT(WHITE, BLACK, "Expected: %p, Found: %p\n", (void*)funcaddr, (void*)&elf_net);
-        return;
+}else if (STRNCMP(cmd, "mknetcall", 9) == 0) {
+    uint64_t funcaddr = (uint64_t)&elf_net;
+    
+    PRINT(CYAN, BLACK, "[MKNETCALL] elf_net address: 0x%llx (%llu decimal)\n", 
+          funcaddr, funcaddr);
+    
+    // Build assembly code with DECIMAL address
+    char asm_code[256];
+    int pos = 0;
+    
+    // "mov rax, "
+    asm_code[pos++] = 'm';
+    asm_code[pos++] = 'o';
+    asm_code[pos++] = 'v';
+    asm_code[pos++] = ' ';
+    asm_code[pos++] = 'r';
+    asm_code[pos++] = 'a';
+    asm_code[pos++] = 'x';
+    asm_code[pos++] = ',';
+    asm_code[pos++] = ' ';
+    
+    // Convert address to decimal string
+    char decimal[32];
+    int d_pos = 0;
+    uint64_t temp = funcaddr;
+    
+    if (temp == 0) {
+        decimal[d_pos++] = '0';
+    } else {
+        // Build digits in reverse
+        char reverse[32];
+        int r_pos = 0;
+        while (temp > 0) {
+            reverse[r_pos++] = '0' + (temp % 10);
+            temp /= 10;
+        }
+        // Copy reversed (now correct order)
+        while (r_pos > 0) {
+            decimal[d_pos++] = reverse[--r_pos];
+        }
     }
-    char asm_code[128] = "mov rax, 2101009168\ncall rax\nret";
-
-    //STRCPY(asm_code, "mov rax, %d\ncall rax\nret");
-
+    decimal[d_pos] = '\0';
+    
+    // Append decimal address
+    for (int i = 0; decimal[i]; i++) {
+        asm_code[pos++] = decimal[i];
+    }
+    
+    asm_code[pos++] = '\n';
+    
+    // "call rax"
+    asm_code[pos++] = 'c';
+    asm_code[pos++] = 'a';
+    asm_code[pos++] = 'l';
+    asm_code[pos++] = 'l';
+    asm_code[pos++] = ' ';
+    asm_code[pos++] = 'r';
+    asm_code[pos++] = 'a';
+    asm_code[pos++] = 'x';
+    asm_code[pos++] = '\n';
+    
+    // "ret"
+    asm_code[pos++] = 'r';
+    asm_code[pos++] = 'e';
+    asm_code[pos++] = 't';
+    asm_code[pos] = '\0';
+    
     PRINT(CYAN, BLACK, "Assembly code:\n%s\n", asm_code);
+    
     char netcallelf[] = "netcall.elf";
     create_elf_from_asm(netcallelf, asm_code);
-    PRINT(GREEN, BLACK, "Created netcall.elf!\n");
+    PRINT(GREEN, BLACK, "Created netcall.elf with function at %llu\n", funcaddr);
 }
 
 else if (STRNCMP(cmd, "gui", 3) == 0) {
